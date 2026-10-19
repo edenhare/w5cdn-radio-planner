@@ -133,6 +133,7 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
             "distanceUnit": "MILES",
             "language": "ENGLISH",
             "defaultRadioId": None,
+            "colorTheme": "DARK",
         }
         with open(prefs_file, "w", encoding="utf-8") as f:
             yaml.dump(default_prefs, f, sort_keys=False, default_flow_style=False)

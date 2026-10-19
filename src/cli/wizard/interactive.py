@@ -74,6 +74,7 @@ class InteractiveWizard:
 
     def start(self) -> None:
         """Main interaction loop."""
+        self.console.clear()
         try:
             if self.startup_actions:
                 items = "\n".join(f"  [green]*[/green] {act}" for act in self.startup_actions)
@@ -133,19 +134,11 @@ class InteractiveWizard:
 
     def _flow_route_corridor(self) -> None:
         """Mode 1: Highway Route Corridor Wizard."""
+        self.console.clear()
         self.console.print("\n[bold green]═══ Mode 1: Highway Route Corridor ═══[/bold green]")
-        self.console.print(
-            "[dim]Enter travel waypoints separated by semicolons (e.g. 'Tyler, TX; Shreveport, LA; Jackson, MS').[/dim]"
-        )
 
-        waypoints_input = Prompt.ask("Waypoints", default="Tyler, TX; Shreveport, LA; Jackson, MS")
-        raw_waypoints = [w.strip() for w in waypoints_input.split(";") if w.strip()]
-        if not raw_waypoints:
-            self.console.print("[red]No waypoints entered.[/red]")
-            return
-
-        # Early route validation & interactive editing (reorder, add, remove, correct spelling)
-        validated = validate_and_edit_route(self.console, raw_waypoints, self.geocoder)
+        default_waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
+        validated = validate_and_edit_route(self.console, default_waypoints, self.geocoder)
         if not validated or len(validated) < 2:
             self.console.print("[yellow]Route planning cancelled or incomplete.[/yellow]")
             return
@@ -219,6 +212,7 @@ class InteractiveWizard:
 
     def _flow_proximity(self) -> None:
         """Mode 2: Radial Proximity Ring Search Wizard."""
+        self.console.clear()
         self.console.print("\n[bold green]═══ Mode 2: Radial Proximity Ring Search ═══[/bold green]")
         center_loc = Prompt.ask("Center location / city", default="Dallas, TX")
         radius = float(Prompt.ask("Search radius in miles", default="50.0"))
@@ -288,6 +282,7 @@ class InteractiveWizard:
 
     def _flow_aviation(self) -> None:
         """Mode 3: Local Aviation Planner Wizard."""
+        self.console.clear()
         self.console.print("\n[bold green]═══ Mode 3: Local Aviation & Airport Planner ═══[/bold green]")
         center_loc = Prompt.ask("Target city or airport", default="Tyler, TX")
         radius = float(Prompt.ask("Search radius in miles", default="35.0"))
@@ -349,6 +344,7 @@ class InteractiveWizard:
 
     def _flow_templates_manager(self) -> None:
         """Mode 4: Preset Codeplug Templates Manager."""
+        self.console.clear()
         while True:
             templates = self.template_mgr.list_templates()
             self.console.print(f"\n[bold cyan]Preset Codeplug Templates ({len(templates)}):[/bold cyan]")
@@ -451,6 +447,7 @@ class InteractiveWizard:
 
     def _flow_radios_manager(self) -> None:
         """Mode 5: Radios & Hardware Specifications Manager."""
+        self.console.clear()
         while True:
             radios = self.radio_mgr.list_radios()
             self.console.print(f"\n[bold cyan]Configured Radio Hardware Specifications ({len(radios)}):[/bold cyan]")
@@ -615,6 +612,7 @@ class InteractiveWizard:
 
     def _flow_preferences(self) -> None:
         """View and edit user preferences with numbered item selection."""
+        self.console.clear()
         while True:
             prefs = self.prefs_mgr.preferences
             tokens = self.prefs_mgr.tokens
@@ -630,13 +628,14 @@ class InteractiveWizard:
                 f"  [5] Default Target Radio:  [bold white]{prefs.defaultRadioId or '(None)'}[/bold white]"
             )
             self.console.print(f"  [6] Language:              [bold white]{prefs.language}[/bold white]")
+            self.console.print(f"  [7] UI Color Theme:        [bold white]{prefs.colorTheme}[/bold white]")
             rb_display = "*" * len(tokens.repeaterBookApiKey) if tokens.repeaterBookApiKey else "(None)"
-            self.console.print(f"  [7] RepeaterBook API Key:  [bold white]{rb_display}[/bold white]")
+            self.console.print(f"  [8] RepeaterBook API Key:  [bold white]{rb_display}[/bold white]")
             self.console.print(
-                f"  [8] RadioID.net Callsign:  [bold white]{tokens.radioIdUsername or '(None)'}[/bold white]"
+                f"  [9] RadioID.net Callsign:  [bold white]{tokens.radioIdUsername or '(None)'}[/bold white]"
             )
             rid_display = "*" * len(tokens.radioIdApiKey) if tokens.radioIdApiKey else "(None)"
-            self.console.print(f"  [9] RadioID.net API Key:  [bold white]{rid_display}[/bold white]")
+            self.console.print(f"  [10] RadioID.net API Key: [bold white]{rid_display}[/bold white]")
             self.console.print("  [Q] Return to Main Menu")
 
             choice = Prompt.ask("\nSelect number to edit (or 'Q'/'esc' to return)", default="Q").strip()
@@ -710,6 +709,17 @@ class InteractiveWizard:
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Language set to {new_prefs.language}[/green]")
             elif choice == "7":
+                self.console.print("\n[bold cyan]Select UI Color Theme:[/bold cyan]")
+                self.console.print("  [1] Dark Theme (Standard vibrant colors for dark backgrounds)")
+                self.console.print("  [2] Light Theme (Optimized contrast for light backgrounds)")
+                self.console.print("  [3] High Contrast / Monochrome")
+                theme_map = {"1": "DARK", "2": "LIGHT", "3": "HIGH_CONTRAST"}
+                curr_opt = {"DARK": "1", "LIGHT": "2", "HIGH_CONTRAST": "3"}.get(prefs.colorTheme, "1")
+                theme_choice = Prompt.ask("Choose theme (1-3)", choices=["1", "2", "3"], default=curr_opt)
+                new_prefs = prefs.update_settings(colorTheme=theme_map[theme_choice])
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Color Theme set to {new_prefs.colorTheme}[/green]")
+            elif choice == "8":
                 key = Prompt.ask(
                     "Enter RepeaterBook API Key (leave empty to clear)",
                     default=tokens.repeaterBookApiKey or "",
@@ -717,7 +727,7 @@ class InteractiveWizard:
                 new_tokens = tokens.model_copy(update={"repeaterBookApiKey": key.strip() or None})
                 self.prefs_mgr.save_tokens(new_tokens)
                 self.console.print("[green]✔ RepeaterBook API Key saved to ~/.config/radioplanner/tokens[/green]")
-            elif choice == "8":
+            elif choice == "9":
                 call = Prompt.ask(
                     "Enter RadioID.net Username/Callsign",
                     default=tokens.radioIdUsername or "",
@@ -725,16 +735,17 @@ class InteractiveWizard:
                 new_tokens = tokens.model_copy(update={"radioIdUsername": call.strip() or None})
                 self.prefs_mgr.save_tokens(new_tokens)
                 self.console.print("[green]✔ RadioID.net Callsign saved[/green]")
-            elif choice == "9":
+            elif choice == "10":
                 key = Prompt.ask("Enter RadioID.net API Key", default=tokens.radioIdApiKey or "")
                 new_tokens = tokens.model_copy(update={"radioIdApiKey": key.strip() or None})
                 self.prefs_mgr.save_tokens(new_tokens)
                 self.console.print("[green]✔ RadioID.net API Key saved to ~/.config/radioplanner/tokens[/green]")
             else:
-                self.console.print("[yellow]Invalid selection. Enter a number 1-9 or 'Q'/'esc' to return.[/yellow]")
+                self.console.print("[yellow]Invalid selection. Enter a number 1-10 or 'Q'/'esc' to return.[/yellow]")
 
     def _flow_replay_recipe(self) -> None:
         """Mode 7: Replay a saved configuration recipe."""
+        self.console.clear()
         recipes_dir = get_recipes_dir()
         yaml_files = list(recipes_dir.glob("*.yaml"))
 

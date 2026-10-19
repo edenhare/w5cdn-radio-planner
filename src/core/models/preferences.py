@@ -16,6 +16,7 @@ class UserPreferences(BaseModel):
     distanceUnit: str = Field(default="MILES", description="MILES or KILOMETERS")
     language: str = Field(default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN")
     defaultRadioId: str | None = Field(default=None, description="Default target radio spec ID (or None)")
+    colorTheme: str = Field(default="DARK", description="UI color theme: DARK, LIGHT, HIGH_CONTRAST")
 
     @field_validator("callsign", mode="before")
     @classmethod
@@ -58,6 +59,26 @@ class UserPreferences(BaseModel):
         if val_upper in {"ENGLISH", "SPANISH", "FRENCH", "GERMAN"}:
             return val_upper
         return "ENGLISH"
+
+    @field_validator("colorTheme", mode="before")
+    @classmethod
+    def normalize_color_theme(cls, v: str | int) -> str:
+        """Allow number selection 1-3 or uppercase theme names."""
+        mapping = {
+            "1": "DARK",
+            "2": "LIGHT",
+            "3": "HIGH_CONTRAST",
+            1: "DARK",
+            2: "LIGHT",
+            3: "HIGH_CONTRAST",
+        }
+        if str(v).strip() in mapping:
+            return mapping[str(v).strip()]
+        val_upper = str(v).strip().upper()
+        if val_upper in {"DARK", "LIGHT", "HIGH_CONTRAST"}:
+            return val_upper
+        return "DARK"
+
 
     def update_settings(self, **kwargs) -> UserPreferences:
         """Return a newly validated UserPreferences instance with updated fields."""

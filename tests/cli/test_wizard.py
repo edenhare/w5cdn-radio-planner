@@ -63,30 +63,57 @@ def test_validate_and_edit_route_confirm():
 
 
 def test_validate_and_edit_route_edit_typo_and_confirm():
-    """Test correcting a misspelled waypoint in editor."""
+    """Test correcting a misspelled waypoint in editor using action [E]."""
     out = io.StringIO()
     console = Console(file=out)
     geocoder = GeocodingProvider()
 
-    # Stop 2 has typo "Shrevepoort, LA" -> Action 1 (edit) -> stop 2 -> "Shreveport, LA" -> Action C (confirm)
+    # Stop 2 has typo "Shrevepoort, LA" -> Action E (edit) -> stop 2 -> "Shreveport, LA" -> Action C (confirm)
     waypoints = ["Tyler, TX", "Shrevepoort, LA"]
-    with patch("rich.prompt.Prompt.ask", side_effect=["1", "Shreveport, LA", "C"]):
+    with patch("rich.prompt.Prompt.ask", side_effect=["E", "Shreveport, LA", "C"]):
         with patch("rich.prompt.IntPrompt.ask", return_value=2):
             result = validate_and_edit_route(console, waypoints, geocoder)
             assert result == ["Tyler, TX", "Shreveport, LA"]
 
 
 def test_validate_and_edit_route_reverse():
-    """Test reversing route direction."""
+    """Test reversing route direction using action [V]."""
     out = io.StringIO()
     console = Console(file=out)
     geocoder = GeocodingProvider()
 
     waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
-    # Action 5 (reverse) -> Action C (confirm)
-    with patch("rich.prompt.Prompt.ask", side_effect=["5", "C"]):
+    # Action V (reverse) -> Action C (confirm)
+    with patch("rich.prompt.Prompt.ask", side_effect=["V", "C"]):
         result = validate_and_edit_route(console, waypoints, geocoder)
         assert result == ["Jackson, MS", "Shreveport, LA", "Tyler, TX"]
+
+
+def test_validate_and_edit_route_new_route_wizard():
+    """Test entering a route from scratch with [N]."""
+    out = io.StringIO()
+    console = Console(file=out)
+    geocoder = GeocodingProvider()
+
+    initial = ["Tyler, TX"]
+    # Action N -> Start "Austin, TX" -> Dest "Houston, TX" -> intermediate "" (done) -> Action C
+    with patch("rich.prompt.Prompt.ask", side_effect=["N", "Austin, TX", "Houston, TX", "", "C"]):
+        result = validate_and_edit_route(console, initial, geocoder)
+        assert result == ["Austin, TX", "Houston, TX"]
+
+
+def test_validate_and_edit_route_kill_and_add():
+    """Test killing/clearing waypoints with [K], then adding with [A]."""
+    out = io.StringIO()
+    console = Console(file=out)
+    geocoder = GeocodingProvider()
+
+    initial = ["Tyler, TX", "Shreveport, LA"]
+    # Action K (confirm clear) -> Action A "Dallas, TX" -> Action A "Fort Worth, TX" -> Action C
+    with patch("rich.prompt.Prompt.ask", side_effect=["K", "A", "Dallas, TX", "A", "Fort Worth, TX", "E", "C"]):
+        with patch("rich.prompt.Confirm.ask", return_value=True):
+            result = validate_and_edit_route(console, initial, geocoder)
+            assert result == ["Dallas, TX", "Fort Worth, TX"]
 
 
 def test_wizard_flow_preferences_callsign(tmp_path: Path):
@@ -163,3 +190,20 @@ def test_wizard_flow_preferences_language_number_list(tmp_path: Path):
         wizard._flow_preferences()
 
     assert wizard.prefs_mgr.preferences.language == "SPANISH"
+
+
+def test_wizard_flow_preferences_color_theme(tmp_path: Path):
+    """Test selecting color theme via numbered list item 7."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+
+    # Option "7" (UI Color Theme), select "2" (LIGHT), then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["7", "2", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.preferences.colorTheme == "LIGHT"
