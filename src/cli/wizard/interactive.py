@@ -412,12 +412,12 @@ class InteractiveWizard:
                 break
             elif choice == "1":
                 val = Prompt.ask("Enter Amateur Callsign", default=prefs.callsign)
-                new_prefs = prefs.model_copy(update={"callsign": val.strip().upper()})
+                new_prefs = prefs.update_settings(callsign=val)
                 self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Callsign updated to {val.strip().upper()}[/green]")
+                self.console.print(f"[green]✔ Callsign updated to {new_prefs.callsign}[/green]")
             elif choice == "2":
                 val = Prompt.ask("Enter Operator Name", default=prefs.operatorName)
-                new_prefs = prefs.model_copy(update={"operatorName": val.strip()})
+                new_prefs = prefs.update_settings(operatorName=val.strip())
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Operator Name updated to {val.strip()}[/green]")
             elif choice == "3":
@@ -426,7 +426,7 @@ class InteractiveWizard:
                     default=prefs.primaryDmrId or "",
                 )
                 cleaned = val.strip() or None
-                new_prefs = prefs.model_copy(update={"primaryDmrId": cleaned})
+                new_prefs = prefs.update_settings(primaryDmrId=cleaned)
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print("[green]✔ DMR Radio ID updated[/green]")
             elif choice == "4":
@@ -435,7 +435,7 @@ class InteractiveWizard:
                     choices=["MILES", "KILOMETERS", "miles", "kilometers"],
                     default=prefs.distanceUnit,
                 ).upper()
-                new_prefs = prefs.model_copy(update={"distanceUnit": unit})
+                new_prefs = prefs.update_settings(distanceUnit=unit)
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Distance Unit set to {unit}[/green]")
             elif choice == "5":
@@ -447,7 +447,7 @@ class InteractiveWizard:
                     choices=radio_ids,
                     default=prefs.defaultRadioId,
                 )
-                new_prefs = prefs.model_copy(update={"defaultRadioId": radio_id})
+                new_prefs = prefs.update_settings(defaultRadioId=radio_id)
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Default Radio set to {radio_id}[/green]")
             elif choice == "6":
@@ -456,7 +456,7 @@ class InteractiveWizard:
                     choices=["TWELVE_HOUR", "TWENTY_FOUR_HOUR"],
                     default=prefs.timeFormat,
                 )
-                new_prefs = prefs.model_copy(update={"timeFormat": fmt})
+                new_prefs = prefs.update_settings(timeFormat=fmt)
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Time format updated to {fmt}[/green]")
             elif choice == "7":
@@ -465,7 +465,7 @@ class InteractiveWizard:
                     choices=["ENGLISH", "SPANISH", "FRENCH", "GERMAN"],
                     default=prefs.language,
                 )
-                new_prefs = prefs.model_copy(update={"language": lang})
+                new_prefs = prefs.update_settings(language=lang)
                 self.prefs_mgr.save_preferences(new_prefs)
                 self.console.print(f"[green]✔ Language set to {lang}[/green]")
             elif choice == "8":

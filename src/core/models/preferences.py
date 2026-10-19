@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserPreferences(BaseModel):
@@ -12,19 +12,26 @@ class UserPreferences(BaseModel):
 
     callsign: str = Field(default="N0CALL", description="Amateur radio callsign")
     operatorName: str = Field(default="Radio Operator", description="Operator name")
-    primaryDmrId: str | None = Field(
-        default=None, description="Official 7-digit DMR Radio ID"
-    )
-    timeFormat: str = Field(
-        default="TWELVE_HOUR", description="TWELVE_HOUR or TWENTY_FOUR_HOUR"
-    )
+    primaryDmrId: str | None = Field(default=None, description="Official 7-digit DMR Radio ID")
+    timeFormat: str = Field(default="TWELVE_HOUR", description="TWELVE_HOUR or TWENTY_FOUR_HOUR")
     distanceUnit: str = Field(default="MILES", description="MILES or KILOMETERS")
-    language: str = Field(
-        default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN"
-    )
-    defaultRadioId: str = Field(
-        default="chirp_standard", description="Default target radio spec ID"
-    )
+    language: str = Field(default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN")
+    defaultRadioId: str = Field(default="chirp_standard", description="Default target radio spec ID")
+
+    @field_validator("callsign", mode="before")
+    @classmethod
+    def enforce_uppercase_callsign(cls, v: str) -> str:
+        """Ensure amateur callsign is always stored in uppercase."""
+        if isinstance(v, str):
+            cleaned = v.strip().upper()
+            return cleaned if cleaned else "N0CALL"
+        return v
+
+    def update_settings(self, **kwargs) -> UserPreferences:
+        """Return a newly validated UserPreferences instance with updated fields."""
+        data = self.model_dump()
+        data.update(kwargs)
+        return self.model_validate(data)
 
 
 class ApiTokens(BaseModel):
@@ -32,12 +39,6 @@ class ApiTokens(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    repeaterBookApiKey: str | None = Field(
-        default=None, description="RepeaterBook REST API Key"
-    )
-    radioIdUsername: str | None = Field(
-        default=None, description="RadioID.net Callsign/Username"
-    )
-    radioIdApiKey: str | None = Field(
-        default=None, description="RadioID.net API Key/Token"
-    )
+    repeaterBookApiKey: str | None = Field(default=None, description="RepeaterBook REST API Key")
+    radioIdUsername: str | None = Field(default=None, description="RadioID.net Callsign/Username")
+    radioIdApiKey: str | None = Field(default=None, description="RadioID.net API Key/Token")

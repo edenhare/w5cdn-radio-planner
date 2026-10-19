@@ -57,17 +57,13 @@ def test_radio_channel_band_classification():
     ]
     for freq, expected_band in bands:
         ch = RadioChannel(number=1, name="TEST", rxFreq=freq, txFreq=freq)
-        assert ch.band == expected_band, (
-            f"Frequency {freq} should be {expected_band}, got {ch.band}"
-        )
+        assert ch.band == expected_band, f"Frequency {freq} should be {expected_band}, got {ch.band}"
 
 
 def test_radio_channel_bad_data_validation():
     """Bad Data: Out-of-range color codes or invalid types raise ValidationError."""
     with pytest.raises(ValidationError):
-        RadioChannel(
-            number=1, name="BAD_CC", rxFreq=146.94, txFreq=146.34, colorCode=99
-        )
+        RadioChannel(number=1, name="BAD_CC", rxFreq=146.94, txFreq=146.34, colorCode=99)
 
     with pytest.raises(ValidationError):
         RadioChannel(number=1, name="BAD_TS", rxFreq=146.94, txFreq=146.34, timeSlot=5)
@@ -92,3 +88,20 @@ def test_codeplug_renumbering():
     renumbered = cp.renumbered()
     assert renumbered.channels[0].number == 1
     assert renumbered.channels[1].number == 2
+
+
+def test_user_preferences_callsign_always_uppercase():
+    """Verify callsign is automatically converted to uppercase regardless of user input format."""
+    from core.models.preferences import UserPreferences
+
+    # Lowercase input
+    p1 = UserPreferences(callsign="w5cdn")
+    assert p1.callsign == "W5CDN"
+
+    # Mixed case with whitespace
+    p2 = UserPreferences(callsign="  k5shv  ")
+    assert p2.callsign == "K5SHV"
+
+    # Update settings with lowercase
+    p3 = p1.update_settings(callsign="n0call")
+    assert p3.callsign == "N0CALL"
