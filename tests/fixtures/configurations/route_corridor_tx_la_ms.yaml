@@ -1,0 +1,30 @@
+version: "1.0"
+mode: "ROUTE_CORRIDOR"
+name: "Tyler_TX-Jackson_MS-Corridor"
+
+corridor:
+  waypoints:
+    - "Tyler, TX"
+    - "Shreveport, LA"
+    - "Jackson, MS"
+  corridor_width_miles: 25.0
+
+radio_target:
+  radio_id: "chirp_standard"
+  programmer_format: "CHIRP"
+  include_simplex: true
+  bands:
+    - "2m"
+    - "70cm"
+    - "WX"
+  modes:
+    - "FM"
+
+sequence_order:
+  - "TEMPLATE:builtin_calling_channels"
+  - "ROUTE_PLAN"
+  - "TEMPLATE:builtin_noaa_wx_channels"
+
+export:
+  output_dir: "./exports"
+  filename_pattern: "test_tyler_jackson_corridor.csv"

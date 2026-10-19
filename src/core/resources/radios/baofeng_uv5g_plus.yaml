@@ -1,0 +1,35 @@
+id: "baofeng_uv5g_plus"
+brand: "Baofeng"
+model: "UV-5G Plus GMRS"
+description: "Baofeng UV-5G Plus GMRS Handheld Radio (RT Systems)"
+maxChannels: 999
+maxNameLength: 10
+allowDots: false
+allowSpaces: false
+allowedSpecialChars: "-_"
+programmerType: "RT_SYSTEMS"
+supportedBands:
+  - "GMRS"
+  - "WX"
+supportedModes:
+  - "FM"
+columns:
+  - "Receive Frequency"
+  - "Transmit Frequency"
+  - "Offset Frequency"
+  - "Offset direction"
+  - "Operating Mode"
+  - "Name"
+  - "Tone Mode"
+  - "CTCSS"
+  - "Rx CTCSS"
+  - "DCS"
+  - "Rx DCS"
+  - "DCS Polarity"
+  - "Tx Power"
+  - "Scan Add"
+  - "Busy Lock"
+  - "FHSS"
+  - "Signal Code"
+  - "PTTID"
+  - "Comment"

@@ -1,0 +1,23 @@
+version: "1.0"
+mode: "AVIATION_PLANNER"
+name: "Tyler_Regional_Aviation"
+
+aviation:
+  center_location: "Tyler, TX"
+  radius_miles: 35.0
+
+radio_target:
+  radio_id: "wouxun_kg_uv980p"
+  programmer_format: "RT_SYSTEMS"
+  include_simplex: false
+  bands:
+    - "Airband"
+  modes:
+    - "AM"
+
+sequence_order:
+  - "AVIATION_BLOCK"
+
+export:
+  output_dir: "./exports"
+  filename_pattern: "test_tyler_aviation.csv"

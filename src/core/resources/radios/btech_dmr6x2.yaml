@@ -1,0 +1,41 @@
+id: "btech_dmr6x2"
+brand: "BTECH"
+model: "DMR-6X2"
+description: "BTECH DMR-6X2 Dual Band DMR / Analog Mobile & Handheld (RT Systems)"
+maxChannels: 4000
+maxNameLength: 16
+allowDots: true
+allowSpaces: true
+allowedSpecialChars: " -_./#"
+programmerType: "RT_SYSTEMS"
+supportedBands:
+  - "2m"
+  - "70cm"
+  - "WX"
+supportedModes:
+  - "FM"
+  - "DMR"
+  - "ANALOG"
+  - "DIGITAL"
+columns:
+  - "Channel Number"
+  - "Receive Frequency"
+  - "Transmit Frequency"
+  - "Channel Type"
+  - "Transmit Power"
+  - "Bandwidth"
+  - "CTCSS / DCS Decode"
+  - "CTCSS / DCS Encode"
+  - "Contact"
+  - "Contact Call Type"
+  - "Contact TG/DMR ID"
+  - "Radio ID"
+  - "Color Code"
+  - "Slot"
+  - "Rx Group List"
+  - "Tx Permit"
+  - "Channel Name"
+  - "Scan List"
+  - "Squelch"
+  - "TOT"
+  - "Comment"
