@@ -382,21 +382,115 @@ class InteractiveWizard:
         Prompt.ask("Press Enter to return to main menu", default="")
 
     def _flow_preferences(self) -> None:
-        """View and edit user preferences."""
-        prefs = self.prefs_mgr.preferences
-        self.console.print("\n[bold cyan]Current User Preferences:[/bold cyan]")
-        self.console.print(f"  Callsign: {prefs.callsign}")
-        self.console.print(f"  Operator Name: {prefs.operatorName}")
-        self.console.print(f"  Primary DMR ID: {prefs.primaryDmrId or 'Not configured'}")
-        self.console.print(f"  Distance Unit: {prefs.distanceUnit}")
-        self.console.print(f"  Default Radio ID: {prefs.defaultRadioId}")
+        """View and edit user preferences with numbered item selection."""
+        while True:
+            prefs = self.prefs_mgr.preferences
+            tokens = self.prefs_mgr.tokens
 
-        if Confirm.ask("Edit preferences now?", default=False):
-            new_call = Prompt.ask("Amateur Callsign", default=prefs.callsign)
-            new_dmr = Prompt.ask("Primary DMR ID", default=prefs.primaryDmrId or "")
-            new_prefs = prefs.model_copy(update={"callsign": new_call, "primaryDmrId": new_dmr or None})
-            self.prefs_mgr.save_preferences(new_prefs)
-            self.console.print("[green]Preferences saved![/green]")
+            self.console.print("\n[bold cyan]User Preferences & Settings:[/bold cyan]")
+            self.console.print(f"  [1] Amateur Callsign:      [bold white]{prefs.callsign}[/bold white]")
+            self.console.print(f"  [2] Operator Name:         [bold white]{prefs.operatorName}[/bold white]")
+            self.console.print(
+                f"  [3] Primary DMR Radio ID:  [bold white]{prefs.primaryDmrId or '(Not set)'}[/bold white]"
+            )
+            self.console.print(f"  [4] Distance Units:        [bold white]{prefs.distanceUnit}[/bold white]")
+            self.console.print(f"  [5] Default Target Radio:  [bold white]{prefs.defaultRadioId}[/bold white]")
+            self.console.print(f"  [6] Time Format:           [bold white]{prefs.timeFormat}[/bold white]")
+            self.console.print(f"  [7] Language:              [bold white]{prefs.language}[/bold white]")
+            rb_display = "*" * len(tokens.repeaterBookApiKey) if tokens.repeaterBookApiKey else "(None)"
+            self.console.print(f"  [8] RepeaterBook API Key:  [bold white]{rb_display}[/bold white]")
+            self.console.print(
+                f"  [9] RadioID.net Callsign:  [bold white]{tokens.radioIdUsername or '(None)'}[/bold white]"
+            )
+            rid_display = "*" * len(tokens.radioIdApiKey) if tokens.radioIdApiKey else "(None)"
+            self.console.print(f"  [10] RadioID.net API Key: [bold white]{rid_display}[/bold white]")
+            self.console.print("  [Q] Return to Main Menu")
+
+            choice = Prompt.ask("\nSelect number to edit (or 'Q'/'esc' to return)", default="Q").strip()
+
+            if choice.upper() in {"Q", "ESC", "0", "BACK", "EXIT"}:
+                break
+            elif choice == "1":
+                val = Prompt.ask("Enter Amateur Callsign", default=prefs.callsign)
+                new_prefs = prefs.model_copy(update={"callsign": val.strip().upper()})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Callsign updated to {val.strip().upper()}[/green]")
+            elif choice == "2":
+                val = Prompt.ask("Enter Operator Name", default=prefs.operatorName)
+                new_prefs = prefs.model_copy(update={"operatorName": val.strip()})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Operator Name updated to {val.strip()}[/green]")
+            elif choice == "3":
+                val = Prompt.ask(
+                    "Enter 7-digit Primary DMR Radio ID (or leave blank to clear)",
+                    default=prefs.primaryDmrId or "",
+                )
+                cleaned = val.strip() or None
+                new_prefs = prefs.model_copy(update={"primaryDmrId": cleaned})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print("[green]✔ DMR Radio ID updated[/green]")
+            elif choice == "4":
+                unit = Prompt.ask(
+                    "Select Distance Unit",
+                    choices=["MILES", "KILOMETERS", "miles", "kilometers"],
+                    default=prefs.distanceUnit,
+                ).upper()
+                new_prefs = prefs.model_copy(update={"distanceUnit": unit})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Distance Unit set to {unit}[/green]")
+            elif choice == "5":
+                radios = self.radio_mgr.list_radios()
+                radio_ids = [r.id for r in radios]
+                self.console.print("\n[cyan]Available target radios:[/cyan] " + ", ".join(radio_ids))
+                radio_id = Prompt.ask(
+                    "Enter Default Target Radio ID",
+                    choices=radio_ids,
+                    default=prefs.defaultRadioId,
+                )
+                new_prefs = prefs.model_copy(update={"defaultRadioId": radio_id})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Default Radio set to {radio_id}[/green]")
+            elif choice == "6":
+                fmt = Prompt.ask(
+                    "Select Time Format",
+                    choices=["TWELVE_HOUR", "TWENTY_FOUR_HOUR"],
+                    default=prefs.timeFormat,
+                )
+                new_prefs = prefs.model_copy(update={"timeFormat": fmt})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Time format updated to {fmt}[/green]")
+            elif choice == "7":
+                lang = Prompt.ask(
+                    "Select Language",
+                    choices=["ENGLISH", "SPANISH", "FRENCH", "GERMAN"],
+                    default=prefs.language,
+                )
+                new_prefs = prefs.model_copy(update={"language": lang})
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Language set to {lang}[/green]")
+            elif choice == "8":
+                key = Prompt.ask(
+                    "Enter RepeaterBook API Key (leave empty to clear)",
+                    default=tokens.repeaterBookApiKey or "",
+                )
+                new_tokens = tokens.model_copy(update={"repeaterBookApiKey": key.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RepeaterBook API Key saved to ~/.config/radioplanner/tokens[/green]")
+            elif choice == "9":
+                call = Prompt.ask(
+                    "Enter RadioID.net Username/Callsign",
+                    default=tokens.radioIdUsername or "",
+                )
+                new_tokens = tokens.model_copy(update={"radioIdUsername": call.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RadioID.net Callsign saved[/green]")
+            elif choice == "10":
+                key = Prompt.ask("Enter RadioID.net API Key", default=tokens.radioIdApiKey or "")
+                new_tokens = tokens.model_copy(update={"radioIdApiKey": key.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RadioID.net API Key saved to ~/.config/radioplanner/tokens[/green]")
+            else:
+                self.console.print("[yellow]Invalid selection. Enter a number 1-10 or 'Q'/'esc' to return.[/yellow]")
 
     def _channel_review_and_export_loop(self, codeplug: Codeplug, recipe: RadioPlannerRecipe, spec) -> None:
         """Interactive review table actions loop."""
