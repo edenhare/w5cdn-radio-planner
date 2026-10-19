@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from core.models.channel import RadioChannel
 from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
@@ -23,6 +25,7 @@ class SequenceOrganizer:
         primary_channels: list[RadioChannel],
         target_spec: TargetRadioSpec,
         custom_templates: dict[str, list[RadioChannel]] | None = None,
+        template_manager: Any | None = None,
         deduplicate: bool = True,
     ) -> Codeplug:
         """Merge sequence blocks, filter against radio hardware specs, and renumber."""
@@ -30,14 +33,19 @@ class SequenceOrganizer:
         raw_combined: list[RadioChannel] = []
 
         for key in sequence_keys:
-            if key == "ROUTE_PLAN" or key == "PROXIMITY_PLAN" or key == "AVIATION_BLOCK":
+            if key in {"ROUTE_PLAN", "PROXIMITY_PLAN", "AVIATION_BLOCK"}:
                 raw_combined.extend(primary_channels)
-            elif key == "TEMPLATE:builtin_calling_channels":
-                raw_combined.extend(get_national_calling_channels())
-            elif key == "TEMPLATE:builtin_noaa_wx_channels":
-                raw_combined.extend(get_noaa_wx_channels())
             elif key in custom_map:
                 raw_combined.extend(custom_map[key])
+            elif key.startswith("TEMPLATE:"):
+                tpl_id = key.split(":", 1)[1]
+                if template_manager and hasattr(template_manager, "has_template") and template_manager.has_template(tpl_id):
+                    raw_combined.extend(template_manager.get_template_channels(tpl_id))
+                elif tpl_id in {"calling_channels", "builtin_calling_channels"}:
+                    raw_combined.extend(get_national_calling_channels())
+                elif tpl_id in {"noaa_wx_channels", "builtin_noaa_wx_channels"}:
+                    raw_combined.extend(get_noaa_wx_channels())
+
 
         # 1. Filter against radio supported bands and modes
         filtered = filter_channels_for_radio(raw_combined, target_spec)

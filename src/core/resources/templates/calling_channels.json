@@ -1,0 +1,9 @@
+{
+  "id": "calling_channels",
+  "name": "National Calling Frequencies",
+  "description": "Standard VHF, UHF, 1.25m, 6m, 10m, and GMRS national calling frequencies",
+  "tagText": "CALLING",
+  "tagColorHex": "#FFC107",
+  "fileName": "calling_channels.csv",
+  "rawCsvContent": "Name,Frequency,Mode,Power,Comment\n10m CALL,29.60000,FM,High,10m FM National Simplex Calling Frequency\n6m CALL,52.52500,FM,High,6m FM National Simplex Calling Frequency\n2m CALL,146.52000,FM,High,2m VHF National Simplex Calling Frequency\n1.25m CALL,223.50000,FM,High,1.25m 220MHz National Simplex Calling Frequency\n70cm CALL,446.00000,FM,High,70cm UHF National Simplex Calling Frequency\nGMRS CALL,462.67500,FM,High,GMRS Channel 20 / Emergency Calling\n"
+}

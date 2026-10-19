@@ -1,0 +1,9 @@
+{
+  "id": "noaa_wx_channels",
+  "name": "NOAA Weather Radio Channels",
+  "description": "Standard 7 NOAA Weather Radio WX 1-7 channels (162.400-162.550 MHz)",
+  "tagText": "WX",
+  "tagColorHex": "#2196F3",
+  "fileName": "noaa_wx_channels.csv",
+  "rawCsvContent": "Name,Frequency,Mode,Power,Comment\nNOAA WX 1,162.55000,FM,Low,NOAA Weather Radio 162.550 MHz\nNOAA WX 2,162.40000,FM,Low,NOAA Weather Radio 162.400 MHz\nNOAA WX 3,162.47500,FM,Low,NOAA Weather Radio 162.475 MHz\nNOAA WX 4,162.42500,FM,Low,NOAA Weather Radio 162.425 MHz\nNOAA WX 5,162.45000,FM,Low,NOAA Weather Radio 162.450 MHz\nNOAA WX 6,162.50000,FM,Low,NOAA Weather Radio 162.500 MHz\nNOAA WX 7,162.52500,FM,Low,NOAA Weather Radio 162.525 MHz\n"
+}

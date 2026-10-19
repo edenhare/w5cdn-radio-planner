@@ -18,6 +18,7 @@ from cli.ui.renderers import (
     render_split_summary,
 )
 from cli.wizard.radio_selector import select_target_radio_hierarchical
+from cli.wizard.sequence_editor import select_and_sequence_blocks
 from cli.wizard.waypoint_editor import validate_and_edit_route
 from core.config.paths import get_recipes_dir, initialize_startup_environment
 from core.config.recipe import (
@@ -39,7 +40,7 @@ from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
 from core.models.template import PresetTemplateFile
 from core.providers.airports import AirportsProvider
-from core.providers.geocoding import GeocodingProvider, GeoPoint
+from core.providers.geocoding import GeocodingProvider, GeoPoint, haversine_distance
 from core.providers.radio_id import RadioIdProvider
 from core.providers.repeaterbook import RepeaterBookProvider
 from core.sanitizers.sanitizer import DataSanitizer
@@ -141,9 +142,46 @@ class InteractiveWizard:
             return
         waypoints = validated
 
-        corridor_width = float(Prompt.ask("Corridor search width in miles", default="25.0"))
-        include_simplex = Confirm.ask("Include National Calling & Simplex frequencies?", default=True)
+        # Clear screen and display top-level banner with summary of waypoint count & route distance
+        self.console.clear()
+        render_header(self.console)
 
+        total_route_miles = 0.0
+        prev_pt = None
+        for wp in waypoints:
+            try:
+                pt = self.geocoder.resolve(wp)
+                if prev_pt:
+                    total_route_miles += haversine_distance(prev_pt, pt, unit="MILES")
+                prev_pt = pt
+            except Exception:
+                pass
+
+        summary_panel = Panel(
+            f"[bold white]Waypoints Count:[/bold white] [bold cyan]{len(waypoints)} stops[/bold cyan]   |   "
+            f"[bold white]Estimated Highway Distance:[/bold white] [bold green]{total_route_miles:.1f} miles[/bold green]\n"
+            f"[dim]Travel Corridor Path:[/dim] [white]{' ➜ '.join(waypoints)}[/white]",
+            title="[bold green]Highway Route Corridor Overview[/bold green]",
+            border_style="cyan",
+        )
+        self.console.print(summary_panel)
+
+        # Prompt for corridor search width
+        corridor_width = float(Prompt.ask("\nCorridor search width in miles", default="25.0"))
+        include_simplex = Confirm.ask("Include Simplex & National Calling frequencies?", default=True)
+
+        # Interactive sequence block and template organizer BEFORE radio selection
+        sequence_keys = select_and_sequence_blocks(
+            self.console,
+            self.template_mgr,
+            primary_block_key="ROUTE_PLAN",
+            primary_block_title="Highway Route Corridor Repeaters",
+        )
+        if not sequence_keys:
+            self.console.print("[yellow]Sequence selection cancelled.[/yellow]")
+            return
+
+        # Select target radio hardware
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
         if not radio_id:
             self.console.print("[yellow]Radio selection cancelled.[/yellow]")
@@ -166,11 +204,7 @@ class InteractiveWizard:
                 bands=radio_spec.supportedBands,
                 modes=radio_spec.supportedModes,
             ),
-            sequence_order=[
-                "TEMPLATE:builtin_calling_channels",
-                "ROUTE_PLAN",
-                "TEMPLATE:builtin_noaa_wx_channels",
-            ],
+            sequence_order=sequence_keys,
         )
 
         # Show intermittent configuration preview
@@ -192,6 +226,7 @@ class InteractiveWizard:
                 sequence_keys=recipe.sequence_order,
                 primary_channels=res.channels,
                 target_spec=radio_spec,
+                template_manager=self.template_mgr,
             )
 
         # Show Split Summary
@@ -352,7 +387,7 @@ class InteractiveWizard:
             table.add_column("Name", style="bold white")
             table.add_column("Badge Tag", style="magenta")
             table.add_column("Channels", justify="right", style="green", width=10)
-            table.add_column("Source", justify="center", width=10)
+            table.add_column("Source", justify="center", width=14)
 
             for idx, tpl in enumerate(templates, start=1):
                 try:
@@ -360,8 +395,8 @@ class InteractiveWizard:
                     ch_count = len(chans)
                 except Exception:
                     ch_count = 0
-                is_builtin = tpl.id.startswith("builtin_")
-                source_str = "[cyan]Built-in[/cyan]" if is_builtin else "[green]Custom[/green]"
+                is_user = self.template_mgr.is_user_template(tpl.id)
+                source_str = "[green]User Custom[/green]" if is_user else "[cyan]App Default[/cyan]"
                 table.add_row(
                     str(idx),
                     tpl.id,
@@ -375,12 +410,14 @@ class InteractiveWizard:
             self.console.print("\n[bold cyan]Template Manager Actions:[/bold cyan]")
             self.console.print("  [V] View / Inspect Template Channels")
             self.console.print("  [E] Export Template Directly to Radio Codeplug")
+            self.console.print("  [D] Edit / Customize Template (Copy to User Config)")
             self.console.print("  [I] Import / Add Custom CSV Channel Template")
+            self.console.print("  [X] Delete User Custom Template")
             self.console.print("  [B] Back to Main Menu")
 
             act = Prompt.ask(
                 "Choose action",
-                choices=["V", "v", "E", "e", "I", "i", "B", "b"],
+                choices=["V", "v", "E", "e", "D", "d", "I", "i", "X", "x", "B", "b"],
                 default="B",
             ).upper()
 
@@ -418,6 +455,52 @@ class InteractiveWizard:
                         sequence_order=[f"TEMPLATE:{tpl.id}"],
                     )
                     self._channel_review_and_export_loop(codeplug, recipe, spec)
+            elif act == "D":
+                pick = IntPrompt.ask(f"Select template number to edit/customize (1-{len(templates)})", default=1)
+                if 1 <= pick <= len(templates):
+                    tpl = templates[pick - 1]
+                    is_user = self.template_mgr.is_user_template(tpl.id)
+                    if not is_user:
+                        self.console.print(
+                            f"[cyan]Customizing app default template '{tpl.name}'.\n"
+                            f"An editable copy will be saved to ~/.config/radioplanner/templates/{tpl.id}.json\n"
+                            f"which will override the app default template.[/cyan]"
+                        )
+                    else:
+                        self.console.print(
+                            f"[cyan]Editing user template '{tpl.name}' (~/.config/radioplanner/templates/{tpl.id}.json):[/cyan]"
+                        )
+                    new_name = Prompt.ask("Template Display Name", default=tpl.name)
+                    new_tag = Prompt.ask("Badge Tag Label", default=tpl.tagText).upper()
+                    new_desc = Prompt.ask("Description", default=tpl.description)
+
+                    replace_csv = Confirm.ask(
+                        "Do you want to update/replace the channel CSV content from a file?", default=False
+                    )
+                    raw_csv = tpl.rawCsvContent
+                    csv_filename = tpl.fileName
+                    if replace_csv:
+                        csv_path_str = Prompt.ask("Enter path to new CSV channel file")
+                        csv_path = Path(csv_path_str.strip())
+                        if csv_path.is_file():
+                            raw_csv = csv_path.read_text(encoding="utf-8")
+                            csv_filename = csv_path.name
+                        else:
+                            self.console.print(
+                                f"[yellow]File not found: {csv_path}. Retaining existing channel data.[/yellow]"
+                            )
+
+                    updated_tpl = PresetTemplateFile(
+                        id=tpl.id,
+                        name=new_name,
+                        description=new_desc,
+                        tagText=new_tag,
+                        tagColorHex=tpl.tagColorHex,
+                        fileName=csv_filename,
+                        rawCsvContent=raw_csv,
+                    )
+                    saved_path = self.template_mgr.save_template(updated_tpl)
+                    self.console.print(f"[bold green]✔ Template '{updated_tpl.name}' saved to: {saved_path}[/bold green]")
             elif act == "I":
                 self.console.print("\n[bold cyan]Import Custom CSV Template:[/bold cyan]")
                 csv_path_str = Prompt.ask("Enter path to CSV channel file (e.g. ./my_channels.csv)")
@@ -441,6 +524,29 @@ class InteractiveWizard:
                 )
                 self.template_mgr.save_template(new_tpl)
                 self.console.print(f"[bold green]✔ Template '{name}' imported and saved![/bold green]")
+            elif act == "X":
+                user_tpls = [t for t in templates if self.template_mgr.is_user_template(t.id)]
+                if not user_tpls:
+                    self.console.print(
+                        "[yellow]No custom user templates found to delete. (App default templates cannot be deleted).[/yellow]"
+                    )
+                    continue
+                self.console.print("\n[bold cyan]Custom User Templates:[/bold cyan]")
+                for i, t in enumerate(user_tpls, start=1):
+                    self.console.print(f"  [{i}] {t.name} (`{t.id}`) [{t.tagText}]")
+                pick_del = IntPrompt.ask(f"Select template to delete (1-{len(user_tpls)})", default=1)
+                if 1 <= pick_del <= len(user_tpls):
+                    to_del = user_tpls[pick_del - 1]
+                    if Confirm.ask(
+                        f"Are you sure you want to delete user template '{to_del.name}' (`{to_del.id}`)?", default=False
+                    ):
+                        self.template_mgr.delete_user_template(to_del.id)
+                        if self.template_mgr.has_template(to_del.id):
+                            self.console.print(
+                                f"[green]✔ User template '{to_del.id}' deleted. Restored application default template.[/green]"
+                            )
+                        else:
+                            self.console.print(f"[green]✔ User template '{to_del.id}' deleted.[/green]")
 
     def _flow_radios_manager(self) -> None:
         """Mode 5: Radios & Hardware Specifications Manager."""

@@ -62,22 +62,47 @@ def test_radio_manager_save_and_delete_user_radio(tmp_path: Path):
 
 
 def test_template_manager_builtin_and_custom(tmp_path: Path):
-    """Verify TemplateManager lists built-in and user custom templates."""
+    """Verify TemplateManager lists app resources and user custom templates, with override support."""
     tpl_dir = tmp_path / "templates"
     tpl_mgr = TemplateManager(custom_templates_dir=tpl_dir)
 
     templates = tpl_mgr.list_templates()
     tpl_ids = {t.id for t in templates}
-    assert "builtin_calling_channels" in tpl_ids
-    assert "builtin_noaa_wx_channels" in tpl_ids
+    assert "calling_channels" in tpl_ids
+    assert "noaa_wx_channels" in tpl_ids
 
-    # Check built-in channels
-    calling_chans = tpl_mgr.get_template_channels("builtin_calling_channels")
+    # Check template channels and legacy alias resolution
+    calling_chans = tpl_mgr.get_template_channels("calling_channels")
     assert len(calling_chans) >= 6
-    wx_chans = tpl_mgr.get_template_channels("builtin_noaa_wx_channels")
-    assert len(wx_chans) == 7
+    legacy_calling = tpl_mgr.get_template_channels("builtin_calling_channels")
+    assert len(legacy_calling) == len(calling_chans)
 
-    # Add custom template
+    wx_chans = tpl_mgr.get_template_channels("noaa_wx_channels")
+    assert len(wx_chans) == 7
+    assert tpl_mgr.has_template("builtin_noaa_wx_channels")
+
+    # App template is initially not a user template
+    assert not tpl_mgr.is_user_template("calling_channels")
+
+    # Copy to user directory for customization
+    tpl_mgr.copy_to_user_directory("calling_channels")
+    assert tpl_mgr.is_user_template("calling_channels")
+    user_file = tpl_dir / "calling_channels.json"
+    assert user_file.is_file()
+
+    # Modify user template to verify precedence
+    overridden = tpl_mgr.get_template("calling_channels")
+    updated = overridden.model_copy(update={"name": "Customized Calling Channels"})
+    tpl_mgr.save_template(updated)
+    assert tpl_mgr.get_template("calling_channels").name == "Customized Calling Channels"
+
+    # Delete user template override; app default is restored
+    assert tpl_mgr.delete_user_template("calling_channels") is True
+    assert not tpl_mgr.is_user_template("calling_channels")
+    assert tpl_mgr.has_template("calling_channels")
+    assert tpl_mgr.get_template("calling_channels").name == "National Calling Frequencies"
+
+    # Add new custom template
     csv_data = "Name,Frequency,Mode,Power,Comment\nSAR_1,155.160,FM,High,Search and Rescue\n"
     custom_tpl = PresetTemplateFile(
         id="sar_ops",
@@ -89,6 +114,7 @@ def test_template_manager_builtin_and_custom(tmp_path: Path):
         rawCsvContent=csv_data,
     )
     tpl_mgr.save_template(custom_tpl)
+    assert tpl_mgr.is_user_template("sar_ops")
 
     # Reload and verify
     tpl_mgr.reload()
@@ -98,6 +124,11 @@ def test_template_manager_builtin_and_custom(tmp_path: Path):
     assert len(sar_chans) == 1
     assert sar_chans[0].name == "SAR_1"
     assert sar_chans[0].rxFreq == 155.160
+
+    # Delete custom template
+    assert tpl_mgr.delete_user_template("sar_ops") is True
+    assert not tpl_mgr.has_template("sar_ops")
+
 
 
 def test_preferences_manager(tmp_path: Path):
