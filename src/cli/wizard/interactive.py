@@ -69,49 +69,55 @@ class InteractiveWizard:
 
     def start(self) -> None:
         """Main interaction loop."""
-        if self.startup_actions:
-            items = "\n".join(f"  [green]*[/green] {act}" for act in self.startup_actions)
-            self.console.print(
-                Panel(
-                    f"[white]First-time initialization completed in [bold cyan]~/.config/radioplanner/[/bold cyan]:[/white]\n\n{items}",
-                    title="[bold green]Workspace Ready[/bold green]",
-                    border_style="green",
+        try:
+            if self.startup_actions:
+                items = "\n".join(f"  [green]*[/green] {act}" for act in self.startup_actions)
+                self.console.print(
+                    Panel(
+                        f"[white]First-time initialization completed in [bold cyan]~/.config/radioplanner/[/bold cyan]:[/white]\n\n{items}",
+                        title="[bold green]Workspace Ready[/bold green]",
+                        border_style="green",
+                    )
                 )
-            )
-            self.startup_actions = []
+                self.startup_actions = []
 
-        while True:
-            render_header(self.console)
-            self.console.print("\n[bold cyan]Select Application Operating Mode:[/bold cyan]")
-            self.console.print("  [1] Highway Route Corridor Mode (Sequenced repeaters along route)")
-            self.console.print("  [2] Radial Proximity Ring Search Mode (5 Concentric distance bands)")
-            self.console.print("  [3] Local Aviation & Airport Planner Mode (CTAF, Tower, Ground, ATIS)")
-            self.console.print("  [4] Replay Saved Configuration Recipe")
-            self.console.print("  [5] Radios & Hardware Manager")
-            self.console.print("  [6] User Preferences & API Tokens")
-            self.console.print("  [0] Exit")
+            while True:
+                render_header(self.console)
+                self.console.print("\n[bold cyan]Select Application Operating Mode:[/bold cyan]")
+                self.console.print("  [1] Highway Route Corridor Mode (Sequenced repeaters along route)")
+                self.console.print("  [2] Radial Proximity Ring Search Mode (5 Concentric distance bands)")
+                self.console.print("  [3] Local Aviation & Airport Planner Mode (CTAF, Tower, Ground, ATIS)")
+                self.console.print("  [4] Replay Saved Configuration Recipe")
+                self.console.print("  [5] Radios & Hardware Manager")
+                self.console.print("  [6] User Preferences & API Tokens")
+                self.console.print("  [0] Exit")
 
-            choice = Prompt.ask(
-                "\nChoose an option",
-                choices=["0", "1", "2", "3", "4", "5", "6"],
-                default="1",
-            )
+                choice = Prompt.ask(
+                    "\nChoose an option",
+                    choices=["0", "1", "2", "3", "4", "5", "6"],
+                    default="1",
+                )
 
-            if choice == "0":
-                self.console.print("[green]Goodbye![/green]")
-                break
-            elif choice == "1":
-                self._flow_route_corridor()
-            elif choice == "2":
-                self._flow_proximity()
-            elif choice == "3":
-                self._flow_aviation()
-            elif choice == "4":
-                self._flow_replay_recipe()
-            elif choice == "5":
-                self._flow_radios_manager()
-            elif choice == "6":
-                self._flow_preferences()
+                try:
+                    if choice == "0":
+                        self.console.print("[green]Goodbye![/green]")
+                        break
+                    elif choice == "1":
+                        self._flow_route_corridor()
+                    elif choice == "2":
+                        self._flow_proximity()
+                    elif choice == "3":
+                        self._flow_aviation()
+                    elif choice == "4":
+                        self._flow_replay_recipe()
+                    elif choice == "5":
+                        self._flow_radios_manager()
+                    elif choice == "6":
+                        self._flow_preferences()
+                except KeyboardInterrupt:
+                    self.console.print("\n[yellow]Submenu cancelled. Returning to main menu.[/yellow]")
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Operation cancelled by user. Goodbye![/yellow]")
 
     def _select_target_radio(self, default_id: str | None = None) -> str:
         """Prompt user to select a target radio from available specifications."""

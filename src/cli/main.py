@@ -64,76 +64,70 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    # 1. List Radios
-    if args.list_radios:
-        render_header(console, title="RadioPlanner", subtitle="Hardware Specifications")
-        mgr = RadioManager()
-        radios = mgr.list_radios()
-        console.print(
-            f"\n[bold cyan]Registered Radio Models ({len(radios)}):[/bold cyan]"
-        )
-        for r in radios:
-            console.print(
-                f"- [bold white]{r.brand} {r.model}[/bold white] (ID: [green]{r.id}[/green])\n"
-                f"  Programmer: {r.programmerType} | Max Channels: {r.maxChannels} | Name Limit: {r.maxNameLength} chars\n"
-                f"  Bands: {', '.join(r.supportedBands)} | Modes: {', '.join(r.supportedModes)}\n"
-            )
-        return 0
-
-    # 2. Validate YAML Recipe
-    if args.validate:
-        target_path = Path(args.validate).resolve()
-        try:
-            recipe = RadioPlannerRecipe.from_yaml_file(target_path)
-            errors = recipe.validate_for_execution()
-            if errors:
+    try:
+        # 1. List Radios
+        if args.list_radios:
+            render_header(console, title="RadioPlanner", subtitle="Hardware Specifications")
+            mgr = RadioManager()
+            radios = mgr.list_radios()
+            console.print(f"\n[bold cyan]Registered Radio Models ({len(radios)}):[/bold cyan]")
+            for r in radios:
                 console.print(
-                    f"[bold red]Validation failed for {target_path}:[/bold red]"
+                    f"- [bold white]{r.brand} {r.model}[/bold white] (ID: [green]{r.id}[/green])\n"
+                    f"  Programmer: {r.programmerType} | Max Channels: {r.maxChannels} | Name Limit: {r.maxNameLength} chars\n"
+                    f"  Bands: {', '.join(r.supportedBands)} | Modes: {', '.join(r.supportedModes)}\n"
                 )
-                for err in errors:
-                    console.print(f"  - [red]{err}[/red]")
+            return 0
+
+        # 2. Validate YAML Recipe
+        if args.validate:
+            target_path = Path(args.validate).resolve()
+            try:
+                recipe = RadioPlannerRecipe.from_yaml_file(target_path)
+                errors = recipe.validate_for_execution()
+                if errors:
+                    console.print(f"[bold red]Validation failed for {target_path}:[/bold red]")
+                    for err in errors:
+                        console.print(f"  - [red]{err}[/red]")
+                    return 1
+                console.print(
+                    f"[bold green]✔ Configuration '{target_path.name}' is valid and ready to run![/bold green]"
+                )
+                return 0
+            except YamlDiagnosticError as err:
+                render_yaml_error(console, err)
                 return 1
-            console.print(
-                f"[bold green]✔ Configuration '{target_path.name}' is valid and ready to run![/bold green]"
-            )
-            return 0
-        except YamlDiagnosticError as err:
-            render_yaml_error(console, err)
-            return 1
-        except Exception as exc:
-            console.print(f"[bold red]Error: {exc}[/bold red]")
-            return 1
+            except Exception as exc:
+                console.print(f"[bold red]Error: {exc}[/bold red]")
+                return 1
 
-    # 3. Direct Execution via --config
-    if args.config:
-        target_path = Path(args.config).resolve()
-        try:
-            recipe = RadioPlannerRecipe.from_yaml_file(target_path)
-            render_header(
-                console, title="RadioPlanner", subtitle=f"Running Recipe: {recipe.name}"
-            )
-            runner = RecipeRunner()
-            with console.status(
-                f"[bold green]Executing recipe '{recipe.name}'...[/bold green]"
-            ):
-                codeplug, out_file = runner.run(recipe)
+        # 3. Direct Execution via --config
+        if args.config:
+            target_path = Path(args.config).resolve()
+            try:
+                recipe = RadioPlannerRecipe.from_yaml_file(target_path)
+                render_header(console, title="RadioPlanner", subtitle=f"Running Recipe: {recipe.name}")
+                runner = RecipeRunner()
+                with console.status(f"[bold green]Executing recipe '{recipe.name}'...[/bold green]"):
+                    codeplug, out_file = runner.run(recipe)
 
-            console.print(
-                f"\n[bold green]✔ Codeplug successfully exported to: {out_file}[/bold green]"
-            )
-            render_review_table(console, codeplug)
-            return 0
-        except YamlDiagnosticError as err:
-            render_yaml_error(console, err)
-            return 1
-        except Exception as exc:
-            console.print(f"[bold red]Execution error: {exc}[/bold red]")
-            return 1
+                console.print(f"\n[bold green]✔ Codeplug successfully exported to: {out_file}[/bold green]")
+                render_review_table(console, codeplug)
+                return 0
+            except YamlDiagnosticError as err:
+                render_yaml_error(console, err)
+                return 1
+            except Exception as exc:
+                console.print(f"[bold red]Execution error: {exc}[/bold red]")
+                return 1
 
-    # 4. Interactive Wizard (Default)
-    wizard = InteractiveWizard(console=console)
-    wizard.start()
-    return 0
+        # 4. Interactive Wizard (Default)
+        wizard = InteractiveWizard(console=console)
+        wizard.start()
+        return 0
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Operation cancelled by user. Goodbye![/yellow]")
+        return 0
 
 
 if __name__ == "__main__":

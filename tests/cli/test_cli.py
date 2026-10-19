@@ -51,3 +51,11 @@ def test_cli_run_config(tmp_path: Path):
     with patch.object(sys, "argv", ["radioplanner", "--config", valid_file]):
         ret = main()
         assert ret == 0
+
+
+def test_cli_keyboard_interrupt_graceful_exit():
+    """Verify Ctrl+C (KeyboardInterrupt) exits gracefully with return code 0."""
+    with patch("cli.main.InteractiveWizard.start", side_effect=KeyboardInterrupt):
+        with patch.object(sys, "argv", ["radioplanner"]):
+            ret = main()
+            assert ret == 0
