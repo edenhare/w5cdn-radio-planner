@@ -17,9 +17,7 @@ def test_route_corridor_engine_good_data():
     """Good Data: Calculate travel corridor repeaters from Tyler, TX -> Shreveport, LA -> Jackson, MS."""
     geocoder = GeocodingProvider()
     repeater_provider = RepeaterBookProvider()
-    all_repeaters = repeater_provider.get_repeaters_near(
-        32.0, -94.0, radius_miles=500.0
-    )
+    all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
 
     engine = RouteCorridorEngine(geocoder=geocoder)
     result = engine.plan_route(
@@ -51,9 +49,7 @@ def test_proximity_engine_good_data():
     """Good Data: 5 concentric distance bands around Dallas, TX."""
     geocoder = GeocodingProvider()
     repeater_provider = RepeaterBookProvider()
-    all_repeaters = repeater_provider.get_repeaters_near(
-        32.7, -96.8, radius_miles=100.0
-    )
+    all_repeaters = repeater_provider.get_repeaters_near(32.7, -96.8, radius_miles=100.0)
 
     engine = ProximityEngine(geocoder=geocoder)
     result = engine.search_proximity(
@@ -67,9 +63,7 @@ def test_proximity_engine_good_data():
     assert len(result.rings) == 5
     assert len(result.channels) > 0
     # Dallas repeaters should be in Ring 1 or 2
-    dallas_in_ring_1 = any(
-        "dallas" in (ch.city or "").lower() for ch in result.rings[1]
-    )
+    dallas_in_ring_1 = any("dallas" in (ch.city or "").lower() for ch in result.rings[1])
     assert dallas_in_ring_1
 
 

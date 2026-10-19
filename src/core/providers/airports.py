@@ -14,21 +14,11 @@ OFFLINE_AIRFIELDS: list[AirfieldRecord] = [
         longitude=-95.4024,
         municipality="Tyler",
         frequencies=[
-            AviationFrequency(
-                type="ATIS", description="Tyler Pounds ATIS", frequencyMhz=126.250
-            ),
-            AviationFrequency(
-                type="CTAF", description="Tower / CTAF", frequencyMhz=120.100
-            ),
-            AviationFrequency(
-                type="TWR", description="Pounds Tower", frequencyMhz=120.100
-            ),
-            AviationFrequency(
-                type="GND", description="Ground Control", frequencyMhz=121.900
-            ),
-            AviationFrequency(
-                type="APP", description="Regional Approach", frequencyMhz=128.750
-            ),
+            AviationFrequency(type="ATIS", description="Tyler Pounds ATIS", frequencyMhz=126.250),
+            AviationFrequency(type="CTAF", description="Tower / CTAF", frequencyMhz=120.100),
+            AviationFrequency(type="TWR", description="Pounds Tower", frequencyMhz=120.100),
+            AviationFrequency(type="GND", description="Ground Control", frequencyMhz=121.900),
+            AviationFrequency(type="APP", description="Regional Approach", frequencyMhz=128.750),
         ],
     ),
     AirfieldRecord(
@@ -38,18 +28,10 @@ OFFLINE_AIRFIELDS: list[AirfieldRecord] = [
         longitude=-94.7115,
         municipality="Longview",
         frequencies=[
-            AviationFrequency(
-                type="ATIS", description="Longview ATIS", frequencyMhz=119.850
-            ),
-            AviationFrequency(
-                type="CTAF", description="Tower / CTAF", frequencyMhz=119.200
-            ),
-            AviationFrequency(
-                type="TWR", description="Gregg Tower", frequencyMhz=119.200
-            ),
-            AviationFrequency(
-                type="GND", description="Ground Control", frequencyMhz=121.600
-            ),
+            AviationFrequency(type="ATIS", description="Longview ATIS", frequencyMhz=119.850),
+            AviationFrequency(type="CTAF", description="Tower / CTAF", frequencyMhz=119.200),
+            AviationFrequency(type="TWR", description="Gregg Tower", frequencyMhz=119.200),
+            AviationFrequency(type="GND", description="Ground Control", frequencyMhz=121.600),
         ],
     ),
     AirfieldRecord(
@@ -59,18 +41,10 @@ OFFLINE_AIRFIELDS: list[AirfieldRecord] = [
         longitude=-93.8256,
         municipality="Shreveport",
         frequencies=[
-            AviationFrequency(
-                type="ATIS", description="Shreveport ATIS", frequencyMhz=128.520
-            ),
-            AviationFrequency(
-                type="CTAF", description="Tower / CTAF", frequencyMhz=121.400
-            ),
-            AviationFrequency(
-                type="TWR", description="Shreveport Tower", frequencyMhz=121.400
-            ),
-            AviationFrequency(
-                type="GND", description="Ground Control", frequencyMhz=121.120
-            ),
+            AviationFrequency(type="ATIS", description="Shreveport ATIS", frequencyMhz=128.520),
+            AviationFrequency(type="CTAF", description="Tower / CTAF", frequencyMhz=121.400),
+            AviationFrequency(type="TWR", description="Shreveport Tower", frequencyMhz=121.400),
+            AviationFrequency(type="GND", description="Ground Control", frequencyMhz=121.120),
         ],
     ),
     AirfieldRecord(
@@ -80,18 +54,10 @@ OFFLINE_AIRFIELDS: list[AirfieldRecord] = [
         longitude=-96.8518,
         municipality="Dallas",
         frequencies=[
-            AviationFrequency(
-                type="ATIS", description="Love ATIS", frequencyMhz=120.150
-            ),
-            AviationFrequency(
-                type="CTAF", description="Tower / CTAF", frequencyMhz=119.000
-            ),
-            AviationFrequency(
-                type="TWR", description="Love Tower", frequencyMhz=119.000
-            ),
-            AviationFrequency(
-                type="GND", description="Ground Control", frequencyMhz=121.750
-            ),
+            AviationFrequency(type="ATIS", description="Love ATIS", frequencyMhz=120.150),
+            AviationFrequency(type="CTAF", description="Tower / CTAF", frequencyMhz=119.000),
+            AviationFrequency(type="TWR", description="Love Tower", frequencyMhz=119.000),
+            AviationFrequency(type="GND", description="Ground Control", frequencyMhz=121.750),
         ],
     ),
 ]
@@ -103,9 +69,7 @@ class AirportsProvider:
     def __init__(self, airfields: list[AirfieldRecord] | None = None):
         self._airfields = airfields if airfields is not None else OFFLINE_AIRFIELDS
 
-    def find_airports_near(
-        self, lat: float, lon: float, radius_miles: float = 35.0
-    ) -> list[AirfieldRecord]:
+    def find_airports_near(self, lat: float, lon: float, radius_miles: float = 35.0) -> list[AirfieldRecord]:
         """Find airports within radius_miles of coordinate point."""
         center = GeoPoint(lat=lat, lon=lon)
         matched = []
@@ -116,9 +80,7 @@ class AirportsProvider:
                 matched.append(airport)
         return matched
 
-    def convert_to_channels(
-        self, airfields: list[AirfieldRecord]
-    ) -> list[RadioChannel]:
+    def convert_to_channels(self, airfields: list[AirfieldRecord]) -> list[RadioChannel]:
         """Convert airfield frequencies to normalized CIR RadioChannel entries."""
         channels: list[RadioChannel] = []
         slot = 1

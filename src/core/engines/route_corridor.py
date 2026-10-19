@@ -40,9 +40,7 @@ class RouteCorridorEngine:
     ) -> RouteCorridorResult:
         """Resolve waypoints, calculate perpendicular cross-track corridor matches, and sort chronologically."""
         if len(waypoint_names) < 2:
-            raise ValueError(
-                "Route corridor requires at least 2 waypoints (origin and destination)."
-            )
+            raise ValueError("Route corridor requires at least 2 waypoints (origin and destination).")
 
         # 1. Resolve waypoints to GeoPoints
         geo_points = [self.geocoder.resolve(name) for name in waypoint_names]
@@ -84,18 +82,13 @@ class RouteCorridorEngine:
                 min_lon = min(start_p.lon, end_p.lon) - 1.0
                 max_lon = max(start_p.lon, end_p.lon) + 1.0
 
-                if not (
-                    min_lat <= r_point.lat <= max_lat
-                    and min_lon <= r_point.lon <= max_lon
-                ):
+                if not (min_lat <= r_point.lat <= max_lat and min_lon <= r_point.lon <= max_lon):
                     continue
 
                 xtrack = cross_track_distance(r_point, start_p, end_p, unit=unit)
                 d_start = haversine_distance(start_p, r_point, unit=unit)
 
-                if xtrack <= corridor_width_miles and d_start <= (
-                    leg_len + corridor_width_miles
-                ):
+                if xtrack <= corridor_width_miles and d_start <= (leg_len + corridor_width_miles):
                     if xtrack < min_xtrack:
                         min_xtrack = xtrack
                         progress = leg_start_dist + d_start

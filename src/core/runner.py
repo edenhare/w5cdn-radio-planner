@@ -34,32 +34,22 @@ class RecipeRunner:
         self.airports_provider = airports_provider or AirportsProvider()
         self.geocoder = geocoder or GeocodingProvider()
 
-    def run(
-        self, recipe: RadioPlannerRecipe, base_output_dir: Path | str | None = None
-    ) -> tuple[Codeplug, Path]:
+    def run(self, recipe: RadioPlannerRecipe, base_output_dir: Path | str | None = None) -> tuple[Codeplug, Path]:
         """Execute a recipe and export the resulting codeplug CSV."""
         errors = recipe.validate_for_execution()
         if errors:
-            raise ValueError(
-                "Recipe validation failed:\n" + "\n".join(f"- {e}" for e in errors)
-            )
+            raise ValueError("Recipe validation failed:\n" + "\n".join(f"- {e}" for e in errors))
 
         # 1. Retrieve target radio spec
         radio_spec = self.radio_manager.get_radio(recipe.radio_target.radio_id)
 
         # Apply recipe band/mode overrides if specified
         if recipe.radio_target.bands:
-            radio_spec = radio_spec.model_copy(
-                update={"supportedBands": recipe.radio_target.bands}
-            )
+            radio_spec = radio_spec.model_copy(update={"supportedBands": recipe.radio_target.bands})
         if recipe.radio_target.modes:
-            radio_spec = radio_spec.model_copy(
-                update={"supportedModes": recipe.radio_target.modes}
-            )
+            radio_spec = radio_spec.model_copy(update={"supportedModes": recipe.radio_target.modes})
         if recipe.radio_target.programmer_format:
-            radio_spec = radio_spec.model_copy(
-                update={"programmerType": recipe.radio_target.programmer_format}
-            )
+            radio_spec = radio_spec.model_copy(update={"programmerType": recipe.radio_target.programmer_format})
 
         # 2. Execute Mode Engine
         date_str = datetime.now().strftime("%m%d%y")
@@ -67,9 +57,7 @@ class RecipeRunner:
         if recipe.mode == "ROUTE_CORRIDOR":
             corridor = recipe.corridor  # guaranteed not None by validation
             engine = RouteCorridorEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(
-                32.0, -94.0, radius_miles=500.0
-            )
+            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
 
             result = engine.plan_route(
                 waypoint_names=corridor.waypoints,
@@ -78,22 +66,14 @@ class RecipeRunner:
                 include_simplex=recipe.radio_target.include_simplex,
             )
             primary_channels = result.channels
-            start_city = DataSanitizer.sanitize_filename(
-                corridor.waypoints[0].split(",")[0]
-            )
-            end_city = DataSanitizer.sanitize_filename(
-                corridor.waypoints[-1].split(",")[0]
-            )
-            default_filename = (
-                f"{start_city}-{end_city}-route-{radio_spec.id}-{date_str}.csv"
-            )
+            start_city = DataSanitizer.sanitize_filename(corridor.waypoints[0].split(",")[0])
+            end_city = DataSanitizer.sanitize_filename(corridor.waypoints[-1].split(",")[0])
+            default_filename = f"{start_city}-{end_city}-route-{radio_spec.id}-{date_str}.csv"
 
         elif recipe.mode == "PROXIMITY_SEARCH":
             proximity = recipe.proximity
             engine = ProximityEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(
-                32.0, -94.0, radius_miles=500.0
-            )
+            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
 
             result = engine.search_proximity(
                 center_location=proximity.center_location,
@@ -102,32 +82,24 @@ class RecipeRunner:
                 include_simplex=recipe.radio_target.include_simplex,
             )
             primary_channels = result.channels
-            center_city = DataSanitizer.sanitize_filename(
-                proximity.center_location.split(",")[0]
-            )
+            center_city = DataSanitizer.sanitize_filename(proximity.center_location.split(",")[0])
             default_filename = f"{center_city}-proximity-{radio_spec.id}-{date_str}.csv"
 
         elif recipe.mode == "AVIATION_PLANNER":
             aviation = recipe.aviation
-            engine = AviationEngine(
-                geocoder=self.geocoder, airports_provider=self.airports_provider
-            )
+            engine = AviationEngine(geocoder=self.geocoder, airports_provider=self.airports_provider)
 
             result = engine.plan_aviation(
                 center_location=aviation.center_location,
                 radius_miles=aviation.radius_miles,
             )
             primary_channels = result.channels
-            center_city = DataSanitizer.sanitize_filename(
-                aviation.center_location.split(",")[0]
-            )
+            center_city = DataSanitizer.sanitize_filename(aviation.center_location.split(",")[0])
             default_filename = f"{center_city}-aviation-{radio_spec.id}-{date_str}.csv"
 
         else:
             primary_channels = []
-            default_filename = (
-                f"{DataSanitizer.sanitize_filename(recipe.name)}-{date_str}.csv"
-            )
+            default_filename = f"{DataSanitizer.sanitize_filename(recipe.name)}-{date_str}.csv"
 
         # 3. Assemble Codeplug using sequence positions
         codeplug = SequenceOrganizer.assemble(

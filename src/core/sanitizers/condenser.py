@@ -79,9 +79,7 @@ class NameCondenser:
         # 2. If still exceeds limit, remove spaces if not allowed or if needed to fit
         if len(result) > spec.maxNameLength and (not spec.allowSpaces or " " in result):
             # Try removing spaces between words
-            result_no_spaces = "".join(
-                part for part in re.split(r"\s+", result) if part
-            )
+            result_no_spaces = "".join(part for part in re.split(r"\s+", result) if part)
             if len(result_no_spaces) <= spec.maxNameLength or not spec.allowSpaces:
                 result = result_no_spaces
 

@@ -13,10 +13,9 @@ class UserPreferences(BaseModel):
     callsign: str = Field(default="N0CALL", description="Amateur radio callsign")
     operatorName: str = Field(default="Radio Operator", description="Operator name")
     primaryDmrId: str | None = Field(default=None, description="Official 7-digit DMR Radio ID")
-    timeFormat: str = Field(default="TWELVE_HOUR", description="TWELVE_HOUR or TWENTY_FOUR_HOUR")
     distanceUnit: str = Field(default="MILES", description="MILES or KILOMETERS")
     language: str = Field(default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN")
-    defaultRadioId: str = Field(default="chirp_standard", description="Default target radio spec ID")
+    defaultRadioId: str | None = Field(default=None, description="Default target radio spec ID (or None)")
 
     @field_validator("callsign", mode="before")
     @classmethod
@@ -26,6 +25,39 @@ class UserPreferences(BaseModel):
             cleaned = v.strip().upper()
             return cleaned if cleaned else "N0CALL"
         return v
+
+    @field_validator("distanceUnit", mode="before")
+    @classmethod
+    def normalize_distance_unit(cls, v: str) -> str:
+        """Allow 'm' for miles, 'k' for kilometers, or standard full names."""
+        if isinstance(v, str):
+            val = v.strip().lower()
+            if val in {"m", "miles", "mile"}:
+                return "MILES"
+            elif val in {"k", "km", "kilometers", "kilometer"}:
+                return "KILOMETERS"
+        return "MILES"
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def normalize_language(cls, v: str | int) -> str:
+        """Allow number selection 1-4 or uppercase language names."""
+        mapping = {
+            "1": "ENGLISH",
+            "2": "SPANISH",
+            "3": "FRENCH",
+            "4": "GERMAN",
+            1: "ENGLISH",
+            2: "SPANISH",
+            3: "FRENCH",
+            4: "GERMAN",
+        }
+        if str(v).strip() in mapping:
+            return mapping[str(v).strip()]
+        val_upper = str(v).strip().upper()
+        if val_upper in {"ENGLISH", "SPANISH", "FRENCH", "GERMAN"}:
+            return val_upper
+        return "ENGLISH"
 
     def update_settings(self, **kwargs) -> UserPreferences:
         """Return a newly validated UserPreferences instance with updated fields."""

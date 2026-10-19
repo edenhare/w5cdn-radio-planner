@@ -50,17 +50,12 @@ def haversine_distance(p1: GeoPoint, p2: GeoPoint, unit: str = "MILES") -> float
     dlat = lat2 - lat1
     dlon = lon2 - lon1
 
-    a = (
-        math.sin(dlat / 2.0) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2.0) ** 2
-    )
+    a = math.sin(dlat / 2.0) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2.0) ** 2
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return r * c
 
 
-def cross_track_distance(
-    point: GeoPoint, start: GeoPoint, end: GeoPoint, unit: str = "MILES"
-) -> float:
+def cross_track_distance(point: GeoPoint, start: GeoPoint, end: GeoPoint, unit: str = "MILES") -> float:
     """Calculate cross-track perpendicular distance from point to great circle segment (start -> end)."""
     r = EARTH_RADIUS_MILES if unit.upper() == "MILES" else EARTH_RADIUS_KM
     d13 = haversine_distance(start, point, unit=unit) / r  # Angular distance
@@ -72,16 +67,12 @@ def cross_track_distance(
 
     # Bearing start -> end
     y12 = math.sin(lon2 - lon1) * math.cos(lat2)
-    x12 = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(
-        lon2 - lon1
-    )
+    x12 = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(lon2 - lon1)
     brng12 = math.atan2(y12, x12)
 
     # Bearing start -> point
     y13 = math.sin(lon3 - lon1) * math.cos(lat3)
-    x13 = math.cos(lat1) * math.sin(lat3) - math.sin(lat1) * math.cos(lat3) * math.cos(
-        lon3 - lon1
-    )
+    x13 = math.cos(lat1) * math.sin(lat3) - math.sin(lat1) * math.cos(lat3) * math.cos(lon3 - lon1)
     brng13 = math.atan2(y13, x13)
 
     xtrack_rad = math.asin(math.sin(d13) * math.sin(brng13 - brng12))
@@ -124,6 +115,4 @@ class GeocodingProvider:
             if key in normalized or normalized in key:
                 return GeoPoint(lat=lat, lon=lon, name=query)
 
-        raise ValueError(
-            f"Unable to geocode location: '{query}'. Please check spelling or verify internet connection."
-        )
+        raise ValueError(f"Unable to geocode location: '{query}'. Please check spelling or verify internet connection.")

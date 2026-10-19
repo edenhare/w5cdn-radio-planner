@@ -14,9 +14,7 @@ BUILTIN_RADIOS_DIR = Path(__file__).resolve().parent.parent / "resources" / "rad
 class RadioManager:
     """Manages radio specifications loaded from factory defaults and user directory."""
 
-    def __init__(
-        self, user_radios_dir: Path | None = None, builtin_dir: Path | None = None
-    ):
+    def __init__(self, user_radios_dir: Path | None = None, builtin_dir: Path | None = None):
         self.builtin_dir = builtin_dir or BUILTIN_RADIOS_DIR
         self.user_dir = user_radios_dir or get_radios_dir()
         self._specs: dict[str, TargetRadioSpec] = {}
@@ -48,9 +46,7 @@ class RadioManager:
         """Retrieve a specific radio specification by ID, or raise KeyError."""
         if radio_id not in self._specs:
             available = ", ".join(sorted(self._specs.keys()))
-            raise KeyError(
-                f"Target radio '{radio_id}' not found. Available radios: {available}"
-            )
+            raise KeyError(f"Target radio '{radio_id}' not found. Available radios: {available}")
         return self._specs[radio_id]
 
     def has_radio(self, radio_id: str) -> bool:
@@ -68,3 +64,17 @@ class RadioManager:
             yaml.dump(data, f, sort_keys=False, default_flow_style=False)
         self._specs[spec.id] = spec
         return dest
+
+    def is_user_radio(self, radio_id: str) -> bool:
+        """Check whether a radio ID has an override/custom definition in user directory."""
+        return (self.user_dir / f"{radio_id}.yaml").is_file()
+
+    def delete_user_radio(self, radio_id: str) -> bool:
+        """Delete a custom user radio file from user directory and reload."""
+        target = self.user_dir / f"{radio_id}.yaml"
+        if target.is_file():
+            target.unlink()
+            self.reload()
+            return True
+        return False
+

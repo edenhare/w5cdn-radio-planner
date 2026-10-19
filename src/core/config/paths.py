@@ -43,6 +43,11 @@ def get_recipes_dir() -> Path:
     return get_radioplanner_home() / "recipes"
 
 
+def get_templates_dir() -> Path:
+    """Directory for custom channel template files ~/.config/radioplanner/templates/"""
+    return get_radioplanner_home() / "templates"
+
+
 DEFAULT_STARTER_RECIPE = """# RadioPlanner Starter Highway Corridor Recipe
 version: "1.0"
 mode: "ROUTE_CORRIDOR"
@@ -82,10 +87,12 @@ def ensure_user_directories() -> None:
     home = get_radioplanner_home()
     radios = get_radios_dir()
     recipes = get_recipes_dir()
+    templates = get_templates_dir()
 
     home.mkdir(parents=True, exist_ok=True)
     radios.mkdir(parents=True, exist_ok=True)
     recipes.mkdir(parents=True, exist_ok=True)
+    templates.mkdir(parents=True, exist_ok=True)
 
 
 def initialize_startup_environment() -> Tuple[bool, List[str]]:
@@ -99,6 +106,7 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
     tokens_file = get_tokens_file()
     radios_dir = get_radios_dir()
     recipes_dir = get_recipes_dir()
+    templates_dir = get_templates_dir()
 
     actions: List[str] = []
 
@@ -112,6 +120,9 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
     if not recipes_dir.exists():
         recipes_dir.mkdir(parents=True, exist_ok=True)
         actions.append(f"Created recipes directory: {recipes_dir}")
+    if not templates_dir.exists():
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        actions.append(f"Created templates directory: {templates_dir}")
 
     # 2. Seed preferences.yaml if missing
     if not prefs_file.is_file():
@@ -119,10 +130,9 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
             "callsign": "N0CALL",
             "operatorName": "Radio Operator",
             "primaryDmrId": None,
-            "timeFormat": "TWELVE_HOUR",
             "distanceUnit": "MILES",
             "language": "ENGLISH",
-            "defaultRadioId": "chirp_standard",
+            "defaultRadioId": None,
         }
         with open(prefs_file, "w", encoding="utf-8") as f:
             yaml.dump(default_prefs, f, sort_keys=False, default_flow_style=False)

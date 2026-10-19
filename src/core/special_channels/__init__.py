@@ -8,9 +8,7 @@ from core.special_channels.calling import get_national_calling_channels
 from core.special_channels.weather import get_noaa_wx_channels
 
 
-def filter_channels_for_radio(
-    channels: list[RadioChannel], spec: TargetRadioSpec
-) -> list[RadioChannel]:
+def filter_channels_for_radio(channels: list[RadioChannel], spec: TargetRadioSpec) -> list[RadioChannel]:
     """Filter channel list against target radio supported bands and modes."""
     filtered: list[RadioChannel] = []
     supported_bands_lower = {b.lower() for b in spec.supportedBands}
@@ -27,10 +25,7 @@ def filter_channels_for_radio(
         # Check mode (allow 'ANALOG' to match 'FM', 'AM')
         mode_match = (
             ch_mode_lower in supported_modes_lower
-            or (
-                "analog" in supported_modes_lower
-                and ch_mode_lower in {"fm", "am", "nfm", "wfm"}
-            )
+            or ("analog" in supported_modes_lower and ch_mode_lower in {"fm", "am", "nfm", "wfm"})
             or ("fm" in supported_modes_lower and ch_mode_lower == "analog")
         )
         if not mode_match:

@@ -48,9 +48,7 @@ def render_config_panel(
     if recipe.mode == "ROUTE_CORRIDOR" and recipe.corridor:
         wps = " -> ".join(recipe.corridor.waypoints)
         table.add_row("Corridor Waypoints:", wps)
-        table.add_row(
-            "Corridor Width:", f"{recipe.corridor.corridor_width_miles} miles"
-        )
+        table.add_row("Corridor Width:", f"{recipe.corridor.corridor_width_miles} miles")
     elif recipe.mode == "PROXIMITY_SEARCH" and recipe.proximity:
         table.add_row("Center Location:", recipe.proximity.center_location)
         table.add_row("Search Radius:", f"{recipe.proximity.radius_miles} miles")
@@ -62,16 +60,10 @@ def render_config_panel(
     modes_str = ", ".join(recipe.radio_target.modes)
     table.add_row("Active Bands:", bands_str)
     table.add_row("Active Modes:", modes_str)
-    table.add_row(
-        "Include Simplex:", "Yes" if recipe.radio_target.include_simplex else "No"
-    )
+    table.add_row("Include Simplex:", "Yes" if recipe.radio_target.include_simplex else "No")
     table.add_row("Sequence Layout:", " -> ".join(recipe.sequence_order))
 
-    console.print(
-        Panel(
-            table, title=f"[bold]{title}[/bold]", border_style="blue", padding=(1, 2)
-        )
-    )
+    console.print(Panel(table, title=f"[bold]{title}[/bold]", border_style="blue", padding=(1, 2)))
 
 
 def render_split_summary(
@@ -85,9 +77,7 @@ def render_split_summary(
 ) -> None:
     """Render dual-column summary split view (Spec 3.3)."""
     # Left Column: Route/Location Information
-    left_table = Table(
-        title="Route / Corridor Information", border_style="cyan", show_header=True
-    )
+    left_table = Table(title="Route / Corridor Information", border_style="cyan", show_header=True)
     left_table.add_column("#", style="dim", width=4)
     left_table.add_column("Location / City", style="bold white")
     left_table.add_column("Cumulative Miles", justify="right", style="green")
@@ -104,9 +94,7 @@ def render_split_summary(
     )
 
     # Right Column: Frequency Band & Channel Breakdown
-    right_table = Table(
-        title="Channel Breakdown", border_style="magenta", show_header=True
-    )
+    right_table = Table(title="Channel Breakdown", border_style="magenta", show_header=True)
     right_table.add_column("Band / Category", style="bold")
     right_table.add_column("Channels", justify="right", style="bold yellow")
 
@@ -120,9 +108,7 @@ def render_split_summary(
     console.print(Columns([left_table, right_table], equal=True))
 
 
-def render_review_table(
-    console: Console, codeplug: Codeplug, max_display: int = 50
-) -> None:
+def render_review_table(console: Console, codeplug: Codeplug, max_display: int = 50) -> None:
     """Render Channel Review Table with color-coded badges and details."""
     table = Table(
         title=f"Codeplug Channel Review: {codeplug.name} ({codeplug.total_channels} channels)",
@@ -142,11 +128,7 @@ def render_review_table(
     for ch in channels_to_show:
         badges = make_channel_badges(ch)
         tone_str = (
-            ch.ctcss
-            if ch.toneMode.upper() in {"TONE", "TSQL"}
-            else ch.dcs
-            if ch.toneMode.upper() == "DCS"
-            else "-"
+            ch.ctcss if ch.toneMode.upper() in {"TONE", "TSQL"} else ch.dcs if ch.toneMode.upper() == "DCS" else "-"
         )
         loc_str = f"{ch.city or ''}, {ch.state or ''}".strip(", ")
 
@@ -164,9 +146,7 @@ def render_review_table(
     console.print(table)
     if codeplug.total_channels > max_display:
         remaining = codeplug.total_channels - max_display
-        console.print(
-            f"[dim italic]... and {remaining} more channels not shown in preview.[/dim italic]"
-        )
+        console.print(f"[dim italic]... and {remaining} more channels not shown in preview.[/dim italic]")
 
 
 def render_yaml_error(console: Console, err: YamlDiagnosticError) -> None:
@@ -178,9 +158,7 @@ def render_yaml_error(console: Console, err: YamlDiagnosticError) -> None:
 
     if err.snippet:
         content_items.append(Text("Context Snippet:\n", style="bold yellow"))
-        content_items.append(
-            Syntax(err.snippet, "yaml", line_numbers=False, theme="ansi_dark")
-        )
+        content_items.append(Syntax(err.snippet, "yaml", line_numbers=False, theme="ansi_dark"))
         content_items.append(Text("\n"))
 
     if err.suggestion:
@@ -192,6 +170,4 @@ def render_yaml_error(console: Console, err: YamlDiagnosticError) -> None:
     loc_str = f" [Line {err.line}, Col {err.column}]" if err.line is not None else ""
     title = f"[!] YAML Configuration Syntax Error{loc_str}"
 
-    console.print(
-        Panel(Group(*content_items), title=title, border_style="red", padding=(1, 2))
-    )
+    console.print(Panel(Group(*content_items), title=title, border_style="red", padding=(1, 2)))

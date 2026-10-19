@@ -62,9 +62,7 @@ class ProximityEngine:
             if dist <= radius_miles:
                 # Determine ring 1 to 5
                 ring_idx = min(5, max(1, int(dist // ring_step) + 1))
-                comment_with_dist = (
-                    f"{ch.comment} [Ring {ring_idx}: {dist:.1f} mi]".strip()
-                )
+                comment_with_dist = f"{ch.comment} [Ring {ring_idx}: {dist:.1f} mi]".strip()
                 annotated_ch = ch.model_copy(update={"comment": comment_with_dist})
 
                 rings[ring_idx].append((dist, annotated_ch))

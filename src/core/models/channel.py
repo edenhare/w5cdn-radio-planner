@@ -12,34 +12,20 @@ class RadioChannel(BaseModel):
 
     number: int = Field(default=1, description="1-indexed channel memory slot")
     name: str = Field(..., description="Alphanumeric memory display name tag")
-    callsign: str | None = Field(
-        default=None, description="Repeater or station callsign (e.g. W5ETX, KTYR)"
-    )
+    callsign: str | None = Field(default=None, description="Repeater or station callsign (e.g. W5ETX, KTYR)")
     rxFreq: float = Field(..., description="Receive frequency in MHz")
     txFreq: float = Field(..., description="Transmit frequency in MHz")
     offset: float = Field(default=0.0, description="Frequency shift magnitude in MHz")
-    offsetDir: str = Field(
-        default="off", description="Offset direction: '+', '-', or 'off'"
-    )
-    mode: str = Field(
-        default="FM", description="Operating mode: FM, AM, DMR, ANALOG, etc."
-    )
+    offsetDir: str = Field(default="off", description="Offset direction: '+', '-', or 'off'")
+    mode: str = Field(default="FM", description="Operating mode: FM, AM, DMR, ANALOG, etc.")
     power: str = Field(default="High", description="Power level: High, Mid, Low")
-    toneMode: str = Field(
-        default="None", description="Tone mode: None, Tone, TSQL, DCS"
-    )
-    ctcss: str = Field(
-        default="None", description="Transmit CTCSS tone in Hz (e.g. '88.5') or 'None'"
-    )
-    rxCtcss: str = Field(
-        default="None", description="Receive CTCSS tone in Hz or 'None'"
-    )
+    toneMode: str = Field(default="None", description="Tone mode: None, Tone, TSQL, DCS")
+    ctcss: str = Field(default="None", description="Transmit CTCSS tone in Hz (e.g. '88.5') or 'None'")
+    rxCtcss: str = Field(default="None", description="Receive CTCSS tone in Hz or 'None'")
     dcs: str = Field(default="None", description="DCS code (e.g. '023') or 'None'")
     rxDcs: str = Field(default="None", description="Receive DCS code or 'None'")
     dcsPolarity: str = Field(default="NN", description="DCS polarity: NN, NR, RN, RR")
-    bandwidth: str = Field(
-        default="25KHz", description="Channel bandwidth: 25KHz or 12.5KHz"
-    )
+    bandwidth: str = Field(default="25KHz", description="Channel bandwidth: 25KHz or 12.5KHz")
     city: str | None = Field(default=None, description="City or municipality")
     state: str | None = Field(default=None, description="State abbreviation (e.g. TX)")
     lat: float | None = Field(default=None, description="Latitude coordinate")
@@ -48,12 +34,8 @@ class RadioChannel(BaseModel):
         default="REPEATERS",
         description="Classification: CALLING, WX, AVIATION, GMRS, CUSTOM, REPEATERS",
     )
-    colorCode: int | None = Field(
-        default=None, ge=0, le=15, description="DMR Color Code 0-15"
-    )
-    timeSlot: int | None = Field(
-        default=None, ge=1, le=2, description="DMR TimeSlot 1 or 2"
-    )
+    colorCode: int | None = Field(default=None, ge=0, le=15, description="DMR Color Code 0-15")
+    timeSlot: int | None = Field(default=None, ge=1, le=2, description="DMR TimeSlot 1 or 2")
     dmrId: str | None = Field(default=None, description="7-digit DMR Radio ID")
     contact: str | None = Field(default=None, description="DMR Talkgroup Contact label")
     comment: str = Field(default="", description="Explanatory comment string")

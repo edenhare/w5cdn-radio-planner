@@ -105,10 +105,7 @@ def test_exporter_clamping_to_max_channels():
     mgr = RadioManager()
     spec = mgr.get_radio("chirp_standard").model_copy(update={"maxChannels": 2})
 
-    channels = [
-        RadioChannel(number=i, name=f"CH{i}", rxFreq=146.52, txFreq=146.52)
-        for i in range(1, 10)
-    ]
+    channels = [RadioChannel(number=i, name=f"CH{i}", rxFreq=146.52, txFreq=146.52) for i in range(1, 10)]
     cp = Codeplug(name="LargeCodeplug", channels=channels)
 
     exporter = get_exporter("CHIRP")

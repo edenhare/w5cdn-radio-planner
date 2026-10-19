@@ -30,11 +30,7 @@ class SequenceOrganizer:
         raw_combined: list[RadioChannel] = []
 
         for key in sequence_keys:
-            if (
-                key == "ROUTE_PLAN"
-                or key == "PROXIMITY_PLAN"
-                or key == "AVIATION_BLOCK"
-            ):
+            if key == "ROUTE_PLAN" or key == "PROXIMITY_PLAN" or key == "AVIATION_BLOCK":
                 raw_combined.extend(primary_channels)
             elif key == "TEMPLATE:builtin_calling_channels":
                 raw_combined.extend(get_national_calling_channels())

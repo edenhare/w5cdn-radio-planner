@@ -30,9 +30,7 @@ def test_renderers_output():
     recipe = RadioPlannerRecipe(
         mode="ROUTE_CORRIDOR",
         name="TestPlan",
-        corridor=CorridorConfig(
-            waypoints=["Tyler, TX", "Jackson, MS"], corridor_width_miles=25.0
-        ),
+        corridor=CorridorConfig(waypoints=["Tyler, TX", "Jackson, MS"], corridor_width_miles=25.0),
     )
     render_config_panel(console, recipe)
 

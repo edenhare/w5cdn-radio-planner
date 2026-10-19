@@ -1,4 +1,4 @@
-"""Tests for interactive wizard helper methods."""
+"""Tests for interactive wizard helper methods, radio selector, and waypoint editor."""
 
 import io
 from pathlib import Path
@@ -7,22 +7,89 @@ from unittest.mock import patch
 from rich.console import Console
 
 from cli.wizard.interactive import InteractiveWizard
+from cli.wizard.radio_selector import select_target_radio_hierarchical
+from cli.wizard.waypoint_editor import validate_and_edit_route
 from core.managers.preferences_manager import PreferencesManager
+from core.managers.radio_manager import RadioManager
+from core.providers.geocoding import GeocodingProvider
 
 
 def test_wizard_select_target_radio():
-    """Test target radio selection prompt."""
+    """Test hierarchical target radio selection prompt (Brand choice -> Model choice)."""
     out = io.StringIO()
     console = Console(file=out)
     wizard = InteractiveWizard(console=console)
 
-    with patch("rich.prompt.IntPrompt.ask", return_value=1):
+    # First ask: select brand "1", second ask: select model "1"
+    with patch("rich.prompt.Prompt.ask", side_effect=["1", "1"]):
         selected_id = wizard._select_target_radio()
         assert selected_id is not None
         assert selected_id in {r.id for r in wizard.radio_mgr.list_radios()}
 
 
-def test_wizard_flow_preferences(tmp_path: Path):
+def test_hierarchical_radio_selector_quit():
+    """Test cancelling radio selector at brand level with Q."""
+    out = io.StringIO()
+    console = Console(file=out)
+    radio_mgr = RadioManager()
+
+    with patch("rich.prompt.Prompt.ask", side_effect=["Q"]):
+        selected = select_target_radio_hierarchical(console, radio_mgr)
+        assert selected is None
+
+
+def test_hierarchical_radio_selector_back_and_select():
+    """Test navigating back from model selection to brand selection, then picking another."""
+    out = io.StringIO()
+    console = Console(file=out)
+    radio_mgr = RadioManager()
+
+    # Brand 1 -> Model 'B' (back) -> Brand 1 -> Model 1
+    with patch("rich.prompt.Prompt.ask", side_effect=["1", "B", "1", "1"]):
+        selected = select_target_radio_hierarchical(console, radio_mgr)
+        assert selected is not None
+
+
+def test_validate_and_edit_route_confirm():
+    """Test route validation and immediate confirmation."""
+    out = io.StringIO()
+    console = Console(file=out)
+    geocoder = GeocodingProvider()
+
+    waypoints = ["Tyler, TX", "Shreveport, LA"]
+    with patch("rich.prompt.Prompt.ask", side_effect=["C"]):
+        result = validate_and_edit_route(console, waypoints, geocoder)
+        assert result == ["Tyler, TX", "Shreveport, LA"]
+
+
+def test_validate_and_edit_route_edit_typo_and_confirm():
+    """Test correcting a misspelled waypoint in editor."""
+    out = io.StringIO()
+    console = Console(file=out)
+    geocoder = GeocodingProvider()
+
+    # Stop 2 has typo "Shrevepoort, LA" -> Action 1 (edit) -> stop 2 -> "Shreveport, LA" -> Action C (confirm)
+    waypoints = ["Tyler, TX", "Shrevepoort, LA"]
+    with patch("rich.prompt.Prompt.ask", side_effect=["1", "Shreveport, LA", "C"]):
+        with patch("rich.prompt.IntPrompt.ask", return_value=2):
+            result = validate_and_edit_route(console, waypoints, geocoder)
+            assert result == ["Tyler, TX", "Shreveport, LA"]
+
+
+def test_validate_and_edit_route_reverse():
+    """Test reversing route direction."""
+    out = io.StringIO()
+    console = Console(file=out)
+    geocoder = GeocodingProvider()
+
+    waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
+    # Action 5 (reverse) -> Action C (confirm)
+    with patch("rich.prompt.Prompt.ask", side_effect=["5", "C"]):
+        result = validate_and_edit_route(console, waypoints, geocoder)
+        assert result == ["Jackson, MS", "Shreveport, LA", "Tyler, TX"]
+
+
+def test_wizard_flow_preferences_callsign(tmp_path: Path):
     """Test numbered preferences selection and editing item 1 (Callsign), then Q to return."""
     out = io.StringIO()
     console = Console(file=out)
@@ -32,10 +99,67 @@ def test_wizard_flow_preferences(tmp_path: Path):
     tokens_file = tmp_path / "tokens"
     wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
 
-    # First ask: select option "1", prompt for callsign returns "W5TEST", then select "Q" to exit
-    with patch("rich.prompt.Prompt.ask", side_effect=["1", "W5TEST", "Q"]):
+    # First ask: select option "1", prompt for callsign returns "w5test" (lowercase to test auto-uppercase), then Q
+    with patch("rich.prompt.Prompt.ask", side_effect=["1", "w5test", "Q"]):
         wizard._flow_preferences()
 
     assert wizard.prefs_mgr.preferences.callsign == "W5TEST"
     assert "User Preferences & Settings:" in out.getvalue()
     assert "[1] Amateur Callsign:" in out.getvalue()
+
+
+def test_wizard_flow_preferences_distance_units_single_letter(tmp_path: Path):
+    """Test editing distance unit using single letter 'k' for kilometers."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+
+    # Option "4", input "k", then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["4", "k", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.preferences.distanceUnit == "KILOMETERS"
+
+
+def test_wizard_flow_preferences_default_radio_clear(tmp_path: Path):
+    """Test clearing default target radio to None using 0."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+
+    # First set a default radio
+    wizard.prefs_mgr.save_preferences(
+        wizard.prefs_mgr.preferences.update_settings(defaultRadioId="chirp_standard")
+    )
+    assert wizard.prefs_mgr.preferences.defaultRadioId == "chirp_standard"
+
+    # Option "5", select "0" to clear, then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["5", "0", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.preferences.defaultRadioId is None
+
+
+def test_wizard_flow_preferences_language_number_list(tmp_path: Path):
+    """Test selecting language via numbered list."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+
+    # Option "6" (Language), select "2" (Spanish), then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["6", "2", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.preferences.language == "SPANISH"

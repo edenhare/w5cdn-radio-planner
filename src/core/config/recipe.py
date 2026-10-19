@@ -55,9 +55,7 @@ class RadioPlannerRecipe(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     version: str = Field(default="1.0")
-    mode: Literal[
-        "ROUTE_CORRIDOR", "PROXIMITY_SEARCH", "AVIATION_PLANNER", "PRESET_TEMPLATES"
-    ]
+    mode: Literal["ROUTE_CORRIDOR", "PROXIMITY_SEARCH", "AVIATION_PLANNER", "PRESET_TEMPLATES"]
     name: str = Field(default="RadioPlanner-Run")
     corridor: CorridorConfig | None = None
     proximity: ProximityConfig | None = None
@@ -77,19 +75,13 @@ class RadioPlannerRecipe(BaseModel):
         errors: list[str] = []
         if self.mode == "ROUTE_CORRIDOR":
             if not self.corridor or len(self.corridor.waypoints) < 2:
-                errors.append(
-                    "ROUTE_CORRIDOR requires 'corridor' section with at least 2 waypoints."
-                )
+                errors.append("ROUTE_CORRIDOR requires 'corridor' section with at least 2 waypoints.")
         elif self.mode == "PROXIMITY_SEARCH":
             if not self.proximity or not self.proximity.center_location:
-                errors.append(
-                    "PROXIMITY_SEARCH requires 'proximity' section with 'center_location'."
-                )
+                errors.append("PROXIMITY_SEARCH requires 'proximity' section with 'center_location'.")
         elif self.mode == "AVIATION_PLANNER":
             if not self.aviation or not self.aviation.center_location:
-                errors.append(
-                    "AVIATION_PLANNER requires 'aviation' section with 'center_location'."
-                )
+                errors.append("AVIATION_PLANNER requires 'aviation' section with 'center_location'.")
         return errors
 
     @classmethod
@@ -106,25 +98,19 @@ class RadioPlannerRecipe(BaseModel):
                 msg = item["msg"]
                 field_errors.append(f"- Field '{loc}': {msg}")
             raise YamlDiagnosticError(
-                message="Schema validation error in configuration recipe:\n"
-                + "\n".join(field_errors),
+                message="Schema validation error in configuration recipe:\n" + "\n".join(field_errors),
                 file_path=Path(path),
                 suggestion="Verify that the configuration fields match the required schema for this mode.",
             ) from err
 
     @classmethod
-    def from_yaml_text(
-        cls, text: str, source_name: str | None = None
-    ) -> RadioPlannerRecipe:
+    def from_yaml_text(cls, text: str, source_name: str | None = None) -> RadioPlannerRecipe:
         """Load and validate recipe from YAML string."""
         data = parse_yaml_text(text)
         try:
             return cls.model_validate(data)
         except ValidationError as err:
-            field_errors = [
-                f"- Field '{' -> '.join(str(x) for x in e['loc'])}': {e['msg']}"
-                for e in err.errors()
-            ]
+            field_errors = [f"- Field '{' -> '.join(str(x) for x in e['loc'])}': {e['msg']}" for e in err.errors()]
             raise YamlDiagnosticError(
                 message="Schema validation error:\n" + "\n".join(field_errors),
                 suggestion="Verify configuration keys against the schema.",

@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
 
 from cli.ui.renderers import (
     render_config_panel,
@@ -15,7 +16,9 @@ from cli.ui.renderers import (
     render_review_table,
     render_split_summary,
 )
-from core.config.paths import get_recipes_dir
+from cli.wizard.radio_selector import select_target_radio_hierarchical
+from cli.wizard.waypoint_editor import validate_and_edit_route
+from core.config.paths import get_recipes_dir, initialize_startup_environment
 from core.config.recipe import (
     AviationConfig,
     CorridorConfig,
@@ -30,12 +33,16 @@ from core.engines.sequence import SequenceOrganizer
 from core.exporters import export_codeplug
 from core.managers.preferences_manager import PreferencesManager
 from core.managers.radio_manager import RadioManager
+from core.managers.template_manager import TemplateManager
 from core.models.codeplug import Codeplug
+from core.models.radio_spec import TargetRadioSpec
+from core.models.template import PresetTemplateFile
 from core.providers.airports import AirportsProvider
 from core.providers.geocoding import GeocodingProvider, GeoPoint
 from core.providers.radio_id import RadioIdProvider
 from core.providers.repeaterbook import RepeaterBookProvider
 from core.sanitizers.sanitizer import DataSanitizer
+from core.special_channels import filter_channels_for_radio
 
 
 class InteractiveWizard:
@@ -54,14 +61,12 @@ class InteractiveWizard:
                 pass
 
         self.console = console or Console()
-        # Initialize startup environment in user's home directory (~/.config/radioplanner)
-        from core.config.paths import initialize_startup_environment
-
         was_initialized, actions = initialize_startup_environment()
         self.startup_actions = actions if was_initialized else []
 
         self.radio_mgr = RadioManager()
         self.prefs_mgr = PreferencesManager()
+        self.template_mgr = TemplateManager()
         self.geocoder = GeocodingProvider()
         self.repeater_provider = RepeaterBookProvider()
         self.airports_provider = AirportsProvider()
@@ -87,14 +92,15 @@ class InteractiveWizard:
                 self.console.print("  [1] Highway Route Corridor Mode (Sequenced repeaters along route)")
                 self.console.print("  [2] Radial Proximity Ring Search Mode (5 Concentric distance bands)")
                 self.console.print("  [3] Local Aviation & Airport Planner Mode (CTAF, Tower, Ground, ATIS)")
-                self.console.print("  [4] Replay Saved Configuration Recipe")
-                self.console.print("  [5] Radios & Hardware Manager")
+                self.console.print("  [4] Preset Codeplug Templates Manager (Calling, NOAA WX, Custom)")
+                self.console.print("  [5] Radios & Hardware Manager (Specs, limits, custom models)")
                 self.console.print("  [6] User Preferences & API Tokens")
+                self.console.print("  [7] Replay Saved Configuration Recipe")
                 self.console.print("  [0] Exit")
 
                 choice = Prompt.ask(
                     "\nChoose an option",
-                    choices=["0", "1", "2", "3", "4", "5", "6"],
+                    choices=["0", "1", "2", "3", "4", "5", "6", "7"],
                     default="1",
                 )
 
@@ -109,34 +115,21 @@ class InteractiveWizard:
                     elif choice == "3":
                         self._flow_aviation()
                     elif choice == "4":
-                        self._flow_replay_recipe()
+                        self._flow_templates_manager()
                     elif choice == "5":
                         self._flow_radios_manager()
                     elif choice == "6":
                         self._flow_preferences()
+                    elif choice == "7":
+                        self._flow_replay_recipe()
                 except KeyboardInterrupt:
                     self.console.print("\n[yellow]Submenu cancelled. Returning to main menu.[/yellow]")
         except KeyboardInterrupt:
             self.console.print("\n[yellow]Operation cancelled by user. Goodbye![/yellow]")
 
-    def _select_target_radio(self, default_id: str | None = None) -> str:
-        """Prompt user to select a target radio from available specifications."""
-        radios = self.radio_mgr.list_radios()
-        self.console.print("\n[bold cyan]Target Radio Hardware Models:[/bold cyan]")
-        for idx, r in enumerate(radios, start=1):
-            self.console.print(
-                f"  [{idx}] [bold white]{r.brand} {r.model}[/bold white] — {r.description} (Max {r.maxChannels} ch, LCD {r.maxNameLength} chars)"
-            )
-
-        radio_ids = [r.id for r in radios]
-        default_index = "1"
-        if default_id and default_id in radio_ids:
-            default_index = str(radio_ids.index(default_id) + 1)
-
-        choice_idx = IntPrompt.ask("Select target radio number", default=int(default_index))
-        if 1 <= choice_idx <= len(radios):
-            return radios[choice_idx - 1].id
-        return radios[0].id
+    def _select_target_radio(self, default_id: str | None = None) -> str | None:
+        """Prompt user to select a target radio using two-stage Brand -> Model multi-column selector."""
+        return select_target_radio_hierarchical(self.console, self.radio_mgr, default_id)
 
     def _flow_route_corridor(self) -> None:
         """Mode 1: Highway Route Corridor Wizard."""
@@ -146,15 +139,26 @@ class InteractiveWizard:
         )
 
         waypoints_input = Prompt.ask("Waypoints", default="Tyler, TX; Shreveport, LA; Jackson, MS")
-        waypoints = [w.strip() for w in waypoints_input.split(";") if w.strip()]
-        if len(waypoints) < 2:
-            self.console.print("[red]At least 2 waypoints are required.[/red]")
+        raw_waypoints = [w.strip() for w in waypoints_input.split(";") if w.strip()]
+        if not raw_waypoints:
+            self.console.print("[red]No waypoints entered.[/red]")
             return
+
+        # Early route validation & interactive editing (reorder, add, remove, correct spelling)
+        validated = validate_and_edit_route(self.console, raw_waypoints, self.geocoder)
+        if not validated or len(validated) < 2:
+            self.console.print("[yellow]Route planning cancelled or incomplete.[/yellow]")
+            return
+        waypoints = validated
 
         corridor_width = float(Prompt.ask("Corridor search width in miles", default="25.0"))
         include_simplex = Confirm.ask("Include National Calling & Simplex frequencies?", default=True)
 
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        if not radio_id:
+            self.console.print("[yellow]Radio selection cancelled.[/yellow]")
+            return
+
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
         start_city = waypoints[0].split(",")[0].strip()
@@ -221,6 +225,10 @@ class InteractiveWizard:
         include_simplex = Confirm.ask("Include Simplex & Calling frequencies?", default=True)
 
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        if not radio_id:
+            self.console.print("[yellow]Radio selection cancelled.[/yellow]")
+            return
+
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
         city_clean = center_loc.split(",")[0].strip()
@@ -285,6 +293,10 @@ class InteractiveWizard:
         radius = float(Prompt.ask("Search radius in miles", default="35.0"))
 
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        if not radio_id:
+            self.console.print("[yellow]Radio selection cancelled.[/yellow]")
+            return
+
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
         city_clean = center_loc.split(",")[0].strip()
@@ -335,8 +347,394 @@ class InteractiveWizard:
 
         self._channel_review_and_export_loop(codeplug, recipe, radio_spec)
 
+    def _flow_templates_manager(self) -> None:
+        """Mode 4: Preset Codeplug Templates Manager."""
+        while True:
+            templates = self.template_mgr.list_templates()
+            self.console.print(f"\n[bold cyan]Preset Codeplug Templates ({len(templates)}):[/bold cyan]")
+
+            table = Table(border_style="cyan", show_lines=True)
+            table.add_column("#", justify="right", style="cyan", width=4)
+            table.add_column("Template ID", style="bold white")
+            table.add_column("Name", style="bold white")
+            table.add_column("Badge Tag", style="magenta")
+            table.add_column("Channels", justify="right", style="green", width=10)
+            table.add_column("Source", justify="center", width=10)
+
+            for idx, tpl in enumerate(templates, start=1):
+                try:
+                    chans = self.template_mgr.get_template_channels(tpl.id)
+                    ch_count = len(chans)
+                except Exception:
+                    ch_count = 0
+                is_builtin = tpl.id.startswith("builtin_")
+                source_str = "[cyan]Built-in[/cyan]" if is_builtin else "[green]Custom[/green]"
+                table.add_row(
+                    str(idx),
+                    tpl.id,
+                    tpl.name,
+                    f"[bold magenta]{tpl.tagText}[/bold magenta]",
+                    str(ch_count),
+                    source_str,
+                )
+
+            self.console.print(table)
+            self.console.print("\n[bold cyan]Template Manager Actions:[/bold cyan]")
+            self.console.print("  [V] View / Inspect Template Channels")
+            self.console.print("  [E] Export Template Directly to Radio Codeplug")
+            self.console.print("  [I] Import / Add Custom CSV Channel Template")
+            self.console.print("  [B] Back to Main Menu")
+
+            act = Prompt.ask(
+                "Choose action",
+                choices=["V", "v", "E", "e", "I", "i", "B", "b"],
+                default="B",
+            ).upper()
+
+            if act == "B":
+                break
+            elif act == "V":
+                pick = IntPrompt.ask(f"Select template number (1-{len(templates)})", default=1)
+                if 1 <= pick <= len(templates):
+                    tpl = templates[pick - 1]
+                    chans = self.template_mgr.get_template_channels(tpl.id)
+                    dummy_codeplug = Codeplug(name=tpl.name, channels=chans)
+                    dynamic_height = max(10, self.console.height - 10)
+                    render_review_table(self.console, dummy_codeplug, max_display=dynamic_height)
+            elif act == "E":
+                pick = IntPrompt.ask(f"Select template number to export (1-{len(templates)})", default=1)
+                if 1 <= pick <= len(templates):
+                    tpl = templates[pick - 1]
+                    chans = self.template_mgr.get_template_channels(tpl.id)
+                    radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+                    if not radio_id:
+                        continue
+                    spec = self.radio_mgr.get_radio(radio_id)
+                    filtered = filter_channels_for_radio(chans, spec)
+                    codeplug = Codeplug(name=tpl.name, channels=filtered).renumbered()
+                    recipe = RadioPlannerRecipe(
+                        mode="PRESET_TEMPLATES",
+                        name=tpl.name,
+                        radio_target=RadioTargetConfig(
+                            radio_id=radio_id,
+                            programmer_format=spec.programmerType,
+                            include_simplex=True,
+                            bands=spec.supportedBands,
+                            modes=spec.supportedModes,
+                        ),
+                        sequence_order=[f"TEMPLATE:{tpl.id}"],
+                    )
+                    self._channel_review_and_export_loop(codeplug, recipe, spec)
+            elif act == "I":
+                self.console.print("\n[bold cyan]Import Custom CSV Template:[/bold cyan]")
+                csv_path_str = Prompt.ask("Enter path to CSV channel file (e.g. ./my_channels.csv)")
+                csv_path = Path(csv_path_str.strip())
+                if not csv_path.is_file():
+                    self.console.print(f"[red]File not found: {csv_path}[/red]")
+                    continue
+                tpl_id = Prompt.ask("Template ID slug (e.g. custom_skywarn)", default=csv_path.stem.lower())
+                name = Prompt.ask("Template Display Name", default=csv_path.stem.replace("_", " ").title())
+                tag = Prompt.ask("Badge Tag Label (e.g. SKYWARN, ARES, SAR)", default="CUSTOM").upper()
+                desc = Prompt.ask("Description", default="Custom user imported channel list")
+                raw_csv = csv_path.read_text(encoding="utf-8")
+                new_tpl = PresetTemplateFile(
+                    id=tpl_id,
+                    name=name,
+                    description=desc,
+                    tagText=tag,
+                    tagColorHex="#4CAF50",
+                    fileName=csv_path.name,
+                    rawCsvContent=raw_csv,
+                )
+                self.template_mgr.save_template(new_tpl)
+                self.console.print(f"[bold green]✔ Template '{name}' imported and saved![/bold green]")
+
+    def _flow_radios_manager(self) -> None:
+        """Mode 5: Radios & Hardware Specifications Manager."""
+        while True:
+            radios = self.radio_mgr.list_radios()
+            self.console.print(f"\n[bold cyan]Configured Radio Hardware Specifications ({len(radios)}):[/bold cyan]")
+
+            table = Table(border_style="cyan", show_lines=True)
+            table.add_column("#", justify="right", style="cyan", width=4)
+            table.add_column("Brand", style="bold white")
+            table.add_column("Model", style="bold white")
+            table.add_column("ID", style="italic")
+            table.add_column("Programmer", style="yellow")
+            table.add_column("Max Ch", justify="right", style="green", width=8)
+            table.add_column("LCD Limit", justify="right", style="cyan", width=10)
+            table.add_column("Supported Bands", style="dim")
+            table.add_column("Type", justify="center", width=9)
+
+            for idx, r in enumerate(radios, start=1):
+                is_user = self.radio_mgr.is_user_radio(r.id)
+                type_badge = "[green]User[/green]" if is_user else "[cyan]Factory[/cyan]"
+                table.add_row(
+                    str(idx),
+                    r.brand,
+                    r.model,
+                    r.id,
+                    r.programmerType,
+                    str(r.maxChannels),
+                    f"{r.maxNameLength} chars",
+                    ", ".join(r.supportedBands),
+                    type_badge,
+                )
+
+            self.console.print(table)
+            self.console.print("\n[bold cyan]Hardware Manager Actions:[/bold cyan]")
+            self.console.print("  [I] Inspect Radio Specification & Exporter Columns")
+            self.console.print("  [A] Add New Custom Target Radio Model")
+            self.console.print("  [E] Edit / Override Radio Limits & Parameters")
+            self.console.print("  [D] Delete Custom User Radio")
+            self.console.print("  [B] Back to Main Menu")
+
+            act = Prompt.ask(
+                "Choose action",
+                choices=["I", "i", "A", "a", "E", "e", "D", "d", "B", "b"],
+                default="B",
+            ).upper()
+
+            if act == "B":
+                break
+            elif act == "I":
+                pick = IntPrompt.ask(f"Select radio number to inspect (1-{len(radios)})", default=1)
+                if 1 <= pick <= len(radios):
+                    r = radios[pick - 1]
+                    is_user = self.radio_mgr.is_user_radio(r.id)
+                    col_list = (
+                        "\n".join(f"    {i}. {col}" for i, col in enumerate(r.columns, start=1))
+                        if r.columns
+                        else "    (Default programmer column mappings apply)"
+                    )
+                    info = (
+                        f"[bold white]{r.brand} {r.model}[/bold white] ([dim]{r.id}[/dim])\n"
+                        f"Source: {'[green]User Override / Custom[/green]' if is_user else '[cyan]Factory Specification[/cyan]'}\n"
+                        f"Description: {r.description}\n"
+                        f"Default Programmer: [bold yellow]{r.programmerType}[/bold yellow]\n"
+                        f"Memory Limit: [bold green]{r.maxChannels} channels[/bold green]\n"
+                        f"LCD Display Limit: [bold cyan]{r.maxNameLength} characters[/bold cyan]\n"
+                        f"Allowed Special Characters: `{r.allowedSpecialChars}` (allowDots={r.allowDots}, allowSpaces={r.allowSpaces})\n"
+                        f"Supported Bands: {', '.join(r.supportedBands)}\n"
+                        f"Supported Modes: {', '.join(r.supportedModes)}\n\n"
+                        f"[bold cyan]CSV Exporter Columns ({len(r.columns)} defined):[/bold cyan]\n{col_list}"
+                    )
+                    self.console.print(
+                        Panel(info, title=f"Hardware Specification: {r.brand} {r.model}", border_style="cyan")
+                    )
+            elif act == "A":
+                self.console.print("\n[bold cyan]Add New Target Radio Hardware Model:[/bold cyan]")
+                brand = Prompt.ask("Manufacturer / Brand (e.g. Yaesu, Kenwood, Icom)")
+                model = Prompt.ask("Model Name (e.g. FT-70DR)")
+                default_id = f"{brand.lower().replace(' ', '_')}_{model.lower().replace(' ', '_').replace('-', '_')}"
+                radio_id = Prompt.ask("Unique Radio ID Slug", default=default_id)
+                desc = Prompt.ask("Description", default=f"{brand} {model} Handheld Transceiver")
+                prog = Prompt.ask(
+                    "Programmer Format",
+                    choices=["CHIRP", "RT_SYSTEMS", "VENDOR_CPS", "GENERIC_CSV"],
+                    default="CHIRP",
+                )
+                max_ch = IntPrompt.ask("Maximum Channel Capacity", default=128)
+                max_name = IntPrompt.ask("Max LCD Name Length (characters)", default=8)
+                bands_in = Prompt.ask("Supported Bands (comma-separated)", default="2m, 70cm, Airband, WX")
+                bands = [b.strip() for b in bands_in.split(",") if b.strip()]
+                modes_in = Prompt.ask("Supported Modes (comma-separated)", default="FM, AM")
+                modes = [m.strip() for m in modes_in.split(",") if m.strip()]
+
+                new_spec = TargetRadioSpec(
+                    id=radio_id,
+                    brand=brand,
+                    model=model,
+                    description=desc,
+                    maxChannels=max_ch,
+                    maxNameLength=max_name,
+                    allowDots=True,
+                    allowSpaces=True,
+                    allowedSpecialChars=" -_./#",
+                    programmerType=prog,
+                    supportedBands=bands,
+                    supportedModes=modes,
+                    columns=[],
+                )
+                saved_path = self.radio_mgr.save_user_radio(new_spec)
+                self.console.print(f"[bold green]✔ New radio '{brand} {model}' saved to: {saved_path}[/bold green]")
+            elif act == "E":
+                pick = IntPrompt.ask(f"Select radio number to edit/override (1-{len(radios)})", default=1)
+                if 1 <= pick <= len(radios):
+                    r = radios[pick - 1]
+                    self.console.print(
+                        f"[cyan]Editing specs for {r.brand} {r.model} (will save override to ~/.config/radioplanner/radios/{r.id}.yaml):[/cyan]"
+                    )
+                    max_ch = IntPrompt.ask("Max Channel Capacity", default=r.maxChannels)
+                    max_name = IntPrompt.ask("Max LCD Name Length", default=r.maxNameLength)
+                    prog = Prompt.ask(
+                        "Programmer Format",
+                        choices=["CHIRP", "RT_SYSTEMS", "VENDOR_CPS", "GENERIC_CSV"],
+                        default=r.programmerType,
+                    )
+                    bands_in = Prompt.ask("Supported Bands", default=", ".join(r.supportedBands))
+                    bands = [b.strip() for b in bands_in.split(",") if b.strip()]
+                    modes_in = Prompt.ask("Supported Modes", default=", ".join(r.supportedModes))
+                    modes = [m.strip() for m in modes_in.split(",") if m.strip()]
+
+                    updated_spec = TargetRadioSpec(
+                        id=r.id,
+                        brand=r.brand,
+                        model=r.model,
+                        description=r.description,
+                        maxChannels=max_ch,
+                        maxNameLength=max_name,
+                        allowDots=r.allowDots,
+                        allowSpaces=r.allowSpaces,
+                        allowedSpecialChars=r.allowedSpecialChars,
+                        programmerType=prog,
+                        supportedBands=bands,
+                        supportedModes=modes,
+                        columns=r.columns,
+                    )
+                    saved_path = self.radio_mgr.save_user_radio(updated_spec)
+                    self.console.print(f"[bold green]✔ Specification override saved to: {saved_path}[/bold green]")
+            elif act == "D":
+                user_radios = [r for r in radios if self.radio_mgr.is_user_radio(r.id)]
+                if not user_radios:
+                    self.console.print(
+                        "[yellow]No custom user radios found to delete. (Factory radios cannot be deleted).[/yellow]"
+                    )
+                    continue
+                self.console.print("\n[bold cyan]Custom User Radios:[/bold cyan]")
+                for i, r in enumerate(user_radios, start=1):
+                    self.console.print(f"  [{i}] {r.brand} {r.model} (`{r.id}`)")
+                pick_del = IntPrompt.ask(f"Select radio to delete (1-{len(user_radios)})", default=1)
+                if 1 <= pick_del <= len(user_radios):
+                    to_del = user_radios[pick_del - 1]
+                    if Confirm.ask(
+                        f"Are you sure you want to delete user radio '{to_del.brand} {to_del.model}'?", default=False
+                    ):
+                        self.radio_mgr.delete_user_radio(to_del.id)
+                        self.console.print(f"[green]✔ Radio '{to_del.id}' deleted.[/green]")
+
+    def _flow_preferences(self) -> None:
+        """View and edit user preferences with numbered item selection."""
+        while True:
+            prefs = self.prefs_mgr.preferences
+            tokens = self.prefs_mgr.tokens
+
+            self.console.print("\n[bold cyan]User Preferences & Settings:[/bold cyan]")
+            self.console.print(f"  [1] Amateur Callsign:      [bold white]{prefs.callsign}[/bold white]")
+            self.console.print(f"  [2] Operator Name:         [bold white]{prefs.operatorName}[/bold white]")
+            self.console.print(
+                f"  [3] Primary DMR Radio ID:  [bold white]{prefs.primaryDmrId or '(Not set)'}[/bold white]"
+            )
+            self.console.print(f"  [4] Distance Units:        [bold white]{prefs.distanceUnit}[/bold white]")
+            self.console.print(
+                f"  [5] Default Target Radio:  [bold white]{prefs.defaultRadioId or '(None)'}[/bold white]"
+            )
+            self.console.print(f"  [6] Language:              [bold white]{prefs.language}[/bold white]")
+            rb_display = "*" * len(tokens.repeaterBookApiKey) if tokens.repeaterBookApiKey else "(None)"
+            self.console.print(f"  [7] RepeaterBook API Key:  [bold white]{rb_display}[/bold white]")
+            self.console.print(
+                f"  [8] RadioID.net Callsign:  [bold white]{tokens.radioIdUsername or '(None)'}[/bold white]"
+            )
+            rid_display = "*" * len(tokens.radioIdApiKey) if tokens.radioIdApiKey else "(None)"
+            self.console.print(f"  [9] RadioID.net API Key:  [bold white]{rid_display}[/bold white]")
+            self.console.print("  [Q] Return to Main Menu")
+
+            choice = Prompt.ask("\nSelect number to edit (or 'Q'/'esc' to return)", default="Q").strip()
+
+            if choice.upper() in {"Q", "ESC", "0", "BACK", "EXIT"}:
+                break
+            elif choice == "1":
+                val = Prompt.ask("Enter Amateur Callsign", default=prefs.callsign)
+                new_prefs = prefs.update_settings(callsign=val)
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Callsign updated to {new_prefs.callsign}[/green]")
+            elif choice == "2":
+                val = Prompt.ask("Enter Operator Name", default=prefs.operatorName)
+                new_prefs = prefs.update_settings(operatorName=val.strip())
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Operator Name updated to {val.strip()}[/green]")
+            elif choice == "3":
+                val = Prompt.ask(
+                    "Enter 7-digit Primary DMR Radio ID (or leave blank to clear)",
+                    default=prefs.primaryDmrId or "",
+                )
+                cleaned = val.strip() or None
+                new_prefs = prefs.update_settings(primaryDmrId=cleaned)
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print("[green]✔ DMR Radio ID updated[/green]")
+            elif choice == "4":
+                unit = Prompt.ask(
+                    "Select Distance Unit ([m] for miles, [k] for kilometers)",
+                    choices=["m", "k", "M", "K"],
+                    default="m" if prefs.distanceUnit == "MILES" else "k",
+                ).lower()
+                new_prefs = prefs.update_settings(distanceUnit=unit)
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Distance Unit set to {new_prefs.distanceUnit}[/green]")
+            elif choice == "5":
+                radios = self.radio_mgr.list_radios()
+                self.console.print("\n[bold cyan]Set Default Target Radio:[/bold cyan]")
+                self.console.print("  [0] None / Clear default radio")
+                for idx, r in enumerate(radios, start=1):
+                    self.console.print(f"  [{idx}] {r.brand} {r.model} ({r.id})")
+                default_choice = "0"
+                if prefs.defaultRadioId:
+                    for idx, r in enumerate(radios, start=1):
+                        if r.id == prefs.defaultRadioId:
+                            default_choice = str(idx)
+                            break
+                radio_pick = Prompt.ask(
+                    "Select radio number (or 0 for None)",
+                    choices=[str(i) for i in range(len(radios) + 1)],
+                    default=default_choice,
+                )
+                if radio_pick == "0":
+                    new_prefs = prefs.update_settings(defaultRadioId=None)
+                    self.prefs_mgr.save_preferences(new_prefs)
+                    self.console.print("[green]✔ Default Target Radio set to None[/green]")
+                else:
+                    selected_id = radios[int(radio_pick) - 1].id
+                    new_prefs = prefs.update_settings(defaultRadioId=selected_id)
+                    self.prefs_mgr.save_preferences(new_prefs)
+                    self.console.print(f"[green]✔ Default Target Radio set to {selected_id}[/green]")
+            elif choice == "6":
+                self.console.print("\n[bold cyan]Select Language:[/bold cyan]")
+                self.console.print("  [1] English")
+                self.console.print("  [2] Spanish")
+                self.console.print("  [3] French")
+                self.console.print("  [4] German")
+                lang_map = {"1": "ENGLISH", "2": "SPANISH", "3": "FRENCH", "4": "GERMAN"}
+                curr_opt = {"ENGLISH": "1", "SPANISH": "2", "FRENCH": "3", "GERMAN": "4"}.get(prefs.language, "1")
+                lang_choice = Prompt.ask("Choose language (1-4)", choices=["1", "2", "3", "4"], default=curr_opt)
+                new_prefs = prefs.update_settings(language=lang_map[lang_choice])
+                self.prefs_mgr.save_preferences(new_prefs)
+                self.console.print(f"[green]✔ Language set to {new_prefs.language}[/green]")
+            elif choice == "7":
+                key = Prompt.ask(
+                    "Enter RepeaterBook API Key (leave empty to clear)",
+                    default=tokens.repeaterBookApiKey or "",
+                )
+                new_tokens = tokens.model_copy(update={"repeaterBookApiKey": key.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RepeaterBook API Key saved to ~/.config/radioplanner/tokens[/green]")
+            elif choice == "8":
+                call = Prompt.ask(
+                    "Enter RadioID.net Username/Callsign",
+                    default=tokens.radioIdUsername or "",
+                )
+                new_tokens = tokens.model_copy(update={"radioIdUsername": call.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RadioID.net Callsign saved[/green]")
+            elif choice == "9":
+                key = Prompt.ask("Enter RadioID.net API Key", default=tokens.radioIdApiKey or "")
+                new_tokens = tokens.model_copy(update={"radioIdApiKey": key.strip() or None})
+                self.prefs_mgr.save_tokens(new_tokens)
+                self.console.print("[green]✔ RadioID.net API Key saved to ~/.config/radioplanner/tokens[/green]")
+            else:
+                self.console.print("[yellow]Invalid selection. Enter a number 1-9 or 'Q'/'esc' to return.[/yellow]")
+
     def _flow_replay_recipe(self) -> None:
-        """Mode 4: Replay a saved configuration recipe."""
+        """Mode 7: Replay a saved configuration recipe."""
         recipes_dir = get_recipes_dir()
         yaml_files = list(recipes_dir.glob("*.yaml"))
 
@@ -375,129 +773,6 @@ class InteractiveWizard:
         except Exception as exc:
             self.console.print(f"[bold red]Failed to execute recipe: {exc}[/bold red]")
 
-    def _flow_radios_manager(self) -> None:
-        """View available radio hardware specifications."""
-        radios = self.radio_mgr.list_radios()
-        self.console.print(f"\n[bold cyan]Registered Radio Hardware Models ({len(radios)}):[/bold cyan]")
-        for r in radios:
-            self.console.print(
-                f"- [bold white]{r.brand} {r.model}[/bold white] (ID: `{r.id}`)\n"
-                f"  Programmer: {r.programmerType} | Max Channels: {r.maxChannels} | Name Limit: {r.maxNameLength} chars\n"
-                f"  Bands: {', '.join(r.supportedBands)} | Modes: {', '.join(r.supportedModes)}\n"
-            )
-        Prompt.ask("Press Enter to return to main menu", default="")
-
-    def _flow_preferences(self) -> None:
-        """View and edit user preferences with numbered item selection."""
-        while True:
-            prefs = self.prefs_mgr.preferences
-            tokens = self.prefs_mgr.tokens
-
-            self.console.print("\n[bold cyan]User Preferences & Settings:[/bold cyan]")
-            self.console.print(f"  [1] Amateur Callsign:      [bold white]{prefs.callsign}[/bold white]")
-            self.console.print(f"  [2] Operator Name:         [bold white]{prefs.operatorName}[/bold white]")
-            self.console.print(
-                f"  [3] Primary DMR Radio ID:  [bold white]{prefs.primaryDmrId or '(Not set)'}[/bold white]"
-            )
-            self.console.print(f"  [4] Distance Units:        [bold white]{prefs.distanceUnit}[/bold white]")
-            self.console.print(f"  [5] Default Target Radio:  [bold white]{prefs.defaultRadioId}[/bold white]")
-            self.console.print(f"  [6] Time Format:           [bold white]{prefs.timeFormat}[/bold white]")
-            self.console.print(f"  [7] Language:              [bold white]{prefs.language}[/bold white]")
-            rb_display = "*" * len(tokens.repeaterBookApiKey) if tokens.repeaterBookApiKey else "(None)"
-            self.console.print(f"  [8] RepeaterBook API Key:  [bold white]{rb_display}[/bold white]")
-            self.console.print(
-                f"  [9] RadioID.net Callsign:  [bold white]{tokens.radioIdUsername or '(None)'}[/bold white]"
-            )
-            rid_display = "*" * len(tokens.radioIdApiKey) if tokens.radioIdApiKey else "(None)"
-            self.console.print(f"  [10] RadioID.net API Key: [bold white]{rid_display}[/bold white]")
-            self.console.print("  [Q] Return to Main Menu")
-
-            choice = Prompt.ask("\nSelect number to edit (or 'Q'/'esc' to return)", default="Q").strip()
-
-            if choice.upper() in {"Q", "ESC", "0", "BACK", "EXIT"}:
-                break
-            elif choice == "1":
-                val = Prompt.ask("Enter Amateur Callsign", default=prefs.callsign)
-                new_prefs = prefs.update_settings(callsign=val)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Callsign updated to {new_prefs.callsign}[/green]")
-            elif choice == "2":
-                val = Prompt.ask("Enter Operator Name", default=prefs.operatorName)
-                new_prefs = prefs.update_settings(operatorName=val.strip())
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Operator Name updated to {val.strip()}[/green]")
-            elif choice == "3":
-                val = Prompt.ask(
-                    "Enter 7-digit Primary DMR Radio ID (or leave blank to clear)",
-                    default=prefs.primaryDmrId or "",
-                )
-                cleaned = val.strip() or None
-                new_prefs = prefs.update_settings(primaryDmrId=cleaned)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print("[green]✔ DMR Radio ID updated[/green]")
-            elif choice == "4":
-                unit = Prompt.ask(
-                    "Select Distance Unit",
-                    choices=["MILES", "KILOMETERS", "miles", "kilometers"],
-                    default=prefs.distanceUnit,
-                ).upper()
-                new_prefs = prefs.update_settings(distanceUnit=unit)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Distance Unit set to {unit}[/green]")
-            elif choice == "5":
-                radios = self.radio_mgr.list_radios()
-                radio_ids = [r.id for r in radios]
-                self.console.print("\n[cyan]Available target radios:[/cyan] " + ", ".join(radio_ids))
-                radio_id = Prompt.ask(
-                    "Enter Default Target Radio ID",
-                    choices=radio_ids,
-                    default=prefs.defaultRadioId,
-                )
-                new_prefs = prefs.update_settings(defaultRadioId=radio_id)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Default Radio set to {radio_id}[/green]")
-            elif choice == "6":
-                fmt = Prompt.ask(
-                    "Select Time Format",
-                    choices=["TWELVE_HOUR", "TWENTY_FOUR_HOUR"],
-                    default=prefs.timeFormat,
-                )
-                new_prefs = prefs.update_settings(timeFormat=fmt)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Time format updated to {fmt}[/green]")
-            elif choice == "7":
-                lang = Prompt.ask(
-                    "Select Language",
-                    choices=["ENGLISH", "SPANISH", "FRENCH", "GERMAN"],
-                    default=prefs.language,
-                )
-                new_prefs = prefs.update_settings(language=lang)
-                self.prefs_mgr.save_preferences(new_prefs)
-                self.console.print(f"[green]✔ Language set to {lang}[/green]")
-            elif choice == "8":
-                key = Prompt.ask(
-                    "Enter RepeaterBook API Key (leave empty to clear)",
-                    default=tokens.repeaterBookApiKey or "",
-                )
-                new_tokens = tokens.model_copy(update={"repeaterBookApiKey": key.strip() or None})
-                self.prefs_mgr.save_tokens(new_tokens)
-                self.console.print("[green]✔ RepeaterBook API Key saved to ~/.config/radioplanner/tokens[/green]")
-            elif choice == "9":
-                call = Prompt.ask(
-                    "Enter RadioID.net Username/Callsign",
-                    default=tokens.radioIdUsername or "",
-                )
-                new_tokens = tokens.model_copy(update={"radioIdUsername": call.strip() or None})
-                self.prefs_mgr.save_tokens(new_tokens)
-                self.console.print("[green]✔ RadioID.net Callsign saved[/green]")
-            elif choice == "10":
-                key = Prompt.ask("Enter RadioID.net API Key", default=tokens.radioIdApiKey or "")
-                new_tokens = tokens.model_copy(update={"radioIdApiKey": key.strip() or None})
-                self.prefs_mgr.save_tokens(new_tokens)
-                self.console.print("[green]✔ RadioID.net API Key saved to ~/.config/radioplanner/tokens[/green]")
-            else:
-                self.console.print("[yellow]Invalid selection. Enter a number 1-10 or 'Q'/'esc' to return.[/yellow]")
-
     def _channel_review_and_export_loop(self, codeplug: Codeplug, recipe: RadioPlannerRecipe, spec) -> None:
         """Interactive review table actions loop."""
         current_codeplug = codeplug
@@ -532,7 +807,6 @@ class InteractiveWizard:
                 export_codeplug(current_codeplug, spec, dest)
                 self.console.print(f"[bold green]✔ Codeplug exported successfully to: {dest}[/bold green]")
             elif act == "D":
-                # Find DMR channels in codeplug
                 dmr_channels = [ch for ch in current_codeplug.channels if ch.mode.upper() == "DMR"]
                 if not dmr_channels:
                     self.console.print("[yellow]No DMR channels found in active codeplug.[/yellow]")

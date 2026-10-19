@@ -23,9 +23,7 @@ def get_exporter(programmer_type: str) -> BaseExporter:
         return GenericExporter()
 
 
-def export_codeplug(
-    codeplug: Codeplug, spec: TargetRadioSpec, output_path: Path | str
-) -> Path:
+def export_codeplug(codeplug: Codeplug, spec: TargetRadioSpec, output_path: Path | str) -> Path:
     """Helper to export a codeplug using the target radio spec's default exporter."""
     exporter = get_exporter(spec.programmerType)
     return exporter.export_to_file(codeplug, spec, output_path)

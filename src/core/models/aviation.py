@@ -10,12 +10,8 @@ class AviationFrequency(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    type: str = Field(
-        ..., description="Frequency type: CTAF, TWR, GND, ATIS, AWOS, APP, DEP"
-    )
-    description: str = Field(
-        default="", description="Description (e.g. Tower, Common Traffic)"
-    )
+    type: str = Field(..., description="Frequency type: CTAF, TWR, GND, ATIS, AWOS, APP, DEP")
+    description: str = Field(default="", description="Description (e.g. Tower, Common Traffic)")
     frequencyMhz: float = Field(..., description="Frequency in MHz (e.g. 120.100)")
 
 
@@ -29,6 +25,4 @@ class AirfieldRecord(BaseModel):
     latitude: float = Field(..., description="Airfield latitude")
     longitude: float = Field(..., description="Airfield longitude")
     municipality: str = Field(default="", description="Associated city or municipality")
-    frequencies: list[AviationFrequency] = Field(
-        default_factory=list, description="Frequencies at this field"
-    )
+    frequencies: list[AviationFrequency] = Field(default_factory=list, description="Frequencies at this field")

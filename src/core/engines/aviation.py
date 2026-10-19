@@ -39,9 +39,7 @@ class AviationEngine:
     ) -> AviationResult:
         """Find airports near location and build Airband channels list."""
         center = self.geocoder.resolve(center_location)
-        airports = self.airports_provider.find_airports_near(
-            center.lat, center.lon, radius_miles=radius_miles
-        )
+        airports = self.airports_provider.find_airports_near(center.lat, center.lon, radius_miles=radius_miles)
         channels = self.airports_provider.convert_to_channels(airports)
 
         # Count frequencies by type (CTAF, TWR, GND, ATIS, APP, etc.)

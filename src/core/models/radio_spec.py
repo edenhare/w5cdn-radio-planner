@@ -11,22 +11,14 @@ class TargetRadioSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: str = Field(..., description="Unique slug identifier (e.g. baofeng_5rm)")
-    brand: str = Field(
-        ..., description="Manufacturer brand name (e.g. Baofeng, BTECH, Wouxun)"
-    )
+    brand: str = Field(..., description="Manufacturer brand name (e.g. Baofeng, BTECH, Wouxun)")
     model: str = Field(..., description="Radio model name (e.g. 5RM, DMR-6X2)")
     description: str = Field(..., description="Human-readable description")
-    maxChannels: int = Field(
-        default=128, description="Maximum channel memory slots capacity"
-    )
+    maxChannels: int = Field(default=128, description="Maximum channel memory slots capacity")
     maxNameLength: int = Field(default=10, description="LCD display character limit")
-    allowDots: bool = Field(
-        default=True, description="Whether LCD supports dot '.' characters"
-    )
+    allowDots: bool = Field(default=True, description="Whether LCD supports dot '.' characters")
     allowSpaces: bool = Field(default=True, description="Whether LCD supports spaces")
-    allowedSpecialChars: str = Field(
-        default=" -_./#", description="Allowed special symbols on LCD"
-    )
+    allowedSpecialChars: str = Field(default=" -_./#", description="Allowed special symbols on LCD")
     programmerType: str = Field(
         default="CHIRP",
         description="Default programmer: CHIRP, RT_SYSTEMS, VENDOR_CPS, GENERIC_CSV",
@@ -39,6 +31,4 @@ class TargetRadioSpec(BaseModel):
         default_factory=lambda: ["FM", "AM"],
         description="Supported modes: FM, AM, DMR, ANALOG, DIGITAL",
     )
-    columns: list[str] = Field(
-        default_factory=list, description="Ordered CSV column headers"
-    )
+    columns: list[str] = Field(default_factory=list, description="Ordered CSV column headers")

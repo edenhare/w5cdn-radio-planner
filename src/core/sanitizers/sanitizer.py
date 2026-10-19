@@ -24,27 +24,19 @@ class DataSanitizer:
         return cleaned[:max_length]
 
     @classmethod
-    def sanitize_frequency(
-        cls, freq: float | str, min_mhz: float = 1.0, max_mhz: float = 1300.0
-    ) -> float:
+    def sanitize_frequency(cls, freq: float | str, min_mhz: float = 1.0, max_mhz: float = 1300.0) -> float:
         """Parse, validate, and clamp frequency in MHz."""
         try:
             val = float(freq)
         except (ValueError, TypeError) as err:
-            raise ValueError(
-                f"Invalid frequency value '{freq}': must be numeric."
-            ) from err
+            raise ValueError(f"Invalid frequency value '{freq}': must be numeric.") from err
 
         if val < min_mhz or val > max_mhz:
-            raise ValueError(
-                f"Frequency {val:.5f} MHz out of valid operational range [{min_mhz}, {max_mhz}] MHz."
-            )
+            raise ValueError(f"Frequency {val:.5f} MHz out of valid operational range [{min_mhz}, {max_mhz}] MHz.")
         return round(val, 5)
 
     @classmethod
-    def validate_safe_path(
-        cls, path_str: str | Path, base_dir: Path | None = None
-    ) -> Path:
+    def validate_safe_path(cls, path_str: str | Path, base_dir: Path | None = None) -> Path:
         """Protect against path traversal attacks and ensure target path resolves safely."""
         raw = Path(path_str)
         # Check for null bytes or suspicious characters
@@ -57,9 +49,7 @@ class DataSanitizer:
             try:
                 resolved.relative_to(base_resolved)
             except ValueError as err:
-                raise PermissionError(
-                    f"Path traversal detected: {resolved} is outside {base_resolved}"
-                ) from err
+                raise PermissionError(f"Path traversal detected: {resolved} is outside {base_resolved}") from err
 
         return resolved
 

@@ -194,9 +194,7 @@ class RepeaterBookProvider:
         self.api_key = api_key
         self.timeout = timeout
 
-    def get_repeaters_near(
-        self, lat: float, lon: float, radius_miles: float = 50.0
-    ) -> list[RadioChannel]:
+    def get_repeaters_near(self, lat: float, lon: float, radius_miles: float = 50.0) -> list[RadioChannel]:
         """Fetch repeaters within radius of coordinates, falling back to local dataset."""
         # Check if online API key is available
         if self.api_key:

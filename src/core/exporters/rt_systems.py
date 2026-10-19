@@ -47,9 +47,7 @@ class RtSystemsExporter(BaseExporter):
 
         return output.getvalue()
 
-    def _map_channel_to_dict(
-        self, ch: RadioChannel, spec: TargetRadioSpec
-    ) -> dict[str, Any]:
+    def _map_channel_to_dict(self, ch: RadioChannel, spec: TargetRadioSpec) -> dict[str, Any]:
         """Map CIR channel attributes to standard RT Systems column names."""
         offset_dir = ch.offsetDir if ch.offsetDir in {"+", "-", "off"} else "off"
         if abs(ch.offset) < 1e-5:
@@ -62,11 +60,7 @@ class RtSystemsExporter(BaseExporter):
         tx_power = ch.power.capitalize() if ch.power else "High"
 
         # Determine DMR vs Analog for DMR-6X2
-        ch_type = (
-            "Digital"
-            if ch.mode.upper() == "DMR" or ch.colorCode is not None
-            else "Analog"
-        )
+        ch_type = "Digital" if ch.mode.upper() == "DMR" or ch.colorCode is not None else "Analog"
 
         return {
             "Channel Number": ch.number,

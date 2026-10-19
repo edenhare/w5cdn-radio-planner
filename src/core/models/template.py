@@ -10,9 +10,7 @@ class PresetTemplateFile(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    id: str = Field(
-        ..., description="Unique template identifier (e.g. builtin_calling_channels)"
-    )
+    id: str = Field(..., description="Unique template identifier (e.g. builtin_calling_channels)")
     name: str = Field(..., description="Template title")
     description: str = Field(default="", description="Description of template purpose")
     tagText: str = Field(

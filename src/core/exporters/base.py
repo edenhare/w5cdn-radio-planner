@@ -17,9 +17,7 @@ class BaseExporter(ABC):
     def to_csv_string(self, codeplug: Codeplug, spec: TargetRadioSpec) -> str:
         """Render codeplug channels into hardware-compliant CSV text."""
 
-    def export_to_file(
-        self, codeplug: Codeplug, spec: TargetRadioSpec, output_path: Path | str
-    ) -> Path:
+    def export_to_file(self, codeplug: Codeplug, spec: TargetRadioSpec, output_path: Path | str) -> Path:
         """Write formatted CSV text to disk, creating parent directories if needed."""
         dest = Path(output_path).resolve()
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +29,5 @@ class BaseExporter(ABC):
     def prepare_channels(codeplug: Codeplug, spec: TargetRadioSpec) -> Codeplug:
         """Prepare channels by applying LCD name condensation and clamping to maxChannels."""
         channels = codeplug.channels[: spec.maxChannels]
-        prepared = [
-            ch.with_name(NameCondenser.condense(ch.name, spec)) for ch in channels
-        ]
+        prepared = [ch.with_name(NameCondenser.condense(ch.name, spec)) for ch in channels]
         return Codeplug(name=codeplug.name, channels=prepared).renumbered()

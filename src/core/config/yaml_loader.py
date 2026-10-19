@@ -22,11 +22,7 @@ class YamlDiagnosticError(Exception):
     suggestion: str | None = None
 
     def __str__(self) -> str:
-        loc = (
-            f"Line {self.line}, Column {self.column}"
-            if self.line is not None
-            else "Unknown location"
-        )
+        loc = f"Line {self.line}, Column {self.column}" if self.line is not None else "Unknown location"
         file_info = f" in {self.file_path}" if self.file_path else ""
         res = [f"YAML Error{file_info} ({loc}): {self.message}"]
         if self.snippet:
@@ -36,9 +32,7 @@ class YamlDiagnosticError(Exception):
         return "\n".join(res)
 
 
-def _build_snippet(
-    content: str, error_line: int, error_col: int | None = None, window: int = 2
-) -> str:
+def _build_snippet(content: str, error_line: int, error_col: int | None = None, window: int = 2) -> str:
     """Extract contextual lines around the error with a caret marker pointing to the column."""
     lines = content.splitlines()
     total_lines = len(lines)
@@ -79,9 +73,7 @@ def _generate_suggestion(problem: str, context: str | None) -> str:
     if "found undefined alias" in prob_lower:
         return "Check your YAML anchor/alias references (e.g. '*anchor'). Ensure the anchor is defined earlier."
     if "while scanning a quoted scalar" in ctx_lower or "unexpected end" in prob_lower:
-        return (
-            "Ensure all opened quotes (' or \") are properly closed on the same line."
-        )
+        return "Ensure all opened quotes (' or \") are properly closed on the same line."
     if "did not find expected key" in prob_lower:
         return "Check indentation alignment with preceding sibling keys."
     return "Check indentation (spaces only, no tabs) and YAML syntax structure."
