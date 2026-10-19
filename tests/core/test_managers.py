@@ -9,7 +9,7 @@ from core.managers.radio_manager import RadioManager
 from core.managers.template_manager import TemplateManager
 from core.models.preferences import ApiTokens, UserPreferences
 from core.models.radio_spec import TargetRadioSpec
-from core.models.template import PresetTemplateFile
+from core.models.template import PresetTemplateFile, TemplateChannelItem
 
 
 def test_radio_manager_load_and_get():
@@ -87,7 +87,7 @@ def test_template_manager_builtin_and_custom(tmp_path: Path):
     # Copy to user directory for customization
     tpl_mgr.copy_to_user_directory("calling_channels")
     assert tpl_mgr.is_user_template("calling_channels")
-    user_file = tpl_dir / "calling_channels.json"
+    user_file = tpl_dir / "calling_channels.yaml"
     assert user_file.is_file()
 
     # Modify user template to verify precedence
@@ -102,19 +102,27 @@ def test_template_manager_builtin_and_custom(tmp_path: Path):
     assert tpl_mgr.has_template("calling_channels")
     assert tpl_mgr.get_template("calling_channels").name == "National Calling Frequencies"
 
-    # Add new custom template
-    csv_data = "Name,Frequency,Mode,Power,Comment\nSAR_1,155.160,FM,High,Search and Rescue\n"
+    # Add new custom YAML template with structured channels
     custom_tpl = PresetTemplateFile(
         id="sar_ops",
         name="SAR Operations",
         description="Search and Rescue operations frequencies",
         tagText="SAR",
         tagColorHex="#FF9800",
-        fileName="sar_ops.csv",
-        rawCsvContent=csv_data,
+        channels=[
+            TemplateChannelItem(
+                name="SAR_1",
+                rxFreq=155.160,
+                txFreq=155.160,
+                mode="FM",
+                power="High",
+                comment="Search and Rescue primary",
+            )
+        ],
     )
     tpl_mgr.save_template(custom_tpl)
     assert tpl_mgr.is_user_template("sar_ops")
+    assert (tpl_dir / "sar_ops.yaml").is_file()
 
     # Reload and verify
     tpl_mgr.reload()
@@ -124,10 +132,36 @@ def test_template_manager_builtin_and_custom(tmp_path: Path):
     assert len(sar_chans) == 1
     assert sar_chans[0].name == "SAR_1"
     assert sar_chans[0].rxFreq == 155.160
+    assert sar_chans[0].specialType == "CUSTOM"
 
     # Delete custom template
     assert tpl_mgr.delete_user_template("sar_ops") is True
     assert not tpl_mgr.has_template("sar_ops")
+    assert not (tpl_dir / "sar_ops.yaml").is_file()
+
+
+def test_template_migration_from_raw_csv(tmp_path: Path):
+    """Verify PresetTemplateFile automatically parses legacy CSV rows into structured channels."""
+    csv_text = "Name,Frequency,Mode,Power,Comment\nARES_PRI,146.550,FM,High,ARES Primary\n"
+    tpl = PresetTemplateFile(
+        id="ares_net",
+        name="ARES Net",
+        rawCsvContent=csv_text,
+    )
+    assert len(tpl.channels) == 1
+    assert tpl.channels[0].name == "ARES_PRI"
+    assert tpl.channels[0].rxFreq == 146.550
+
+    mgr = TemplateManager(custom_templates_dir=tmp_path / "tpls")
+    saved_path = mgr.save_template(tpl)
+    assert saved_path.suffix == ".yaml"
+    assert saved_path.is_file()
+
+    mgr.reload()
+    loaded = mgr.get_template("ares_net")
+    assert len(loaded.channels) == 1
+    assert loaded.channels[0].name == "ARES_PRI"
+
 
 
 

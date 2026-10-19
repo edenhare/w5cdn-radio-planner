@@ -1,0 +1,48 @@
+id: noaa_wx_channels
+name: NOAA Weather Radio Channels
+description: Standard NOAA National Weather Radio (NWR) all-hazards broadcast channels WX1-WX7
+tagText: WX
+tagColorHex: "#2196F3"
+channels:
+  - name: NOAA WX 1
+    rxFreq: 162.55000
+    txFreq: 162.55000
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.550 MHz
+  - name: NOAA WX 2
+    rxFreq: 162.40000
+    txFreq: 162.40000
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.400 MHz
+  - name: NOAA WX 3
+    rxFreq: 162.47500
+    txFreq: 162.47500
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.475 MHz
+  - name: NOAA WX 4
+    rxFreq: 162.42500
+    txFreq: 162.42500
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.425 MHz
+  - name: NOAA WX 5
+    rxFreq: 162.45000
+    txFreq: 162.45000
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.450 MHz
+  - name: NOAA WX 6
+    rxFreq: 162.50000
+    txFreq: 162.50000
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.500 MHz
+  - name: NOAA WX 7
+    rxFreq: 162.52500
+    txFreq: 162.52500
+    mode: FM
+    power: Low
+    comment: NOAA Weather Radio 162.525 MHz

@@ -411,7 +411,7 @@ class InteractiveWizard:
             self.console.print("  [V] View / Inspect Template Channels")
             self.console.print("  [E] Export Template Directly to Radio Codeplug")
             self.console.print("  [D] Edit / Customize Template (Copy to User Config)")
-            self.console.print("  [I] Import / Add Custom CSV Channel Template")
+            self.console.print("  [I] Import / Add Custom YAML Channel Template")
             self.console.print("  [X] Delete User Custom Template")
             self.console.print("  [B] Back to Main Menu")
 
@@ -463,31 +463,41 @@ class InteractiveWizard:
                     if not is_user:
                         self.console.print(
                             f"[cyan]Customizing app default template '{tpl.name}'.\n"
-                            f"An editable copy will be saved to ~/.config/radioplanner/templates/{tpl.id}.json\n"
+                            f"An editable copy will be saved to ~/.config/radioplanner/templates/{tpl.id}.yaml\n"
                             f"which will override the app default template.[/cyan]"
                         )
                     else:
                         self.console.print(
-                            f"[cyan]Editing user template '{tpl.name}' (~/.config/radioplanner/templates/{tpl.id}.json):[/cyan]"
+                            f"[cyan]Editing user template '{tpl.name}' (~/.config/radioplanner/templates/{tpl.id}.yaml):[/cyan]"
                         )
                     new_name = Prompt.ask("Template Display Name", default=tpl.name)
                     new_tag = Prompt.ask("Badge Tag Label", default=tpl.tagText).upper()
                     new_desc = Prompt.ask("Description", default=tpl.description)
 
-                    replace_csv = Confirm.ask(
-                        "Do you want to update/replace the channel CSV content from a file?", default=False
+                    channels = list(tpl.channels)
+                    replace_channels = Confirm.ask(
+                        "Do you want to update/replace channels from a YAML or CSV file?", default=False
                     )
-                    raw_csv = tpl.rawCsvContent
-                    csv_filename = tpl.fileName
-                    if replace_csv:
-                        csv_path_str = Prompt.ask("Enter path to new CSV channel file")
-                        csv_path = Path(csv_path_str.strip())
-                        if csv_path.is_file():
-                            raw_csv = csv_path.read_text(encoding="utf-8")
-                            csv_filename = csv_path.name
+                    if replace_channels:
+                        import_path_str = Prompt.ask("Enter path to file (.yaml or .csv)")
+                        import_path = Path(import_path_str.strip())
+                        if import_path.is_file():
+                            if import_path.suffix.lower() in {".yaml", ".yml"}:
+                                from core.config.yaml_loader import load_yaml_file
+
+                                data = load_yaml_file(import_path)
+                                temp_tpl = PresetTemplateFile.model_validate(data)
+                                channels = temp_tpl.channels
+                            elif import_path.suffix.lower() == ".csv":
+                                temp_tpl = PresetTemplateFile(
+                                    id=tpl.id,
+                                    name=new_name,
+                                    rawCsvContent=import_path.read_text(encoding="utf-8"),
+                                )
+                                channels = temp_tpl.channels
                         else:
                             self.console.print(
-                                f"[yellow]File not found: {csv_path}. Retaining existing channel data.[/yellow]"
+                                f"[yellow]File not found: {import_path}. Retaining existing channel data.[/yellow]"
                             )
 
                     updated_tpl = PresetTemplateFile(
@@ -496,34 +506,49 @@ class InteractiveWizard:
                         description=new_desc,
                         tagText=new_tag,
                         tagColorHex=tpl.tagColorHex,
-                        fileName=csv_filename,
-                        rawCsvContent=raw_csv,
+                        channels=channels,
                     )
                     saved_path = self.template_mgr.save_template(updated_tpl)
                     self.console.print(f"[bold green]✔ Template '{updated_tpl.name}' saved to: {saved_path}[/bold green]")
             elif act == "I":
-                self.console.print("\n[bold cyan]Import Custom CSV Template:[/bold cyan]")
-                csv_path_str = Prompt.ask("Enter path to CSV channel file (e.g. ./my_channels.csv)")
-                csv_path = Path(csv_path_str.strip())
-                if not csv_path.is_file():
-                    self.console.print(f"[red]File not found: {csv_path}[/red]")
+                self.console.print("\n[bold cyan]Import / Add YAML Template:[/bold cyan]")
+                file_path_str = Prompt.ask("Enter path to template file (.yaml or .csv)")
+                file_path = Path(file_path_str.strip())
+                if not file_path.is_file():
+                    self.console.print(f"[red]File not found: {file_path}[/red]")
                     continue
-                tpl_id = Prompt.ask("Template ID slug (e.g. custom_skywarn)", default=csv_path.stem.lower())
-                name = Prompt.ask("Template Display Name", default=csv_path.stem.replace("_", " ").title())
-                tag = Prompt.ask("Badge Tag Label (e.g. SKYWARN, ARES, SAR)", default="CUSTOM").upper()
-                desc = Prompt.ask("Description", default="Custom user imported channel list")
-                raw_csv = csv_path.read_text(encoding="utf-8")
-                new_tpl = PresetTemplateFile(
-                    id=tpl_id,
-                    name=name,
-                    description=desc,
-                    tagText=tag,
-                    tagColorHex="#4CAF50",
-                    fileName=csv_path.name,
-                    rawCsvContent=raw_csv,
-                )
-                self.template_mgr.save_template(new_tpl)
-                self.console.print(f"[bold green]✔ Template '{name}' imported and saved![/bold green]")
+                if file_path.suffix.lower() in {".yaml", ".yml"}:
+                    try:
+                        from core.config.yaml_loader import load_yaml_file
+
+                        data = load_yaml_file(file_path)
+                        new_tpl = PresetTemplateFile.model_validate(data)
+                        saved_path = self.template_mgr.save_template(new_tpl)
+                        self.console.print(
+                            f"[bold green]✔ Template '{new_tpl.name}' imported and saved to: {saved_path}[/bold green]"
+                        )
+                    except Exception as exc:
+                        self.console.print(f"[red]Error loading YAML template: {exc}[/red]")
+                elif file_path.suffix.lower() == ".csv":
+                    tpl_id = Prompt.ask("Template ID slug (e.g. custom_skywarn)", default=file_path.stem.lower())
+                    name = Prompt.ask("Template Display Name", default=file_path.stem.replace("_", " ").title())
+                    tag = Prompt.ask("Badge Tag Label (e.g. SKYWARN, ARES, SAR)", default="CUSTOM").upper()
+                    desc = Prompt.ask("Description", default="Custom user imported channel list")
+                    raw_csv = file_path.read_text(encoding="utf-8")
+                    new_tpl = PresetTemplateFile(
+                        id=tpl_id,
+                        name=name,
+                        description=desc,
+                        tagText=tag,
+                        tagColorHex="#4CAF50",
+                        rawCsvContent=raw_csv,
+                    )
+                    saved_path = self.template_mgr.save_template(new_tpl)
+                    self.console.print(
+                        f"[bold green]✔ Template '{name}' converted to YAML and saved to: {saved_path}[/bold green]"
+                    )
+                else:
+                    self.console.print("[red]Unsupported file format. Please provide a .yaml or .csv file.[/red]")
             elif act == "X":
                 user_tpls = [t for t in templates if self.template_mgr.is_user_template(t.id)]
                 if not user_tpls:
