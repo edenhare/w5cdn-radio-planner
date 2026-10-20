@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -1019,6 +1020,45 @@ OFFLINE_REPEATERS: list[dict] = [
     },
 ]
 
+US_STATE_ABBR: dict[str, str] = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+    "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+    "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS", "missouri": "MO",
+    "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", "ohio": "OH",
+    "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
+    "virginia": "VA", "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "district of columbia": "DC",
+}
+
+FIPS_STATE_ABBR: dict[str, str] = {
+    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT",
+    "10": "DE", "11": "DC", "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL",
+    "18": "IN", "19": "IA", "20": "KS", "21": "KY", "22": "LA", "23": "ME", "24": "MD",
+    "25": "MA", "26": "MI", "27": "MN", "28": "MS", "29": "MO", "30": "MT", "31": "NE",
+    "32": "NV", "33": "NH", "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND",
+    "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC", "46": "SD",
+    "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA", "54": "WV",
+    "55": "WI", "56": "WY",
+    "1": "AL", "2": "AK", "4": "AZ", "5": "AR", "6": "CA", "8": "CO", "9": "CT",
+}
+
+
+def resolve_state_code(item: dict) -> str:
+    """Resolve standard two-letter state abbreviation or uppercase name for state file naming."""
+    state_name = str(item.get("State", "")).strip().lower()
+    if state_name in US_STATE_ABBR:
+        return US_STATE_ABBR[state_name]
+    state_id = str(item.get("State ID", "")).strip()
+    if state_id in FIPS_STATE_ABBR:
+        return FIPS_STATE_ABBR[state_id]
+    if len(state_name) == 2 and state_name.isalpha():
+        return state_name.upper()
+    return state_name.upper() if state_name else (state_id or "UNKNOWN")
+
 
 class RepeaterBookProvider:
     """Queries RepeaterBook REST API with automatic offline sample and disk cache fallback."""
@@ -1129,47 +1169,84 @@ class RepeaterBookProvider:
             else:
                 raise RuntimeError(f"HTTP {resp.status_code}")
 
-    def _save_to_disk_cache(self, data: dict | list) -> None:
-        """Persist downloaded RepeaterBook data to user's ~/.config/radioplanner/data/repeaterbook/ cache."""
+    def _save_to_disk_cache(self, data: dict | list, date_str: str | None = None) -> None:
+        """Persist downloaded RepeaterBook data to user's ~/.config/radioplanner/data/repeaterbook/ as rb_STATE_DATE.json."""
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             results = data if isinstance(data, list) else data.get("results", [])
+            current_date = date_str or datetime.now().strftime("%Y-%m-%d")
 
-            # Save full export cache
-            all_file = self.cache_dir / "repeaterbook_cache.json"
+            # Save full export cache as rb_ALL_DATE.json and repeaterbook_cache.json
+            all_file = self.cache_dir / f"rb_ALL_{current_date}.json"
             all_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            (self.cache_dir / "repeaterbook_cache.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-            # Split and save state files (e.g. state_48.json for Texas)
+            # Split and save state files: rb_STATE_DATE.json (e.g. rb_TX_2026-10-20.json)
             by_state: dict[str, list[dict]] = {}
             for item in results:
-                st_id = item.get("State ID") or item.get("State") or "unknown"
-                clean_st = str(st_id).strip().lower().replace(" ", "_")
-                by_state.setdefault(clean_st, []).append(item)
+                st_code = resolve_state_code(item)
+                by_state.setdefault(st_code, []).append(item)
 
-            for st_key, items in by_state.items():
-                st_file = self.cache_dir / f"state_{st_key}.json"
-                st_file.write_text(json.dumps({"count": len(items), "results": items}, indent=2), encoding="utf-8")
+            for st_code, items in by_state.items():
+                st_file = self.cache_dir / f"rb_{st_code}_{current_date}.json"
+                st_payload = {
+                    "count": len(items),
+                    "state": st_code,
+                    "download_date": current_date,
+                    "results": items,
+                }
+                st_file.write_text(json.dumps(st_payload, indent=2), encoding="utf-8")
         except Exception as e:
             logger.warning(f"Could not persist RepeaterBook data to disk cache: {e}")
 
     def _load_from_disk_cache(self) -> list[RadioChannel]:
-        """Load repeaters from existing cached state files in ~/.config/radioplanner/data/repeaterbook/."""
+        """Load repeaters from newest cached state files (rb_STATE_DATE.json) in data cache."""
         if not self.cache_dir.is_dir():
             return []
 
         try:
-            all_file = self.cache_dir / "repeaterbook_cache.json"
-            if all_file.is_file():
-                data = json.loads(all_file.read_text(encoding="utf-8"))
-                results = data if isinstance(data, list) else data.get("results", [])
-                channels = []
-                for idx, item in enumerate(results, start=1):
-                    ch = self._parse_api_item(idx, item)
-                    if ch:
-                        channels.append(ch)
-                return channels
+            # 1. Check for rb_STATE_DATE.json files
+            rb_files = sorted(self.cache_dir.glob("rb_*_*.json"))
+            if rb_files:
+                # Group by state code and select the newest date file for each state
+                newest_by_state: dict[str, Path] = {}
+                for f in rb_files:
+                    # Expect rb_STATE_DATE.json
+                    parts = f.stem.split("_", 2)
+                    if len(parts) >= 3:
+                        st_code = parts[1]
+                        if st_code == "ALL":
+                            continue
+                        if st_code not in newest_by_state or f.name > newest_by_state[st_code].name:
+                            newest_by_state[st_code] = f
 
-            # Otherwise, scan state_*.json files
+                if newest_by_state:
+                    channels = []
+                    idx = 1
+                    for st_file in newest_by_state.values():
+                        data = json.loads(st_file.read_text(encoding="utf-8"))
+                        results = data if isinstance(data, list) else data.get("results", [])
+                        for item in results:
+                            ch = self._parse_api_item(idx, item)
+                            if ch:
+                                channels.append(ch)
+                                idx += 1
+                    return channels
+
+                # If only rb_ALL_*.json exists, load from the newest one
+                all_rb_files = sorted(self.cache_dir.glob("rb_ALL_*.json"), reverse=True)
+                if all_rb_files:
+                    data = json.loads(all_rb_files[0].read_text(encoding="utf-8"))
+                    results = data if isinstance(data, list) else data.get("results", [])
+                    return [ch for idx, item in enumerate(results, start=1) if (ch := self._parse_api_item(idx, item))]
+
+            # 2. Fallback to legacy repeaterbook_cache.json or state_*.json
+            legacy_all = self.cache_dir / "repeaterbook_cache.json"
+            if legacy_all.is_file():
+                data = json.loads(legacy_all.read_text(encoding="utf-8"))
+                results = data if isinstance(data, list) else data.get("results", [])
+                return [ch for idx, item in enumerate(results, start=1) if (ch := self._parse_api_item(idx, item))]
+
             state_files = sorted(self.cache_dir.glob("state_*.json"))
             channels = []
             idx = 1
@@ -1185,6 +1262,31 @@ class RepeaterBookProvider:
         except Exception as e:
             logger.warning(f"Could not load RepeaterBook data from disk cache: {e}")
             return []
+
+    def list_cached_state_files(self) -> list[dict]:
+        """Return structured summary of available cached state files with dates and counts."""
+        if not self.cache_dir.is_dir():
+            return []
+
+        entries = []
+        for f in sorted(self.cache_dir.glob("rb_*_*.json")):
+            parts = f.stem.split("_", 2)
+            if len(parts) >= 3:
+                state_code = parts[1]
+                date_part = parts[2]
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    count = data.get("count", len(data.get("results", [])))
+                except Exception:
+                    count = 0
+                entries.append({
+                    "state": state_code,
+                    "date": date_part,
+                    "filename": f.name,
+                    "path": f,
+                    "count": count,
+                })
+        return entries
 
     def _parse_api_item(self, idx: int, item: dict) -> RadioChannel | None:
         """Parse raw RepeaterBook API item into RadioChannel CIR."""

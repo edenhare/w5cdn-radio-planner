@@ -1,5 +1,6 @@
 """Unit tests for RepeaterBookProvider API token discovery, fallback, and parsing."""
 
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -150,10 +151,16 @@ def test_repeaterbook_provider_disk_cache_save_and_load(tmp_path: Path):
         live_channels = provider.get_repeaters_near(32.35, -95.30, radius_miles=50.0)
         assert len(live_channels) == 2
 
-    # Verify files written to disk cache
-    assert (cache_dir / "repeaterbook_cache.json").is_file()
-    assert (cache_dir / "state_48.json").is_file()
-    assert (cache_dir / "state_22.json").is_file()
+    # Verify files written to disk cache with rb_STATE_DATE.json pattern
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    assert (cache_dir / f"rb_TX_{today_str}.json").is_file()
+    assert (cache_dir / f"rb_LA_{today_str}.json").is_file()
+    assert (cache_dir / f"rb_ALL_{today_str}.json").is_file()
+
+    cached_summary = provider.list_cached_state_files()
+    states_found = {entry["state"] for entry in cached_summary}
+    assert "TX" in states_found
+    assert "LA" in states_found
 
     # 2. Instantiate new provider without API key (offline) pointing to the same cache directory
     offline_provider = RepeaterBookProvider(api_key="", cache_dir=cache_dir)
