@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
 
 import httpx
 
+from core.config.paths import get_data_dir
 from core.models.channel import RadioChannel
 
 logger = logging.getLogger(__name__)
@@ -1019,11 +1021,17 @@ OFFLINE_REPEATERS: list[dict] = [
 
 
 class RepeaterBookProvider:
-    """Queries RepeaterBook REST API with automatic offline sample fallback."""
+    """Queries RepeaterBook REST API with automatic offline sample and disk cache fallback."""
 
-    def __init__(self, api_key: str | None = None, timeout: float = 10.0):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        timeout: float = 10.0,
+        cache_dir: Path | None = None,
+    ):
         self.api_key, self.token_source = self._discover_api_key(api_key)
         self.timeout = timeout
+        self.cache_dir = cache_dir or (get_data_dir() / "repeaterbook")
         self.last_status: str = "CONFIGURED" if self.api_key else "NO_KEY"
         self._cached_channels: list[RadioChannel] | None = None
 
@@ -1068,6 +1076,7 @@ class RepeaterBookProvider:
         if self._cached_channels is not None:
             return self._cached_channels
 
+        # 1. Attempt live API query if API key is configured
         if self.has_api_key():
             try:
                 channels = self._query_live_api(lat, lon, radius_miles)
@@ -1078,7 +1087,15 @@ class RepeaterBookProvider:
             except Exception as e:
                 self.last_status = f"LIVE_API_FALLBACK ({e})"
 
-        # Fallback to local offline dataset
+        # 2. Check offline disk cache in ~/.config/radioplanner/data/repeaterbook/
+        disk_channels = self._load_from_disk_cache()
+        if disk_channels:
+            self._cached_channels = disk_channels
+            if not self.has_api_key():
+                self.last_status = "DISK_CACHE"
+            return disk_channels
+
+        # 3. Fallback to built-in offline dataset
         return self._get_offline_repeaters()
 
     def _query_live_api(
@@ -1101,6 +1118,7 @@ class RepeaterBookProvider:
             resp = client.get(url, params=params, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
+                self._save_to_disk_cache(data)
                 results = data if isinstance(data, list) else data.get("results", [])
                 channels = []
                 for idx, item in enumerate(results, start=1):
@@ -1110,6 +1128,63 @@ class RepeaterBookProvider:
                 return channels
             else:
                 raise RuntimeError(f"HTTP {resp.status_code}")
+
+    def _save_to_disk_cache(self, data: dict | list) -> None:
+        """Persist downloaded RepeaterBook data to user's ~/.config/radioplanner/data/repeaterbook/ cache."""
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            results = data if isinstance(data, list) else data.get("results", [])
+
+            # Save full export cache
+            all_file = self.cache_dir / "repeaterbook_cache.json"
+            all_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+            # Split and save state files (e.g. state_48.json for Texas)
+            by_state: dict[str, list[dict]] = {}
+            for item in results:
+                st_id = item.get("State ID") or item.get("State") or "unknown"
+                clean_st = str(st_id).strip().lower().replace(" ", "_")
+                by_state.setdefault(clean_st, []).append(item)
+
+            for st_key, items in by_state.items():
+                st_file = self.cache_dir / f"state_{st_key}.json"
+                st_file.write_text(json.dumps({"count": len(items), "results": items}, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not persist RepeaterBook data to disk cache: {e}")
+
+    def _load_from_disk_cache(self) -> list[RadioChannel]:
+        """Load repeaters from existing cached state files in ~/.config/radioplanner/data/repeaterbook/."""
+        if not self.cache_dir.is_dir():
+            return []
+
+        try:
+            all_file = self.cache_dir / "repeaterbook_cache.json"
+            if all_file.is_file():
+                data = json.loads(all_file.read_text(encoding="utf-8"))
+                results = data if isinstance(data, list) else data.get("results", [])
+                channels = []
+                for idx, item in enumerate(results, start=1):
+                    ch = self._parse_api_item(idx, item)
+                    if ch:
+                        channels.append(ch)
+                return channels
+
+            # Otherwise, scan state_*.json files
+            state_files = sorted(self.cache_dir.glob("state_*.json"))
+            channels = []
+            idx = 1
+            for sf in state_files:
+                data = json.loads(sf.read_text(encoding="utf-8"))
+                results = data if isinstance(data, list) else data.get("results", [])
+                for item in results:
+                    ch = self._parse_api_item(idx, item)
+                    if ch:
+                        channels.append(ch)
+                        idx += 1
+            return channels
+        except Exception as e:
+            logger.warning(f"Could not load RepeaterBook data from disk cache: {e}")
+            return []
 
     def _parse_api_item(self, idx: int, item: dict) -> RadioChannel | None:
         """Parse raw RepeaterBook API item into RadioChannel CIR."""

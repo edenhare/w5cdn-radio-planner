@@ -48,6 +48,11 @@ def get_templates_dir() -> Path:
     return get_radioplanner_home() / "templates"
 
 
+def get_data_dir() -> Path:
+    """Directory for cached third-party data files ~/.config/radioplanner/data/"""
+    return get_radioplanner_home() / "data"
+
+
 DEFAULT_STARTER_RECIPE = """# RadioPlanner Starter Highway Corridor Recipe
 version: "1.0"
 mode: "ROUTE_CORRIDOR"
@@ -88,11 +93,13 @@ def ensure_user_directories() -> None:
     radios = get_radios_dir()
     recipes = get_recipes_dir()
     templates = get_templates_dir()
+    data = get_data_dir()
 
     home.mkdir(parents=True, exist_ok=True)
     radios.mkdir(parents=True, exist_ok=True)
     recipes.mkdir(parents=True, exist_ok=True)
     templates.mkdir(parents=True, exist_ok=True)
+    data.mkdir(parents=True, exist_ok=True)
 
 
 def initialize_startup_environment() -> Tuple[bool, List[str]]:
@@ -107,6 +114,7 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
     radios_dir = get_radios_dir()
     recipes_dir = get_recipes_dir()
     templates_dir = get_templates_dir()
+    data_dir = get_data_dir()
 
     actions: List[str] = []
 
@@ -123,6 +131,9 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
     if not templates_dir.exists():
         templates_dir.mkdir(parents=True, exist_ok=True)
         actions.append(f"Created templates directory: {templates_dir}")
+    if not data_dir.exists():
+        data_dir.mkdir(parents=True, exist_ok=True)
+        actions.append(f"Created data cache directory: {data_dir}")
 
     # 2. Seed preferences.yaml if missing
     if not prefs_file.is_file():

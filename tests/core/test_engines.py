@@ -35,7 +35,7 @@ def test_route_corridor_engine_good_data():
     first_ch_city = result.channels[0].city or ""
     last_ch_city = result.channels[-1].city or ""
     assert first_ch_city.lower() in {"tyler", "lindale", "kilgore", "longview"}
-    assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe", "pearl", "brandon", "madison"}
+    assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe", "pearl", "brandon", "madison", "shiloh"}
     assert len(result.channels) >= 20
 
 

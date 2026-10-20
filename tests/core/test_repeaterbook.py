@@ -101,3 +101,68 @@ def test_repeaterbook_provider_live_api_success():
         assert channels[0].rxFreq == 146.94
         assert channels[0].ctcss == "136.5"
         assert provider.last_status == "LIVE_API_SUCCESS"
+
+
+def test_repeaterbook_provider_disk_cache_save_and_load(tmp_path: Path):
+    """Good Data: Ensure downloaded state repeaters are saved to data cache and reloaded offline."""
+    cache_dir = tmp_path / "data" / "repeaterbook"
+    provider = RepeaterBookProvider(api_key="dummy_token", cache_dir=cache_dir)
+
+    sample_api_response = {
+        "count": 2,
+        "results": [
+            {
+                "State ID": "48",
+                "State": "Texas",
+                "Frequency": "146.9400",
+                "Input Freq": "146.3400",
+                "PL": "136.5",
+                "Nearest City": "Tyler",
+                "Callsign": "W5ETX",
+                "Lat": "32.3513",
+                "Long": "-95.3011",
+                "FM Analog": "Yes",
+            },
+            {
+                "State ID": "22",
+                "State": "Louisiana",
+                "Frequency": "146.8200",
+                "Input Freq": "146.2200",
+                "PL": "107.2",
+                "Nearest City": "Shreveport",
+                "Callsign": "K5SHR",
+                "Lat": "32.5251",
+                "Long": "-93.7502",
+                "FM Analog": "Yes",
+            },
+        ],
+    }
+
+    # 1. Fetch with mock API to populate disk cache
+    with patch("httpx.Client") as mock_client:
+        mock_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_api_response
+        mock_instance.__enter__.return_value.get.return_value = mock_response
+        mock_client.return_value = mock_instance
+
+        live_channels = provider.get_repeaters_near(32.35, -95.30, radius_miles=50.0)
+        assert len(live_channels) == 2
+
+    # Verify files written to disk cache
+    assert (cache_dir / "repeaterbook_cache.json").is_file()
+    assert (cache_dir / "state_48.json").is_file()
+    assert (cache_dir / "state_22.json").is_file()
+
+    # 2. Instantiate new provider without API key (offline) pointing to the same cache directory
+    offline_provider = RepeaterBookProvider(api_key="", cache_dir=cache_dir)
+    assert offline_provider.has_api_key() is False
+
+    cached_channels = offline_provider.get_repeaters_near(32.35, -95.30, radius_miles=50.0)
+    assert len(cached_channels) == 2
+    assert offline_provider.last_status == "DISK_CACHE"
+    callsigns = {c.callsign for c in cached_channels}
+    assert "W5ETX" in callsigns
+    assert "K5SHR" in callsigns
+
