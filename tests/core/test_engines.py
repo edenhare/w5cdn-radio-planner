@@ -46,10 +46,10 @@ def test_route_corridor_engine_bad_data():
         engine.plan_route(waypoint_names=["OnlyOneCity, TX"], candidate_channels=[])
 
 
-def test_proximity_engine_good_data():
+def test_proximity_engine_good_data(tmp_path):
     """Good Data: 5 concentric distance bands around Dallas, TX."""
     geocoder = GeocodingProvider()
-    repeater_provider = RepeaterBookProvider()
+    repeater_provider = RepeaterBookProvider(api_key="", cache_dir=tmp_path / "cache")
     all_repeaters = repeater_provider.get_repeaters_near(32.7, -96.8, radius_miles=100.0)
 
     engine = ProximityEngine(geocoder=geocoder)

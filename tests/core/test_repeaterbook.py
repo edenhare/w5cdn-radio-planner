@@ -70,9 +70,9 @@ def test_repeaterbook_provider_live_api_graceful_fallback_on_error():
         assert "LIVE_API_FALLBACK" in provider.last_status
 
 
-def test_repeaterbook_provider_live_api_success():
+def test_repeaterbook_provider_live_api_success(tmp_path: Path):
     """Good Data: Live API success parses returned repeaters."""
-    provider = RepeaterBookProvider(api_key="dummy_token")
+    provider = RepeaterBookProvider(api_key="dummy_token", cache_dir=tmp_path / "cache")
 
     sample_api_response = [
         {
