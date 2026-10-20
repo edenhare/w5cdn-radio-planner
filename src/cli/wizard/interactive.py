@@ -956,6 +956,7 @@ class InteractiveWizard:
     def _flow_preferences(self) -> None:
         """View and edit user preferences with numbered item selection."""
         self.console.clear()
+        render_header(self.console, subtitle="User Preferences")
         while True:
             prefs = self.prefs_mgr.preferences
             tokens = self.prefs_mgr.tokens

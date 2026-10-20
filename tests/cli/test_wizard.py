@@ -131,6 +131,7 @@ def test_wizard_flow_preferences_callsign(tmp_path: Path):
         wizard._flow_preferences()
 
     assert wizard.prefs_mgr.preferences.callsign == "W5TEST"
+    assert "RadioPlanner -- User Preferences" in out.getvalue()
     assert "User Preferences & Settings:" in out.getvalue()
     assert "[1] Amateur Callsign:" in out.getvalue()
 
