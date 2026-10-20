@@ -16,7 +16,7 @@ from core.providers.repeaterbook import RepeaterBookProvider
 def test_route_corridor_engine_good_data():
     """Good Data: Calculate travel corridor repeaters from Tyler, TX -> Shreveport, LA -> Jackson, MS."""
     geocoder = GeocodingProvider()
-    repeater_provider = RepeaterBookProvider()
+    repeater_provider = RepeaterBookProvider(api_key="")
     all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
 
     engine = RouteCorridorEngine(geocoder=geocoder)

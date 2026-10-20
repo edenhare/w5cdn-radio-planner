@@ -232,6 +232,7 @@ def test_wizard_flow_route_corridor_with_band_selection():
         assert codeplug.total_channels > 20
         assert radio_spec.id == "btech_dmr6x2"
         assert recipe.radio_target.bands == ["2m", "70cm", "WX"]
+        assert "RadioPlanner -- Route Corridor Configuration Review" in out.getvalue()
 
 
 def test_wizard_flow_preferences_repeaterbook_key_entry(tmp_path: Path):

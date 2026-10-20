@@ -225,6 +225,8 @@ class InteractiveWizard:
         )
 
         # Show intermittent configuration preview
+        self.console.clear()
+        render_header(self.console, subtitle="Route Corridor Configuration")
         render_config_panel(self.console, recipe, title="Route Corridor Configuration")
         if not self.repeater_provider.has_api_key():
             self.console.print(
@@ -260,10 +262,14 @@ class InteractiveWizard:
                 allowed_modes=recipe.radio_target.modes,
             )
 
+        # Clear screen and render header before notice and review split summary
+        self.console.clear()
+        render_header(self.console, subtitle="Route Corridor Configuration Review")
+
         if "FALLBACK" in getattr(self.repeater_provider, "last_status", ""):
             self.console.print(
                 f"[yellow]Notice: Live RepeaterBook query unavailable ({self.repeater_provider.last_status}). "
-                "Using preloaded corridor repeaters.[/yellow]"
+                "Using preloaded corridor repeaters.[/yellow]\n"
             )
 
         # Compute codeplug frequency band counts for split summary (Spec 3.3)
@@ -333,6 +339,8 @@ class InteractiveWizard:
         )
 
         # Show intermittent configuration preview
+        self.console.clear()
+        render_header(self.console, subtitle="Proximity Search Configuration")
         render_config_panel(self.console, recipe, title="Proximity Search Configuration")
         if not self.repeater_provider.has_api_key():
             self.console.print(
@@ -368,10 +376,14 @@ class InteractiveWizard:
                 allowed_modes=recipe.radio_target.modes,
             )
 
+        # Clear screen and render header before notice and review split summary
+        self.console.clear()
+        render_header(self.console, subtitle="Proximity Configuration Review")
+
         if "FALLBACK" in getattr(self.repeater_provider, "last_status", ""):
             self.console.print(
                 f"[yellow]Notice: Live RepeaterBook query unavailable ({self.repeater_provider.last_status}). "
-                "Using preloaded corridor repeaters.[/yellow]"
+                "Using preloaded corridor repeaters.[/yellow]\n"
             )
 
         # Compute codeplug frequency band counts for split summary (Spec 3.3)

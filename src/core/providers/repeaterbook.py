@@ -1021,16 +1021,19 @@ OFFLINE_REPEATERS: list[dict] = [
 class RepeaterBookProvider:
     """Queries RepeaterBook REST API with automatic offline sample fallback."""
 
-    def __init__(self, api_key: str | None = None, timeout: float = 3.0):
+    def __init__(self, api_key: str | None = None, timeout: float = 10.0):
         self.api_key, self.token_source = self._discover_api_key(api_key)
         self.timeout = timeout
         self.last_status: str = "CONFIGURED" if self.api_key else "NO_KEY"
+        self._cached_channels: list[RadioChannel] | None = None
 
     @staticmethod
     def _discover_api_key(provided_key: str | None = None) -> tuple[str | None, str | None]:
         """Discovers RepeaterBook API key from parameter, env var, or tokens file."""
-        if provided_key and provided_key.strip():
-            return provided_key.strip(), "preferences_or_parameter"
+        if provided_key is not None:
+            if provided_key.strip():
+                return provided_key.strip(), "preferences_or_parameter"
+            return None, None
 
         env_key = os.environ.get("REPEATERBOOK_API_KEY")
         if env_key and env_key.strip():
@@ -1062,11 +1065,15 @@ class RepeaterBookProvider:
         self, lat: float, lon: float, radius_miles: float = 50.0
     ) -> list[RadioChannel]:
         """Fetch repeaters within radius of coordinates, falling back to local dataset."""
+        if self._cached_channels is not None:
+            return self._cached_channels
+
         if self.has_api_key():
             try:
                 channels = self._query_live_api(lat, lon, radius_miles)
                 if channels:
                     self.last_status = "LIVE_API_SUCCESS"
+                    self._cached_channels = channels
                     return channels
             except Exception as e:
                 self.last_status = f"LIVE_API_FALLBACK ({e})"
@@ -1077,11 +1084,13 @@ class RepeaterBookProvider:
     def _query_live_api(
         self, lat: float, lon: float, radius_miles: float
     ) -> list[RadioChannel]:
-        """Attempt query to RepeaterBook API endpoint."""
+        """Attempt query to RepeaterBook API endpoint with App #114 compliant headers."""
         url = "https://www.repeaterbook.com/api/export.php"
         headers = {
+            "X-RB-App-Token": self.api_key or "",
             "Authorization": f"Bearer {self.api_key}",
-            "User-Agent": "RepeaterBookPythonClient/1.0",
+            "User-Agent": "RepeaterBook Python Client/0.6.0 (+micael@jarniac.dev)",
+            "Accept": "application/json",
         }
         params = {
             "lat": lat,
@@ -1113,9 +1122,9 @@ class RepeaterBookProvider:
             callsign = item.get("Callsign", item.get("callsign"))
             ctcss = item.get("PL", item.get("ctcss", "None"))
             tone_mode = "Tone" if ctcss and ctcss not in {"None", "CSQ"} else "None"
-            mode = item.get("Operational Mode", item.get("mode", "FM")).upper()
-            if "DMR" in mode:
-                mode = "DMR"
+            mode = "DMR" if item.get("DMR") == "Yes" or "DMR" in str(item.get("Operational Mode", "")).upper() else "FM"
+            cc_val = item.get("DMR Color Code")
+            color_code = int(cc_val) if cc_val and str(cc_val).isdigit() else None
 
             return RadioChannel(
                 number=idx,
@@ -1133,6 +1142,7 @@ class RepeaterBookProvider:
                 lat=float(item.get("Lat", item.get("lat", 0.0))),
                 lon=float(item.get("Long", item.get("lon", 0.0))),
                 specialType="REPEATERS",
+                colorCode=color_code,
                 comment=item.get("Use", item.get("comment", "")),
             )
         except Exception:
