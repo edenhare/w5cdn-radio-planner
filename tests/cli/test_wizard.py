@@ -231,3 +231,46 @@ def test_wizard_flow_route_corridor_with_band_selection():
         assert radio_spec.id == "btech_dmr6x2"
         assert recipe.radio_target.bands == ["2m", "70cm", "WX"]
 
+
+def test_wizard_flow_preferences_repeaterbook_key_entry(tmp_path: Path):
+    """Test entering RepeaterBook API key through User Preferences window updates token and provider."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+
+    # Option "8" (RepeaterBook API Key), enter "test_key_12345", then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["8", "test_key_12345", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.tokens.repeaterBookApiKey == "test_key_12345"
+    assert wizard.repeater_provider.api_key == "test_key_12345"
+    assert wizard.repeater_provider.has_api_key() is True
+    assert "RepeaterBook API Key saved" in out.getvalue()
+
+
+def test_wizard_flow_preferences_repeaterbook_key_clear(tmp_path: Path):
+    """Test clearing RepeaterBook API key through User Preferences window."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    prefs_file = tmp_path / "preferences.yaml"
+    tokens_file = tmp_path / "tokens"
+    wizard.prefs_mgr = PreferencesManager(prefs_path=prefs_file, tokens_path=tokens_file)
+    wizard.prefs_mgr.tokens = wizard.prefs_mgr.tokens.model_copy(update={"repeaterBookApiKey": "existing_key"})
+    wizard.repeater_provider.api_key = "existing_key"
+
+    # Option "8" (RepeaterBook API Key), enter empty string "", then "Q"
+    with patch("rich.prompt.Prompt.ask", side_effect=["8", "", "Q"]):
+        wizard._flow_preferences()
+
+    assert wizard.prefs_mgr.tokens.repeaterBookApiKey is None
+    assert wizard.repeater_provider.api_key is None
+    assert wizard.repeater_provider.has_api_key() is False
+    assert "RepeaterBook API Key cleared" in out.getvalue()
+
+

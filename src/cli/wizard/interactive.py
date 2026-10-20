@@ -230,10 +230,9 @@ class InteractiveWizard:
             self.console.print(
                 Panel(
                     "[bold yellow]WARNING: No RepeaterBook API Key Configured[/bold yellow]\n\n"
-                    "A valid RepeaterBook API key was not found in preferences, environment, or tokens file.\n"
+                    "A valid RepeaterBook API key was not configured in User Preferences.\n"
                     "RadioPlanner is operating in [bold]offline fallback mode[/bold] using preloaded corridor repeaters.\n\n"
-                    "[dim]To query live repeaters nationwide, set your API key in User Preferences (Option 6)\n"
-                    "or save it in ~/.config/radioplanner/tokens/repeaterbook or docs/RepeaterBookPythonClientApiToken.txt.[/dim]",
+                    "[bold cyan]To configure your API key, return to the Main Menu and select Option 6 ('User Preferences & API Tokens').[/bold cyan]",
                     title="[bold yellow]Offline Mode Warning[/bold yellow]",
                     border_style="yellow",
                 )
@@ -339,10 +338,9 @@ class InteractiveWizard:
             self.console.print(
                 Panel(
                     "[bold yellow]WARNING: No RepeaterBook API Key Configured[/bold yellow]\n\n"
-                    "A valid RepeaterBook API key was not found in preferences, environment, or tokens file.\n"
+                    "A valid RepeaterBook API key was not configured in User Preferences.\n"
                     "RadioPlanner is operating in [bold]offline fallback mode[/bold] using preloaded corridor repeaters.\n\n"
-                    "[dim]To query live repeaters nationwide, set your API key in User Preferences (Option 6)\n"
-                    "or save it in ~/.config/radioplanner/tokens/repeaterbook or docs/RepeaterBookPythonClientApiToken.txt.[/dim]",
+                    "[bold cyan]To configure your API key, return to the Main Menu and select Option 6 ('User Preferences & API Tokens').[/bold cyan]",
                     title="[bold yellow]Offline Mode Warning[/bold yellow]",
                     border_style="yellow",
                 )
@@ -908,28 +906,52 @@ class InteractiveWizard:
         self.console.print(f"[green]✔ Color Theme set to {new_prefs.colorTheme}[/green]")
 
     def _edit_repeaterbook_key(self) -> None:
+        current = self.prefs_mgr.tokens.repeaterBookApiKey or ""
+        suggestion = current or (self.repeater_provider.api_key or "")
+        self.console.print("\n[bold cyan]RepeaterBook REST API Key Configuration:[/bold cyan]")
+        self.console.print("[dim]Enter your RepeaterBook API key to enable live repeater downloads (leave blank to clear).[/dim]")
         key = Prompt.ask(
-            "Enter RepeaterBook API Key (leave empty to clear)",
-            default=self.prefs_mgr.tokens.repeaterBookApiKey or "",
-        )
-        new_tokens = self.prefs_mgr.tokens.model_copy(update={"repeaterBookApiKey": key.strip() or None})
+            "RepeaterBook API Key",
+            default=suggestion,
+        ).strip()
+        new_val = key if key else None
+        new_tokens = self.prefs_mgr.tokens.model_copy(update={"repeaterBookApiKey": new_val})
         self.prefs_mgr.save_tokens(new_tokens)
-        self.console.print("[green]✔ RepeaterBook API Key saved to ~/.config/radioplanner/tokens[/green]")
+        self.repeater_provider.api_key = new_val
+        self.repeater_provider.token_source = "user_preferences" if new_val else None
+        self.repeater_provider.last_status = "CONFIGURED" if new_val else "NO_KEY"
+        if new_val:
+            self.console.print("[green]✔ RepeaterBook API Key saved to user tokens file.[/green]")
+        else:
+            self.console.print("[yellow]✔ RepeaterBook API Key cleared (offline mode active).[/yellow]")
 
     def _edit_radioid_username(self) -> None:
+        self.console.print("\n[bold cyan]RadioID.net Callsign Configuration:[/bold cyan]")
         call = Prompt.ask(
-            "Enter RadioID.net Username/Callsign",
+            "Enter RadioID.net Username/Callsign (leave blank to clear)",
             default=self.prefs_mgr.tokens.radioIdUsername or "",
-        )
-        new_tokens = self.prefs_mgr.tokens.model_copy(update={"radioIdUsername": call.strip() or None})
+        ).strip()
+        new_val = call.upper() if call else None
+        new_tokens = self.prefs_mgr.tokens.model_copy(update={"radioIdUsername": new_val})
         self.prefs_mgr.save_tokens(new_tokens)
-        self.console.print("[green]✔ RadioID.net Callsign saved[/green]")
+        if new_val:
+            self.console.print("[green]✔ RadioID.net Callsign saved to user tokens file.[/green]")
+        else:
+            self.console.print("[yellow]✔ RadioID.net Callsign cleared.[/yellow]")
 
     def _edit_radioid_key(self) -> None:
-        key = Prompt.ask("Enter RadioID.net API Key", default=self.prefs_mgr.tokens.radioIdApiKey or "")
-        new_tokens = self.prefs_mgr.tokens.model_copy(update={"radioIdApiKey": key.strip() or None})
+        self.console.print("\n[bold cyan]RadioID.net API Key Configuration:[/bold cyan]")
+        key = Prompt.ask(
+            "Enter RadioID.net API Key (leave blank to clear)",
+            default=self.prefs_mgr.tokens.radioIdApiKey or "",
+        ).strip()
+        new_val = key if key else None
+        new_tokens = self.prefs_mgr.tokens.model_copy(update={"radioIdApiKey": new_val})
         self.prefs_mgr.save_tokens(new_tokens)
-        self.console.print("[green]✔ RadioID.net API Key saved to ~/.config/radioplanner/tokens[/green]")
+        if new_val:
+            self.console.print("[green]✔ RadioID.net API Key saved to user tokens file.[/green]")
+        else:
+            self.console.print("[yellow]✔ RadioID.net API Key cleared.[/yellow]")
 
     def _flow_preferences(self) -> None:
         """View and edit user preferences with numbered item selection."""
@@ -956,7 +978,9 @@ class InteractiveWizard:
                 PreferenceItem("UI Color Theme", lambda: prefs.colorTheme, self._edit_color_theme),
                 PreferenceItem(
                     "RepeaterBook API Key",
-                    lambda: "*" * len(tokens.repeaterBookApiKey) if tokens.repeaterBookApiKey else "(None)",
+                    lambda: ("*" * min(16, len(tokens.repeaterBookApiKey)) + " (configured)")
+                    if tokens.repeaterBookApiKey
+                    else "(None - Offline Mode)",
                     self._edit_repeaterbook_key,
                 ),
                 PreferenceItem(
@@ -966,7 +990,9 @@ class InteractiveWizard:
                 ),
                 PreferenceItem(
                     "RadioID.net API Key",
-                    lambda: "*" * len(tokens.radioIdApiKey) if tokens.radioIdApiKey else "(None)",
+                    lambda: ("*" * min(16, len(tokens.radioIdApiKey)) + " (configured)")
+                    if tokens.radioIdApiKey
+                    else "(None)",
                     self._edit_radioid_key,
                 ),
             ]
