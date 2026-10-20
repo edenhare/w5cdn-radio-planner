@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from cli.ui.renderers import render_header
 from core.models.radio_spec import TargetRadioSpec
 
 BAND_DESCRIPTIONS: dict[str, str] = {
@@ -43,6 +44,9 @@ def select_bands_for_radio(
     else:
         # Route Corridor & Proximity: All supported bands EXCEPT Airband
         active = {b for b in supported if b.lower() != "airband"}
+
+    console.clear()
+    render_header(console, subtitle="Radio Configuration")
 
     while True:
         console.print(f"\n[bold cyan]═══ Select Active Frequency Bands for {spec.brand} {spec.model} ═══[/bold cyan]")

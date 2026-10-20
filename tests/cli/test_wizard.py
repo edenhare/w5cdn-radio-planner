@@ -25,6 +25,7 @@ def test_wizard_select_target_radio():
         selected_id = wizard._select_target_radio()
         assert selected_id is not None
         assert selected_id in {r.id for r in wizard.radio_mgr.list_radios()}
+        assert "RadioPlanner -- Radio Configuration" in out.getvalue()
 
 
 def test_hierarchical_radio_selector_quit():

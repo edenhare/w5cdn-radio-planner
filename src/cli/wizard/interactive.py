@@ -657,6 +657,7 @@ class InteractiveWizard:
     def _flow_radios_manager(self) -> None:
         """Mode 5: Radios & Hardware Specifications Manager."""
         self.console.clear()
+        render_header(self.console, subtitle="Radio Configuration")
         while True:
             radios = self.radio_mgr.list_radios()
             self.console.print(f"\n[bold cyan]Configured Radio Hardware Specifications ({len(radios)}):[/bold cyan]")
@@ -852,6 +853,8 @@ class InteractiveWizard:
         self.console.print(f"[green]✔ Distance Unit set to {new_prefs.distanceUnit}[/green]")
 
     def _edit_default_radio(self) -> None:
+        self.console.clear()
+        render_header(self.console, subtitle="Radio Configuration")
         radios = self.radio_mgr.list_radios()
         self.console.print("\n[bold cyan]Set Default Target Radio:[/bold cyan]")
         self.console.print("  [0] None / Clear default radio")

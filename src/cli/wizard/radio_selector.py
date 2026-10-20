@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
 
+from cli.ui.renderers import render_header
 from core.managers.radio_manager import RadioManager
 from core.models.radio_spec import TargetRadioSpec
 
@@ -36,6 +37,9 @@ def select_target_radio_hierarchical(
         def_radio = radio_mgr.get_radio(default_id)
         if def_radio.brand in sorted_brands:
             default_brand_index = str(sorted_brands.index(def_radio.brand) + 1)
+
+    console.clear()
+    render_header(console, subtitle="Radio Configuration")
 
     while True:
         # Stage 1: Brand Selection (Multi-Column Grid)
@@ -81,6 +85,8 @@ def select_target_radio_hierarchical(
         models = brands_map[selected_brand]
 
         # Stage 2: Model Selection (Multi-Column Grid)
+        console.clear()
+        render_header(console, subtitle="Radio Configuration")
         while True:
             console.print(f"\n[bold cyan]Select {selected_brand} Model:[/bold cyan]")
             model_table = Table(border_style="green", show_header=False, padding=(0, 2))
@@ -105,6 +111,8 @@ def select_target_radio_hierarchical(
             model_choice = Prompt.ask("Select model number", default="1").strip().upper()
 
             if model_choice in {"B", "BACK"}:
+                console.clear()
+                render_header(console, subtitle="Radio Configuration")
                 break  # Return to Stage 1
             if model_choice in {"Q", "ESC"}:
                 return None
