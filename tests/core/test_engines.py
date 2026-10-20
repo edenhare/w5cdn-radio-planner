@@ -34,8 +34,9 @@ def test_route_corridor_engine_good_data():
     # Ensure chronological order: Tyler repeaters should appear before Jackson repeaters
     first_ch_city = result.channels[0].city or ""
     last_ch_city = result.channels[-1].city or ""
-    assert first_ch_city.lower() in {"tyler", "longview"}
-    assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe"}
+    assert first_ch_city.lower() in {"tyler", "lindale", "kilgore", "longview"}
+    assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe", "pearl", "brandon", "madison"}
+    assert len(result.channels) >= 20
 
 
 def test_route_corridor_engine_bad_data():
@@ -115,3 +116,40 @@ def test_sequence_organizer():
     # Verify continuous 1-indexed numbering
     for idx, ch in enumerate(codeplug.channels, start=1):
         assert ch.number == idx
+
+
+def test_sequence_organizer_allowed_bands_filtering():
+    """Verify SequenceOrganizer restricts channels to operator's selected bands."""
+    mgr = RadioManager()
+    spec = mgr.get_radio("btech_dmr6x2")
+
+    ch_2m = RadioChannel(
+        number=1,
+        name="2m Rpt",
+        rxFreq=146.940,
+        txFreq=146.340,
+        mode="FM",
+        specialType="REPEATERS",
+    )
+    ch_70cm = RadioChannel(
+        number=2,
+        name="70cm Rpt",
+        rxFreq=442.200,
+        txFreq=447.200,
+        mode="FM",
+        specialType="REPEATERS",
+    )
+
+    # Allow 2m ONLY
+    codeplug = SequenceOrganizer.assemble(
+        codeplug_name="2mOnly",
+        sequence_keys=["ROUTE_PLAN"],
+        primary_channels=[ch_2m, ch_70cm],
+        target_spec=spec,
+        allowed_bands=["2m"],
+    )
+
+    assert codeplug.total_channels == 1
+    assert codeplug.channels[0].name == "2m Rpt"
+    assert codeplug.channels[0].band == "2m"
+

@@ -207,3 +207,27 @@ def test_wizard_flow_preferences_color_theme(tmp_path: Path):
         wizard._flow_preferences()
 
     assert wizard.prefs_mgr.preferences.colorTheme == "LIGHT"
+
+
+def test_wizard_flow_route_corridor_with_band_selection():
+    """Verify Mode 1 Route Corridor flow prompts for radio bands and generates rich codeplug."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    with patch("cli.wizard.interactive.validate_and_edit_route", return_value=["Tyler, TX", "Shreveport, LA", "Jackson, MS"]), \
+         patch("cli.wizard.interactive.select_and_sequence_blocks", return_value=["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"]), \
+         patch.object(wizard, "_select_target_radio", return_value="btech_dmr6x2"), \
+         patch("cli.wizard.interactive.select_bands_for_radio", return_value=["2m", "70cm", "WX"]), \
+         patch("rich.prompt.Prompt.ask", side_effect=["25.0"]), \
+         patch("rich.prompt.Confirm.ask", side_effect=[True, True]), \
+         patch.object(wizard, "_channel_review_and_export_loop") as mock_review:
+        wizard._flow_route_corridor()
+        assert mock_review.called
+        args, _ = mock_review.call_args
+        codeplug, recipe, radio_spec = args
+        # Verify that more than 20 channels were found along the 320mi route
+        assert codeplug.total_channels > 20
+        assert radio_spec.id == "btech_dmr6x2"
+        assert recipe.radio_target.bands == ["2m", "70cm", "WX"]
+

@@ -17,6 +17,7 @@ from cli.ui.renderers import (
     render_review_table,
     render_split_summary,
 )
+from cli.wizard.band_selector import select_bands_for_radio
 from cli.wizard.radio_selector import select_target_radio_hierarchical
 from cli.wizard.sequence_editor import select_and_sequence_blocks
 from cli.wizard.waypoint_editor import validate_and_edit_route
@@ -70,7 +71,12 @@ class InteractiveWizard:
         self.prefs_mgr = PreferencesManager()
         self.template_mgr = TemplateManager()
         self.geocoder = GeocodingProvider()
-        self.repeater_provider = RepeaterBookProvider()
+        self.repeater_provider = RepeaterBookProvider(api_key=self.prefs_mgr.tokens.repeaterBookApiKey)
+        if self.repeater_provider.api_key and not self.prefs_mgr.tokens.repeaterBookApiKey:
+            self.prefs_mgr.tokens = self.prefs_mgr.tokens.model_copy(
+                update={"repeaterBookApiKey": self.repeater_provider.api_key}
+            )
+            self.prefs_mgr.save_tokens(self.prefs_mgr.tokens)
         self.airports_provider = AirportsProvider()
         self.radio_id_provider = RadioIdProvider()
 
@@ -189,6 +195,17 @@ class InteractiveWizard:
 
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
+        # Select active frequency bands for the chosen radio (Spec 2.3)
+        selected_bands = select_bands_for_radio(
+            self.console,
+            radio_spec,
+            default_bands=[b for b in radio_spec.supportedBands if b.lower() != "airband"],
+            mode_name="Route Corridor",
+        )
+        if not selected_bands:
+            self.console.print("[yellow]Band selection cancelled.[/yellow]")
+            return
+
         start_city = waypoints[0].split(",")[0].strip()
         end_city = waypoints[-1].split(",")[0].strip()
         plan_name = f"{start_city}_to_{end_city}_Corridor"
@@ -201,7 +218,7 @@ class InteractiveWizard:
                 radio_id=radio_id,
                 programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
-                bands=radio_spec.supportedBands,
+                bands=selected_bands,
                 modes=radio_spec.supportedModes,
             ),
             sequence_order=sequence_keys,
@@ -209,6 +226,19 @@ class InteractiveWizard:
 
         # Show intermittent configuration preview
         render_config_panel(self.console, recipe, title="Route Corridor Configuration")
+        if not self.repeater_provider.has_api_key():
+            self.console.print(
+                Panel(
+                    "[bold yellow]WARNING: No RepeaterBook API Key Configured[/bold yellow]\n\n"
+                    "A valid RepeaterBook API key was not found in preferences, environment, or tokens file.\n"
+                    "RadioPlanner is operating in [bold]offline fallback mode[/bold] using preloaded corridor repeaters.\n\n"
+                    "[dim]To query live repeaters nationwide, set your API key in User Preferences (Option 6)\n"
+                    "or save it in ~/.config/radioplanner/tokens/repeaterbook or docs/RepeaterBookPythonClientApiToken.txt.[/dim]",
+                    title="[bold yellow]Offline Mode Warning[/bold yellow]",
+                    border_style="yellow",
+                )
+            )
+
         if not Confirm.ask("Proceed with route calculation?", default=True):
             return
 
@@ -227,7 +257,21 @@ class InteractiveWizard:
                 primary_channels=res.channels,
                 target_spec=radio_spec,
                 template_manager=self.template_mgr,
+                allowed_bands=selected_bands,
+                allowed_modes=recipe.radio_target.modes,
             )
+
+        if "FALLBACK" in getattr(self.repeater_provider, "last_status", ""):
+            self.console.print(
+                f"[yellow]Notice: Live RepeaterBook query unavailable ({self.repeater_provider.last_status}). "
+                "Using preloaded corridor repeaters.[/yellow]"
+            )
+
+        # Compute codeplug frequency band counts for split summary (Spec 3.3)
+        codeplug_band_counts: dict[str, int] = {}
+        for ch in codeplug.channels:
+            b = ch.band
+            codeplug_band_counts[b] = codeplug_band_counts.get(b, 0) + 1
 
         # Show Split Summary
         render_split_summary(
@@ -236,7 +280,7 @@ class InteractiveWizard:
             waypoints=res.waypoints,
             cumulative_miles=res.cumulative_mileages,
             total_miles=res.total_distance_miles,
-            band_counts=res.channel_counts_by_band,
+            band_counts=codeplug_band_counts,
             total_channels=codeplug.total_channels,
         )
 
@@ -257,6 +301,17 @@ class InteractiveWizard:
 
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
+        # Select active frequency bands for the chosen radio (Spec 2.3)
+        selected_bands = select_bands_for_radio(
+            self.console,
+            radio_spec,
+            default_bands=[b for b in radio_spec.supportedBands if b.lower() != "airband"],
+            mode_name="Proximity",
+        )
+        if not selected_bands:
+            self.console.print("[yellow]Band selection cancelled.[/yellow]")
+            return
+
         city_clean = center_loc.split(",")[0].strip()
         plan_name = f"{city_clean}_Proximity_{int(radius)}mi"
 
@@ -268,18 +323,31 @@ class InteractiveWizard:
                 radio_id=radio_id,
                 programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
-                bands=radio_spec.supportedBands,
+                bands=selected_bands,
                 modes=radio_spec.supportedModes,
             ),
             sequence_order=[
-                "TEMPLATE:builtin_calling_channels",
+                "TEMPLATE:calling_channels",
                 "PROXIMITY_PLAN",
-                "TEMPLATE:builtin_noaa_wx_channels",
+                "TEMPLATE:noaa_wx_channels",
             ],
         )
 
         # Show intermittent configuration preview
         render_config_panel(self.console, recipe, title="Proximity Search Configuration")
+        if not self.repeater_provider.has_api_key():
+            self.console.print(
+                Panel(
+                    "[bold yellow]WARNING: No RepeaterBook API Key Configured[/bold yellow]\n\n"
+                    "A valid RepeaterBook API key was not found in preferences, environment, or tokens file.\n"
+                    "RadioPlanner is operating in [bold]offline fallback mode[/bold] using preloaded corridor repeaters.\n\n"
+                    "[dim]To query live repeaters nationwide, set your API key in User Preferences (Option 6)\n"
+                    "or save it in ~/.config/radioplanner/tokens/repeaterbook or docs/RepeaterBookPythonClientApiToken.txt.[/dim]",
+                    title="[bold yellow]Offline Mode Warning[/bold yellow]",
+                    border_style="yellow",
+                )
+            )
+
         if not Confirm.ask("Proceed with proximity search?", default=True):
             return
 
@@ -297,7 +365,22 @@ class InteractiveWizard:
                 sequence_keys=recipe.sequence_order,
                 primary_channels=res.channels,
                 target_spec=radio_spec,
+                template_manager=self.template_mgr,
+                allowed_bands=selected_bands,
+                allowed_modes=recipe.radio_target.modes,
             )
+
+        if "FALLBACK" in getattr(self.repeater_provider, "last_status", ""):
+            self.console.print(
+                f"[yellow]Notice: Live RepeaterBook query unavailable ({self.repeater_provider.last_status}). "
+                "Using preloaded corridor repeaters.[/yellow]"
+            )
+
+        # Compute codeplug frequency band counts for split summary (Spec 3.3)
+        codeplug_band_counts: dict[str, int] = {}
+        for ch in codeplug.channels:
+            b = ch.band
+            codeplug_band_counts[b] = codeplug_band_counts.get(b, 0) + 1
 
         # Summary view
         render_split_summary(
@@ -306,7 +389,7 @@ class InteractiveWizard:
             waypoints=[res.center_point],
             cumulative_miles=[0.0],
             total_miles=res.radius_miles,
-            band_counts=res.channel_counts_by_band,
+            band_counts=codeplug_band_counts,
             total_channels=codeplug.total_channels,
         )
 

@@ -26,9 +26,11 @@ class SequenceOrganizer:
         target_spec: TargetRadioSpec,
         custom_templates: dict[str, list[RadioChannel]] | None = None,
         template_manager: Any | None = None,
+        allowed_bands: list[str] | None = None,
+        allowed_modes: list[str] | None = None,
         deduplicate: bool = True,
     ) -> Codeplug:
-        """Merge sequence blocks, filter against radio hardware specs, and renumber."""
+        """Merge sequence blocks, filter against radio hardware specs and active bands, and renumber."""
         custom_map = custom_templates or {}
         raw_combined: list[RadioChannel] = []
 
@@ -39,16 +41,21 @@ class SequenceOrganizer:
                 raw_combined.extend(custom_map[key])
             elif key.startswith("TEMPLATE:"):
                 tpl_id = key.split(":", 1)[1]
-                if template_manager and hasattr(template_manager, "has_template") and template_manager.has_template(tpl_id):
+                if (
+                    template_manager
+                    and hasattr(template_manager, "has_template")
+                    and template_manager.has_template(tpl_id)
+                ):
                     raw_combined.extend(template_manager.get_template_channels(tpl_id))
                 elif tpl_id in {"calling_channels", "builtin_calling_channels"}:
                     raw_combined.extend(get_national_calling_channels())
                 elif tpl_id in {"noaa_wx_channels", "builtin_noaa_wx_channels"}:
                     raw_combined.extend(get_noaa_wx_channels())
 
-
         # 1. Filter against radio supported bands and modes
-        filtered = filter_channels_for_radio(raw_combined, target_spec)
+        filtered = filter_channels_for_radio(
+            raw_combined, target_spec, allowed_bands=allowed_bands, allowed_modes=allowed_modes
+        )
 
         # 2. Deduplicate if enabled (match by rxFreq + tone)
         if deduplicate:

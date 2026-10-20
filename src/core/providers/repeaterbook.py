@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+import os
+from pathlib import Path
+
+import httpx
+
 from core.models.channel import RadioChannel
 
-# Sample offline repeaters along I-20 corridor (Tyler -> Shreveport -> Jackson) & Dallas metro
+logger = logging.getLogger(__name__)
+
+# Comprehensive offline repeaters along I-20 corridor (Tyler, TX -> Shreveport, LA -> Jackson, MS)
+# and Dallas-Fort Worth metro area
 OFFLINE_REPEATERS: list[dict] = [
+    # Tyler, TX Area (Smith County)
     {
         "name": "Tyler RPT 146.94",
         "callsign": "W5ETX",
@@ -20,7 +30,7 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "TX",
         "lat": 32.3513,
         "lon": -95.3011,
-        "comment": "Smith County ARES / Tyler ARC Repeater",
+        "comment": "Smith County ARES / Tyler ARC Primary",
     },
     {
         "name": "Tyler UHF 442.20",
@@ -36,8 +46,92 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "TX",
         "lat": 32.3600,
         "lon": -95.3100,
-        "comment": "Tyler UHF Wide Area",
+        "comment": "Tyler UHF Wide Area Link",
     },
+    {
+        "name": "Tyler 145.430",
+        "callsign": "K5TYR",
+        "rxFreq": 145.43000,
+        "txFreq": 144.83000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Tyler",
+        "state": "TX",
+        "lat": 32.3450,
+        "lon": -95.2900,
+        "comment": "Smith County Emergency Hospital Net",
+    },
+    {
+        "name": "Tyler DMR 444.85",
+        "callsign": "W5ETX",
+        "rxFreq": 444.85000,
+        "txFreq": 449.85000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Tyler",
+        "state": "TX",
+        "lat": 32.3550,
+        "lon": -95.3050,
+        "comment": "Tyler East DMR Repeater",
+    },
+    {
+        "name": "Lindale 147.08",
+        "callsign": "N5LND",
+        "rxFreq": 147.08000,
+        "txFreq": 147.68000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Lindale",
+        "state": "TX",
+        "lat": 32.5085,
+        "lon": -95.4080,
+        "comment": "Lindale I-20 North Skywarn",
+    },
+    # Kilgore / Gladewater, TX
+    {
+        "name": "Kilgore 146.68",
+        "callsign": "K5KIL",
+        "rxFreq": 146.68000,
+        "txFreq": 146.08000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Kilgore",
+        "state": "TX",
+        "lat": 32.3860,
+        "lon": -94.8755,
+        "comment": "Kilgore ARC Repeater",
+    },
+    {
+        "name": "Kilgore DMR 443.40",
+        "callsign": "W5KIL",
+        "rxFreq": 443.40000,
+        "txFreq": 448.40000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Kilgore",
+        "state": "TX",
+        "lat": 32.3900,
+        "lon": -94.8800,
+        "comment": "Kilgore DMR BrandMeister",
+    },
+    # Longview, TX Area (Gregg County)
     {
         "name": "Longview 147.34",
         "callsign": "K5LTR",
@@ -52,7 +146,122 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "TX",
         "lat": 32.5007,
         "lon": -94.7405,
-        "comment": "Gregg County East Texas Repeater",
+        "comment": "Gregg County East Texas Repeater Association",
+    },
+    {
+        "name": "Longview UHF 444.35",
+        "callsign": "K5LTR",
+        "rxFreq": 444.35000,
+        "txFreq": 449.35000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Longview",
+        "state": "TX",
+        "lat": 32.5100,
+        "lon": -94.7300,
+        "comment": "Longview UHF Wide Area Net",
+    },
+    {
+        "name": "Longview 146.74",
+        "callsign": "W5LOK",
+        "rxFreq": 146.74000,
+        "txFreq": 146.14000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Longview",
+        "state": "TX",
+        "lat": 32.4950,
+        "lon": -94.7500,
+        "comment": "Longview South Emergency Net",
+    },
+    {
+        "name": "Longview DMR 442.85",
+        "callsign": "N5ETX",
+        "rxFreq": 442.85000,
+        "txFreq": 447.85000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 2,
+        "timeSlot": 1,
+        "city": "Longview",
+        "state": "TX",
+        "lat": 32.5050,
+        "lon": -94.7450,
+        "comment": "Longview DMR Repeater",
+    },
+    # Marshall / Waskom, TX (Harrison County)
+    {
+        "name": "Marshall 147.12",
+        "callsign": "W5MHL",
+        "rxFreq": 147.12000,
+        "txFreq": 147.72000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Marshall",
+        "state": "TX",
+        "lat": 32.5449,
+        "lon": -94.3674,
+        "comment": "Harrison County Amateur Radio Club",
+    },
+    {
+        "name": "Marshall UHF 444.40",
+        "callsign": "W5MHL",
+        "rxFreq": 444.40000,
+        "txFreq": 449.40000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Marshall",
+        "state": "TX",
+        "lat": 32.5500,
+        "lon": -94.3600,
+        "comment": "Marshall UHF Emergency Services",
+    },
+    {
+        "name": "Waskom 147.24",
+        "callsign": "K5WSK",
+        "rxFreq": 147.24000,
+        "txFreq": 147.84000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Waskom",
+        "state": "TX",
+        "lat": 32.4746,
+        "lon": -94.0621,
+        "comment": "TX-LA Border I-20 Travel Link",
+    },
+    # Shreveport / Bossier City, LA (Caddo / Bossier Parishes)
+    {
+        "name": "Greenwood 147.18",
+        "callsign": "N5GWD",
+        "rxFreq": 147.18000,
+        "txFreq": 147.78000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Greenwood",
+        "state": "LA",
+        "lat": 32.4418,
+        "lon": -93.9735,
+        "comment": "Greenwood West Shreveport Gateway",
     },
     {
         "name": "Shreveport 146.82",
@@ -85,7 +294,204 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "LA",
         "lat": 32.5300,
         "lon": -93.7600,
-        "comment": "Shreveport DMR Repeater",
+        "comment": "Shreveport DMR Regional Hub",
+    },
+    {
+        "name": "Shreveport 146.64",
+        "callsign": "W5SRA",
+        "rxFreq": 146.64000,
+        "txFreq": 146.04000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Shreveport",
+        "state": "LA",
+        "lat": 32.5100,
+        "lon": -93.7400,
+        "comment": "Caddo Parish ARES Net",
+    },
+    {
+        "name": "Shreveport UHF 443.20",
+        "callsign": "K5SHV",
+        "rxFreq": 443.20000,
+        "txFreq": 448.20000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Shreveport",
+        "state": "LA",
+        "lat": 32.5200,
+        "lon": -93.7550,
+        "comment": "Shreveport UHF Wide Area Net",
+    },
+    {
+        "name": "Bossier City 147.39",
+        "callsign": "W5BCR",
+        "rxFreq": 147.39000,
+        "txFreq": 147.99000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Bossier City",
+        "state": "LA",
+        "lat": 32.5160,
+        "lon": -93.7321,
+        "comment": "Bossier Parish Skywarn Repeater",
+    },
+    {
+        "name": "Bossier City DMR 444.75",
+        "callsign": "K5BC",
+        "rxFreq": 444.75000,
+        "txFreq": 449.75000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 2,
+        "city": "Bossier City",
+        "state": "LA",
+        "lat": 32.5200,
+        "lon": -93.7250,
+        "comment": "Bossier City DMR BrandMeister",
+    },
+    {
+        "name": "Haughton 145.15",
+        "callsign": "N5HGT",
+        "rxFreq": 145.15000,
+        "txFreq": 144.55000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Haughton",
+        "state": "LA",
+        "lat": 32.5304,
+        "lon": -93.5427,
+        "comment": "Haughton I-20 Travel Link",
+    },
+    # Minden / Arcadia, LA (Webster / Bienville Parishes)
+    {
+        "name": "Minden 147.30",
+        "callsign": "W5MND",
+        "rxFreq": 147.30000,
+        "txFreq": 147.90000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Minden",
+        "state": "LA",
+        "lat": 32.6154,
+        "lon": -93.2868,
+        "comment": "Webster Parish Amateur Radio Club",
+    },
+    {
+        "name": "Minden UHF 443.85",
+        "callsign": "W5MND",
+        "rxFreq": 443.85000,
+        "txFreq": 448.85000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "186.2",
+        "city": "Minden",
+        "state": "LA",
+        "lat": 32.6100,
+        "lon": -93.2800,
+        "comment": "Minden UHF Emergency Net",
+    },
+    {
+        "name": "Arcadia 147.06",
+        "callsign": "N5ARC",
+        "rxFreq": 147.06000,
+        "txFreq": 147.66000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Arcadia",
+        "state": "LA",
+        "lat": 32.5532,
+        "lon": -92.9224,
+        "comment": "Bienville Parish ARES Corridor Link",
+    },
+    # Ruston, LA (Lincoln Parish)
+    {
+        "name": "Ruston 146.94",
+        "callsign": "W5LGT",
+        "rxFreq": 146.94000,
+        "txFreq": 146.34000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Ruston",
+        "state": "LA",
+        "lat": 32.5232,
+        "lon": -92.6379,
+        "comment": "Lincoln Parish ARC Primary",
+    },
+    {
+        "name": "Ruston UHF 444.50",
+        "callsign": "W5LGT",
+        "rxFreq": 444.50000,
+        "txFreq": 449.50000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Ruston",
+        "state": "LA",
+        "lat": 32.5250,
+        "lon": -92.6300,
+        "comment": "Louisiana Tech Campus UHF Net",
+    },
+    {
+        "name": "Ruston DMR 147.18",
+        "callsign": "K5LGT",
+        "rxFreq": 147.18000,
+        "txFreq": 147.78000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Ruston",
+        "state": "LA",
+        "lat": 32.5200,
+        "lon": -92.6400,
+        "comment": "Ruston VHF DMR Repeater",
+    },
+    # West Monroe / Monroe, LA (Ouachita Parish)
+    {
+        "name": "West Monroe 146.85",
+        "callsign": "W5WMO",
+        "rxFreq": 146.85000,
+        "txFreq": 146.25000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "West Monroe",
+        "state": "LA",
+        "lat": 32.5185,
+        "lon": -92.1474,
+        "comment": "West Monroe ARC Repeater",
     },
     {
         "name": "Monroe 146.70",
@@ -101,8 +507,107 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "LA",
         "lat": 32.5093,
         "lon": -92.1193,
-        "comment": "Ouachita Valley ARC",
+        "comment": "Ouachita Valley ARC Primary",
     },
+    {
+        "name": "Monroe UHF 444.90",
+        "callsign": "W5MRO",
+        "rxFreq": 444.90000,
+        "txFreq": 449.90000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Monroe",
+        "state": "LA",
+        "lat": 32.5050,
+        "lon": -92.1150,
+        "comment": "Ouachita Valley UHF Skywarn Net",
+    },
+    {
+        "name": "Monroe DMR 442.15",
+        "callsign": "K5OVR",
+        "rxFreq": 442.15000,
+        "txFreq": 447.15000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Monroe",
+        "state": "LA",
+        "lat": 32.5150,
+        "lon": -92.1250,
+        "comment": "Monroe Metro DMR Hub",
+    },
+    # Rayville / Delhi / Tallulah, LA (Richland / Madison Parishes)
+    {
+        "name": "Rayville 147.15",
+        "callsign": "N5RYV",
+        "rxFreq": 147.15000,
+        "txFreq": 147.75000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Rayville",
+        "state": "LA",
+        "lat": 32.4743,
+        "lon": -91.7543,
+        "comment": "Richland Parish ARES",
+    },
+    {
+        "name": "Delhi 146.61",
+        "callsign": "W5DLH",
+        "rxFreq": 146.61000,
+        "txFreq": 146.01000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "136.5",
+        "city": "Delhi",
+        "state": "LA",
+        "lat": 32.4549,
+        "lon": -91.4937,
+        "comment": "Delhi I-20 Travel Net",
+    },
+    {
+        "name": "Tallulah 147.03",
+        "callsign": "W5TLH",
+        "rxFreq": 147.03000,
+        "txFreq": 147.63000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Tallulah",
+        "state": "LA",
+        "lat": 32.4085,
+        "lon": -91.1868,
+        "comment": "Madison Parish Emergency Net",
+    },
+    {
+        "name": "Tallulah UHF 443.70",
+        "callsign": "W5TLH",
+        "rxFreq": 443.70000,
+        "txFreq": 448.70000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Tallulah",
+        "state": "LA",
+        "lat": 32.4050,
+        "lon": -91.1800,
+        "comment": "Tallulah UHF Link to Mississippi",
+    },
+    # Vicksburg, MS (Warren County)
     {
         "name": "Vicksburg 146.91",
         "callsign": "W5VBG",
@@ -117,8 +622,91 @@ OFFLINE_REPEATERS: list[dict] = [
         "state": "MS",
         "lat": 32.3526,
         "lon": -90.8779,
-        "comment": "Vicksburg Amateur Radio Club",
+        "comment": "Vicksburg Amateur Radio Club Primary",
     },
+    {
+        "name": "Vicksburg UHF 444.60",
+        "callsign": "W5VBG",
+        "rxFreq": 444.60000,
+        "txFreq": 449.60000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Vicksburg",
+        "state": "MS",
+        "lat": 32.3550,
+        "lon": -90.8750,
+        "comment": "Vicksburg UHF Wide Area Skywarn",
+    },
+    {
+        "name": "Vicksburg DMR 147.27",
+        "callsign": "K5VBG",
+        "rxFreq": 147.27000,
+        "txFreq": 147.87000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Vicksburg",
+        "state": "MS",
+        "lat": 32.3500,
+        "lon": -90.8800,
+        "comment": "Warren County DMR Repeater",
+    },
+    # Edwards / Clinton, MS (Hinds County West)
+    {
+        "name": "Edwards 147.36",
+        "callsign": "N5EDW",
+        "rxFreq": 147.36000,
+        "txFreq": 147.96000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Edwards",
+        "state": "MS",
+        "lat": 32.3307,
+        "lon": -90.6051,
+        "comment": "Edwards I-20 Travel Corridor Net",
+    },
+    {
+        "name": "Clinton 147.12",
+        "callsign": "W5CLN",
+        "rxFreq": 147.12000,
+        "txFreq": 147.72000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Clinton",
+        "state": "MS",
+        "lat": 32.3415,
+        "lon": -90.3218,
+        "comment": "Hinds County West ARES",
+    },
+    {
+        "name": "Clinton UHF 444.05",
+        "callsign": "W5CLN",
+        "rxFreq": 444.05000,
+        "txFreq": 449.05000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Clinton",
+        "state": "MS",
+        "lat": 32.3450,
+        "lon": -90.3200,
+        "comment": "Clinton UHF Skywarn Link",
+    },
+    # Jackson, MS Metro Area (Hinds / Rankin / Madison Counties)
     {
         "name": "Jackson 146.76",
         "callsign": "W5MS",
@@ -135,6 +723,137 @@ OFFLINE_REPEATERS: list[dict] = [
         "lon": -90.1848,
         "comment": "Jackson ARC Central MS Primary",
     },
+    {
+        "name": "Jackson UHF 444.70",
+        "callsign": "W5MS",
+        "rxFreq": 444.70000,
+        "txFreq": 449.70000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Jackson",
+        "state": "MS",
+        "lat": 32.3000,
+        "lon": -90.1800,
+        "comment": "Jackson ARC UHF Wide Area",
+    },
+    {
+        "name": "Jackson DMR 145.39",
+        "callsign": "K5JCK",
+        "rxFreq": 145.39000,
+        "txFreq": 144.79000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 1,
+        "city": "Jackson",
+        "state": "MS",
+        "lat": 32.2950,
+        "lon": -90.1900,
+        "comment": "Jackson Metro DMR VHF Hub",
+    },
+    {
+        "name": "Jackson 146.94",
+        "callsign": "K5MS",
+        "rxFreq": 146.94000,
+        "txFreq": 146.34000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Jackson",
+        "state": "MS",
+        "lat": 32.3050,
+        "lon": -90.1750,
+        "comment": "Hinds County Emergency Services Net",
+    },
+    {
+        "name": "Pearl 147.33",
+        "callsign": "W5PRL",
+        "rxFreq": 147.33000,
+        "txFreq": 147.93000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Pearl",
+        "state": "MS",
+        "lat": 32.2743,
+        "lon": -90.1320,
+        "comment": "Rankin County ARES Primary",
+    },
+    {
+        "name": "Brandon 145.23",
+        "callsign": "W5BDN",
+        "rxFreq": 145.23000,
+        "txFreq": 144.63000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Brandon",
+        "state": "MS",
+        "lat": 32.2732,
+        "lon": -89.9859,
+        "comment": "Brandon Metro Repeater",
+    },
+    {
+        "name": "Brandon UHF 442.50",
+        "callsign": "W5BDN",
+        "rxFreq": 442.50000,
+        "txFreq": 447.50000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Brandon",
+        "state": "MS",
+        "lat": 32.2750,
+        "lon": -89.9800,
+        "comment": "Brandon UHF Emergency Link",
+    },
+    {
+        "name": "Madison 146.88",
+        "callsign": "W5MAD",
+        "rxFreq": 146.88000,
+        "txFreq": 146.28000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "100.0",
+        "city": "Madison",
+        "state": "MS",
+        "lat": 32.4607,
+        "lon": -90.1154,
+        "comment": "Madison County ARC North Net",
+    },
+    {
+        "name": "Madison DMR 444.25",
+        "callsign": "N5MAD",
+        "rxFreq": 444.25000,
+        "txFreq": 449.25000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "DMR",
+        "toneMode": "None",
+        "colorCode": 1,
+        "timeSlot": 2,
+        "city": "Madison",
+        "state": "MS",
+        "lat": 32.4550,
+        "lon": -90.1200,
+        "comment": "Madison DMR BrandMeister Hub",
+    },
+    # Dallas / Fort Worth Metro Area (Proximity Mode Test Data)
     {
         "name": "Dallas 146.88",
         "callsign": "W5FC",
@@ -169,6 +888,38 @@ OFFLINE_REPEATERS: list[dict] = [
         "comment": "Dallas Metro DMR Repeater",
     },
     {
+        "name": "Dallas 145.27",
+        "callsign": "K5DLS",
+        "rxFreq": 145.27000,
+        "txFreq": 144.67000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Dallas",
+        "state": "TX",
+        "lat": 32.7800,
+        "lon": -96.8100,
+        "comment": "Dallas County ARES Net",
+    },
+    {
+        "name": "Dallas UHF 444.10",
+        "callsign": "W5FC",
+        "rxFreq": 444.10000,
+        "txFreq": 449.10000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Dallas",
+        "state": "TX",
+        "lat": 32.7700,
+        "lon": -96.7900,
+        "comment": "Dallas ARC UHF Link",
+    },
+    {
         "name": "Fort Worth 146.94",
         "callsign": "W5FW",
         "rxFreq": 146.94000,
@@ -184,6 +935,86 @@ OFFLINE_REPEATERS: list[dict] = [
         "lon": -97.3308,
         "comment": "Kilocycle Club of Fort Worth",
     },
+    {
+        "name": "Fort Worth 444.20",
+        "callsign": "W5FW",
+        "rxFreq": 444.20000,
+        "txFreq": 449.20000,
+        "offset": 5.00000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Fort Worth",
+        "state": "TX",
+        "lat": 32.7500,
+        "lon": -97.3200,
+        "comment": "Fort Worth UHF Wide Area",
+    },
+    {
+        "name": "Arlington 147.14",
+        "callsign": "K5ARL",
+        "rxFreq": 147.14000,
+        "txFreq": 147.74000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Arlington",
+        "state": "TX",
+        "lat": 32.7357,
+        "lon": -97.1081,
+        "comment": "Arlington ARC Primary",
+    },
+    {
+        "name": "Irving 146.72",
+        "callsign": "W5IRV",
+        "rxFreq": 146.72000,
+        "txFreq": 146.12000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Irving",
+        "state": "TX",
+        "lat": 32.8140,
+        "lon": -96.9489,
+        "comment": "Irving ARC Repeater",
+    },
+    {
+        "name": "Garland 146.66",
+        "callsign": "K5GAR",
+        "rxFreq": 146.66000,
+        "txFreq": 146.06000,
+        "offset": 0.60000,
+        "offsetDir": "-",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "110.9",
+        "city": "Garland",
+        "state": "TX",
+        "lat": 32.9126,
+        "lon": -96.6389,
+        "comment": "Garland ARC Primary Net",
+    },
+    {
+        "name": "Plano 147.18",
+        "callsign": "K5PLN",
+        "rxFreq": 147.18000,
+        "txFreq": 147.78000,
+        "offset": 0.60000,
+        "offsetDir": "+",
+        "mode": "FM",
+        "toneMode": "Tone",
+        "ctcss": "107.2",
+        "city": "Plano",
+        "state": "TX",
+        "lat": 33.0198,
+        "lon": -96.6989,
+        "comment": "Plano ARES Emergency Net",
+    },
 ]
 
 
@@ -191,20 +1022,124 @@ class RepeaterBookProvider:
     """Queries RepeaterBook REST API with automatic offline sample fallback."""
 
     def __init__(self, api_key: str | None = None, timeout: float = 3.0):
-        self.api_key = api_key
+        self.api_key, self.token_source = self._discover_api_key(api_key)
         self.timeout = timeout
+        self.last_status: str = "CONFIGURED" if self.api_key else "NO_KEY"
 
-    def get_repeaters_near(self, lat: float, lon: float, radius_miles: float = 50.0) -> list[RadioChannel]:
-        """Fetch repeaters within radius of coordinates, falling back to local dataset."""
-        # Check if online API key is available
-        if self.api_key:
+    @staticmethod
+    def _discover_api_key(provided_key: str | None = None) -> tuple[str | None, str | None]:
+        """Discovers RepeaterBook API key from parameter, env var, or tokens file."""
+        if provided_key and provided_key.strip():
+            return provided_key.strip(), "preferences_or_parameter"
+
+        env_key = os.environ.get("REPEATERBOOK_API_KEY")
+        if env_key and env_key.strip():
+            return env_key.strip(), "environment_variable"
+
+        # Check project root, docs, and user config directory
+        possible_paths = [
+            Path("docs/RepeaterBookPythonClientApiToken.txt"),
+            Path(__file__).resolve().parent.parent.parent.parent / "docs" / "RepeaterBookPythonClientApiToken.txt",
+            Path.home() / ".config" / "radioplanner" / "tokens" / "repeaterbook.txt",
+            Path.home() / ".config" / "radioplanner" / "tokens" / "repeaterbook",
+        ]
+        for p in possible_paths:
             try:
-                # Online API query placeholder
-                pass
+                if p.is_file():
+                    content = p.read_text(encoding="utf-8").strip()
+                    if content:
+                        return content, str(p)
             except Exception:
                 pass
 
-        # Offline fallback: convert offline records within coordinate bounding box
+        return None, None
+
+    def has_api_key(self) -> bool:
+        """Returns True if a valid RepeaterBook API key is configured."""
+        return bool(self.api_key and self.api_key.strip())
+
+    def get_repeaters_near(
+        self, lat: float, lon: float, radius_miles: float = 50.0
+    ) -> list[RadioChannel]:
+        """Fetch repeaters within radius of coordinates, falling back to local dataset."""
+        if self.has_api_key():
+            try:
+                channels = self._query_live_api(lat, lon, radius_miles)
+                if channels:
+                    self.last_status = "LIVE_API_SUCCESS"
+                    return channels
+            except Exception as e:
+                self.last_status = f"LIVE_API_FALLBACK ({e})"
+
+        # Fallback to local offline dataset
+        return self._get_offline_repeaters()
+
+    def _query_live_api(
+        self, lat: float, lon: float, radius_miles: float
+    ) -> list[RadioChannel]:
+        """Attempt query to RepeaterBook API endpoint."""
+        url = "https://www.repeaterbook.com/api/export.php"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": "RepeaterBookPythonClient/1.0",
+        }
+        params = {
+            "lat": lat,
+            "long": lon,
+            "distance": radius_miles,
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.get(url, params=params, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data if isinstance(data, list) else data.get("results", [])
+                channels = []
+                for idx, item in enumerate(results, start=1):
+                    ch = self._parse_api_item(idx, item)
+                    if ch:
+                        channels.append(ch)
+                return channels
+            else:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+
+    def _parse_api_item(self, idx: int, item: dict) -> RadioChannel | None:
+        """Parse raw RepeaterBook API item into RadioChannel CIR."""
+        try:
+            rx_freq = float(item.get("Frequency", item.get("rxFreq", 0.0)))
+            tx_freq = float(item.get("Input Freq", item.get("txFreq", rx_freq)))
+            offset = abs(tx_freq - rx_freq)
+            offset_dir = "+" if tx_freq > rx_freq else ("-" if tx_freq < rx_freq else "off")
+            name = item.get("Nearest City", item.get("name", f"RPT {rx_freq:.3f}"))
+            callsign = item.get("Callsign", item.get("callsign"))
+            ctcss = item.get("PL", item.get("ctcss", "None"))
+            tone_mode = "Tone" if ctcss and ctcss not in {"None", "CSQ"} else "None"
+            mode = item.get("Operational Mode", item.get("mode", "FM")).upper()
+            if "DMR" in mode:
+                mode = "DMR"
+
+            return RadioChannel(
+                number=idx,
+                name=f"{name[:12]} {rx_freq:.2f}"[:16],
+                callsign=callsign,
+                rxFreq=rx_freq,
+                txFreq=tx_freq,
+                offset=round(offset, 4),
+                offsetDir=offset_dir,
+                mode=mode,
+                toneMode=tone_mode,
+                ctcss=ctcss,
+                city=item.get("Nearest City", item.get("city")),
+                state=item.get("State", item.get("state")),
+                lat=float(item.get("Lat", item.get("lat", 0.0))),
+                lon=float(item.get("Long", item.get("lon", 0.0))),
+                specialType="REPEATERS",
+                comment=item.get("Use", item.get("comment", "")),
+            )
+        except Exception:
+            return None
+
+    def _get_offline_repeaters(self) -> list[RadioChannel]:
+        """Convert comprehensive offline records into RadioChannel CIR instances."""
         channels = []
         for idx, item in enumerate(OFFLINE_REPEATERS, start=1):
             ch = RadioChannel(
@@ -228,5 +1163,4 @@ class RepeaterBookProvider:
                 comment=item.get("comment", ""),
             )
             channels.append(ch)
-
         return channels
