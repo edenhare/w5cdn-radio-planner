@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -1032,6 +1034,11 @@ US_STATE_ABBR: dict[str, str] = {
     "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT",
     "virginia": "VA", "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
     "district of columbia": "DC",
+    # Canadian Provinces & Territories
+    "alberta": "AB", "british columbia": "BC", "manitoba": "MB", "new brunswick": "NB",
+    "newfoundland": "NL", "newfoundland and labrador": "NL", "northwest territories": "NT",
+    "nova scotia": "NS", "nunavut": "NU", "ontario": "ON", "prince edward island": "PE",
+    "quebec": "QC", "saskatchewan": "SK", "yukon": "YT", "yukon territory": "YT",
 }
 
 FIPS_STATE_ABBR: dict[str, str] = {
@@ -1044,6 +1051,10 @@ FIPS_STATE_ABBR: dict[str, str] = {
     "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA", "54": "WV",
     "55": "WI", "56": "WY",
     "1": "AL", "2": "AK", "4": "AZ", "5": "AR", "6": "CA", "8": "CO", "9": "CT",
+    # Canadian Provinces & Territories (RepeaterBook CA state_id codes)
+    "CA01": "AB", "CA02": "BC", "CA03": "MB", "CA04": "NB", "CA05": "NL",
+    "CA06": "NT", "CA07": "NS", "CA08": "ON", "CA09": "PE", "CA10": "QC",
+    "CA11": "SK", "CA12": "YT", "CA13": "NT", "CA14": "NU",
 }
 
 
@@ -1056,6 +1067,80 @@ STATE_TO_FIPS: dict[str, str] = {
     "OH": "39", "OK": "40", "OR": "41", "PA": "42", "RI": "44", "SC": "45", "SD": "46",
     "TN": "47", "TX": "48", "UT": "49", "VT": "50", "VA": "51", "WA": "53", "WV": "54",
     "WI": "55", "WY": "56",
+    # Canadian Provinces & Territories
+    "AB": "CA01", "BC": "CA02", "MB": "CA03", "NB": "CA04", "NL": "CA05",
+    "NT": "CA06", "NS": "CA07", "ON": "CA08", "PE": "CA09", "QC": "CA10",
+    "SK": "CA11", "YT": "CA12", "NU": "CA14",
+}
+
+
+# Geographic bounding regions (min_lat, max_lat, min_lon, max_lon) for US states & Canadian provinces
+US_STATE_REGIONS: dict[str, list[tuple[float, float, float, float]]] = {
+    "AL": [(30.22, 35.01, -88.47, -84.89)],
+    "AK": [(51.21, 71.37, -179.15, -129.98)],
+    "AZ": [(31.33, 37.00, -114.82, -109.05)],
+    "AR": [(33.00, 36.50, -94.62, -89.64)],
+    "CA": [(32.53, 42.01, -124.41, -114.13)],
+    "CO": [(36.99, 41.00, -109.06, -102.04)],
+    "CT": [(40.98, 42.05, -73.73, -71.79)],
+    "DC": [(38.79, 38.99, -77.12, -76.91)],
+    "DE": [(38.45, 39.84, -75.79, -75.05)],
+    "FL": [(24.52, 30.70, -83.50, -80.03), (29.50, 31.00, -87.63, -82.00)],
+    "GA": [(30.36, 35.00, -85.61, -80.84)],
+    "HI": [(18.91, 22.24, -160.25, -154.81)],
+    "ID": [(41.99, 49.00, -117.24, -111.04)],
+    "IL": [(36.97, 42.51, -91.51, -87.49)],
+    "IN": [(37.77, 41.76, -88.10, -84.78)],
+    "IA": [(40.38, 43.50, -96.64, -90.14)],
+    "KS": [(36.99, 40.00, -102.05, -94.59)],
+    "KY": [(36.50, 39.15, -89.57, -81.96)],
+    "LA": [(31.00, 33.02, -94.04, -90.90), (28.93, 31.00, -94.04, -88.82)],
+    "ME": [(43.06, 47.46, -71.08, -66.95)],
+    "MD": [(37.91, 39.72, -79.49, -75.05)],
+    "MA": [(41.24, 42.89, -73.51, -69.93)],
+    "MI": [(41.70, 48.24, -90.42, -82.41)],
+    "MN": [(43.50, 49.38, -97.24, -89.49)],
+    "MS": [(31.00, 35.00, -91.65, -88.10), (30.15, 31.00, -89.75, -88.10)],
+    "MO": [(35.99, 40.61, -95.77, -89.10)],
+    "MT": [(44.36, 49.00, -116.05, -104.04)],
+    "NE": [(40.00, 43.00, -104.05, -95.31)],
+    "NV": [(35.00, 42.00, -120.01, -114.04)],
+    "NH": [(42.70, 45.31, -72.56, -70.61)],
+    "NJ": [(38.93, 41.36, -75.56, -73.89)],
+    "NM": [(31.33, 37.00, -109.05, -103.00)],
+    "NY": [(40.50, 45.01, -79.76, -71.86)],
+    "NC": [(33.84, 36.59, -84.32, -75.46)],
+    "ND": [(45.94, 49.00, -104.05, -96.55)],
+    "OH": [(38.40, 41.98, -84.82, -80.52)],
+    "OK": [(33.62, 37.00, -100.00, -94.43), (36.50, 37.00, -103.00, -100.00)],
+    "OR": [(41.99, 46.29, -124.57, -116.46)],
+    "PA": [(39.72, 42.27, -80.52, -74.69)],
+    "RI": [(41.15, 42.02, -71.86, -71.12)],
+    "SC": [(32.03, 35.22, -83.35, -78.54)],
+    "SD": [(42.48, 45.95, -104.06, -96.44)],
+    "TN": [(34.98, 36.68, -90.31, -81.65)],
+    "TX": [(25.84, 34.00, -106.65, -93.51), (34.00, 36.50, -103.05, -100.00)],
+    "UT": [(37.00, 42.00, -114.05, -109.04)],
+    "VT": [(42.73, 45.02, -73.44, -71.46)],
+    "VA": [(36.54, 39.47, -83.68, -75.24)],
+    "WA": [(45.54, 49.00, -124.85, -116.92)],
+    "WV": [(37.20, 40.64, -82.64, -77.72)],
+    "WI": [(42.49, 47.08, -92.89, -86.81)],
+    "WY": [(40.99, 45.01, -111.06, -104.05)],
+    # Canadian Provinces & Territories (lat, lon bounding boxes)
+    "AB": [(49.00, 60.00, -120.00, -110.00)],
+    "BC": [(48.30, 50.00, -139.06, -114.05), (50.00, 60.00, -139.06, -115.50)],
+    "MB": [(49.00, 60.00, -102.00, -88.98)],
+    "NB": [(44.60, 48.07, -69.06, -63.77)],
+    "NL": [(46.61, 51.65, -59.42, -52.62), (51.65, 60.38, -67.80, -55.62)],
+    "NS": [(43.42, 47.03, -66.32, -59.68)],
+    "NT": [(60.00, 78.76, -136.44, -102.00)],
+    "NU": [(60.00, 83.11, -120.68, -61.08)],
+    "ON": [(41.68, 46.50, -83.15, -74.34), (46.50, 56.86, -95.15, -79.00)],
+    "PE": [(45.95, 47.06, -64.41, -61.97)],
+    "QC": [(45.00, 49.50, -79.52, -64.15), (49.50, 62.58, -79.76, -57.10)],
+    "SK": [(49.00, 60.00, -110.00, -101.36)],
+    "YT": [(60.00, 69.65, -141.00, -123.81)],
 }
 
 
@@ -1070,6 +1155,107 @@ def resolve_state_code(item: dict) -> str:
     if len(state_name) == 2 and state_name.isalpha():
         return state_name.upper()
     return state_name.upper() if state_name else (state_id or "UNKNOWN")
+
+
+def extract_state_from_text(text: str) -> str | None:
+    """Extract a 2-letter US state abbreviation from a location string (e.g. 'Tyler, TX' or 'Shreveport, Louisiana')."""
+    if not text:
+        return None
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    if len(parts) >= 2:
+        tail = parts[-1]
+        tail_upper = tail.upper()
+        if tail_upper in STATE_TO_FIPS:
+            return tail_upper
+        tail_lower = tail.lower()
+        if tail_lower in US_STATE_ABBR:
+            return US_STATE_ABBR[tail_lower]
+
+    for full_name, code in US_STATE_ABBR.items():
+        if re.search(rf"\b{re.escape(full_name)}\b", text, re.IGNORECASE):
+            return code
+    for code in STATE_TO_FIPS:
+        if re.search(rf",\s*{code}\b", text, re.IGNORECASE):
+            return code
+    return None
+
+
+def identify_states_for_point_and_radius(
+    lat: float,
+    lon: float,
+    radius_miles: float = 50.0,
+    hint_state: str | None = None,
+) -> list[str]:
+    """Identify US state 2-letter codes intersecting a geographic circle around (lat, lon)."""
+    states: list[str] = []
+    if hint_state and hint_state.upper() in STATE_TO_FIPS:
+        states.append(hint_state.upper())
+
+    delta_lat = radius_miles / 69.0
+    cos_lat = max(0.1, math.cos(math.radians(lat)))
+    delta_lon = radius_miles / (69.0 * cos_lat)
+
+    q_min_lat, q_max_lat = lat - delta_lat, lat + delta_lat
+    q_min_lon, q_max_lon = lon - delta_lon, lon + delta_lon
+
+    for st_code, boxes in US_STATE_REGIONS.items():
+        if st_code in states:
+            continue
+        for b_min_lat, b_max_lat, b_min_lon, b_max_lon in boxes:
+            if not (q_max_lat < b_min_lat or q_min_lat > b_max_lat or q_max_lon < b_min_lon or q_min_lon > b_max_lon):
+                states.append(st_code)
+                break
+
+    return states if states else ["TX"]
+
+
+def identify_states_for_route(
+    waypoints: list[str],
+    geo_points: list | None = None,
+    corridor_width_miles: float = 25.0,
+) -> list[str]:
+    """Identify US states traversed by a route plan (from waypoint strings and intermediate leg coordinates)."""
+    states: list[str] = []
+    for wp in waypoints:
+        st = extract_state_from_text(wp)
+        if st and st not in states:
+            states.append(st)
+
+    # Also check intermediate points along route legs to catch pass-through states
+    if geo_points and len(geo_points) >= 2:
+        for i in range(len(geo_points) - 1):
+            p1, p2 = geo_points[i], geo_points[i + 1]
+            steps = 8
+            for step in range(steps + 1):
+                frac = step / steps
+                s_lat = p1.lat + frac * (p2.lat - p1.lat)
+                s_lon = p1.lon + frac * (p2.lon - p1.lon)
+                for st_code, boxes in US_STATE_REGIONS.items():
+                    if st_code in states:
+                        continue
+                    for b_min_lat, b_max_lat, b_min_lon, b_max_lon in boxes:
+                        if b_min_lat <= s_lat <= b_max_lat and b_min_lon <= s_lon <= b_max_lon:
+                            states.append(st_code)
+                            break
+
+    return states if states else ["TX"]
+
+
+def identify_states_for_proximity(
+    center_location: str,
+    center_point=None,
+    radius_miles: float = 50.0,
+) -> list[str]:
+    """Identify US states covered by a radial proximity search."""
+    hint = extract_state_from_text(center_location)
+    if center_point is not None:
+        return identify_states_for_point_and_radius(
+            center_point.lat,
+            center_point.lon,
+            radius_miles=radius_miles,
+            hint_state=hint,
+        )
+    return [hint] if hint else ["TX"]
 
 
 class RepeaterBookProvider:
@@ -1126,76 +1312,154 @@ class RepeaterBookProvider:
         """Returns True if a valid RepeaterBook API key is configured."""
         return bool(self.api_key and self.api_key.strip())
 
+    def get_state_file_info(self, state_code: str, max_age_days: int = 30) -> dict:
+        """Check whether a downloaded state file (rb_STATE_DATE.json) exists on disk and whether it is fresh or stale."""
+        st_upper = state_code.strip().upper()
+        if not self.cache_dir.is_dir():
+            return {"state": st_upper, "status": "MISSING", "path": None, "date": None, "age_days": None}
+
+        matched = sorted(self.cache_dir.glob(f"rb_{st_upper}_*.json"), reverse=True)
+        if not matched:
+            return {"state": st_upper, "status": "MISSING", "path": None, "date": None, "age_days": None}
+
+        newest = matched[0]
+        parts = newest.stem.split("_", 2)
+        date_str = parts[2] if len(parts) >= 3 else ""
+        try:
+            file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            age_days = max(0, (datetime.now().date() - file_date).days)
+            status = "FRESH" if age_days <= max_age_days else "STALE"
+            return {
+                "state": st_upper,
+                "status": status,
+                "path": newest,
+                "date": date_str,
+                "age_days": age_days,
+            }
+        except ValueError:
+            return {
+                "state": st_upper,
+                "status": "STALE",
+                "path": newest,
+                "date": date_str,
+                "age_days": None,
+            }
+
+    def get_repeaters_for_states(
+        self,
+        states: list[str],
+        max_age_days: int = 30,
+        allowed_use: list[str] | set[str] | None = None,
+    ) -> list[RadioChannel]:
+        """Load repeaters for only the specified states, downloading or refreshing only missing or old state files."""
+        allowed_set = {u.strip().upper() for u in (allowed_use or ["OPEN"]) if u.strip()} or {"OPEN"}
+        unique_states: list[str] = []
+        for s in states:
+            s_up = s.strip().upper()
+            if s_up and s_up not in unique_states:
+                unique_states.append(s_up)
+
+        if not unique_states:
+            unique_states = ["TX"]
+
+        all_channels: list[RadioChannel] = []
+        used_live = False
+        used_disk = False
+        fallback_error: str | None = None
+        idx = 1
+
+        for st in unique_states:
+            info = self.get_state_file_info(st, max_age_days=max_age_days)
+
+            # 1. If fresh state file exists on disk, load directly without downloading
+            if info["status"] == "FRESH" and info["path"] is not None:
+                st_chans = self._load_single_state_file(info["path"], start_idx=idx, allowed_use=allowed_set)
+                all_channels.extend(st_chans)
+                idx += len(st_chans)
+                used_disk = True
+                continue
+
+            # 2. File is MISSING or STALE -> download if API key is configured
+            if self.has_api_key():
+                try:
+                    st_chans = self.download_state(st, allowed_use=allowed_set)
+                    for ch in st_chans:
+                        all_channels.append(ch.model_copy(update={"number": idx}))
+                        idx += 1
+                    used_live = True
+                    continue
+                except Exception as e:
+                    fallback_error = str(e)
+
+            # 3. Fallback to stale file on disk if available
+            if info["path"] is not None:
+                st_chans = self._load_single_state_file(info["path"], start_idx=idx, allowed_use=allowed_set)
+                all_channels.extend(st_chans)
+                idx += len(st_chans)
+                used_disk = True
+
+        if fallback_error:
+            self.last_status = f"LIVE_API_FALLBACK ({fallback_error})"
+        elif used_live:
+            self.last_status = "LIVE_API_SUCCESS"
+        elif used_disk:
+            self.last_status = "DISK_CACHE"
+
+        if all_channels:
+            self._cached_channels = all_channels
+            return all_channels
+
+        # 4. Final fallback if no files on disk and no live response
+        return self._get_offline_repeaters()
+
     def get_repeaters_near(
         self,
         lat: float,
         lon: float,
         radius_miles: float = 50.0,
+        states: list[str] | None = None,
+        max_age_days: int = 30,
+        allowed_use: list[str] | set[str] | None = None,
     ) -> list[RadioChannel]:
-        """Fetch repeaters within radius of coordinates from live API or downloaded state files."""
-        if self._cached_channels is not None:
-            return self._cached_channels
-
-        # 1. Attempt live API query if API key is configured
-        if self.has_api_key():
-            try:
-                channels = self._query_live_api(lat, lon, radius_miles)
-                if channels:
-                    self.last_status = "LIVE_API_SUCCESS"
-                    self._cached_channels = channels
-                    return channels
-            except Exception as e:
-                self.last_status = f"LIVE_API_FALLBACK ({e})"
-
-        # 2. Check downloaded state files in ~/.config/radioplanner/data/repeaterbook/
-        disk_channels = self._load_from_disk_cache()
-        if disk_channels:
-            self._cached_channels = disk_channels
-            if not self.has_api_key():
-                self.last_status = "DISK_CACHE"
-            return disk_channels
-
-        # 3. Fallback to built-in offline dataset (only if no download files exist)
-        return self._get_offline_repeaters()
+        """Fetch repeaters for the states within radius of coordinates (downloading only missing/old state files)."""
+        target_states = states or identify_states_for_point_and_radius(lat, lon, radius_miles=radius_miles)
+        return self.get_repeaters_for_states(
+            states=target_states,
+            max_age_days=max_age_days,
+            allowed_use=allowed_use,
+        )
 
     def _query_live_api(
-        self, lat: float, lon: float, radius_miles: float
+        self,
+        lat: float,
+        lon: float,
+        radius_miles: float,
+        allowed_use: set[str] | None = None,
     ) -> list[RadioChannel]:
-        """Attempt query to RepeaterBook API endpoint with App #114 compliant headers."""
-        url = "https://www.repeaterbook.com/api/export.php"
-        headers = {
-            "X-RB-App-Token": self.api_key or "",
-            "User-Agent": "RepeaterBook Python Client/0.6.0 (+micael@jarniac.dev)",
-            "Accept": "application/json",
-        }
-        params = {
-            "lat": lat,
-            "long": lon,
-            "distance": radius_miles,
-        }
-        with httpx.Client(timeout=self.timeout) as client:
-            resp = client.get(url, params=params, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                self._save_to_disk_cache(data)
-                results = data if isinstance(data, list) else data.get("results", [])
-                channels = []
-                for idx, item in enumerate(results, start=1):
-                    ch = self._parse_api_item(idx, item)
-                    if ch:
-                        channels.append(ch)
-                return channels
-            else:
-                raise RuntimeError(f"HTTP {resp.status_code}")
+        """Query RepeaterBook API for states within radius of (lat, lon)."""
+        target_states = identify_states_for_point_and_radius(lat, lon, radius_miles=radius_miles)
+        channels: list[RadioChannel] = []
+        for st in target_states:
+            channels.extend(self.download_state(st, allowed_use=allowed_use))
+        return channels
 
-    def download_state(self, state_code: str, date_str: str | None = None) -> list[RadioChannel]:
+    def download_state(
+        self,
+        state_code: str,
+        date_str: str | None = None,
+        allowed_use: list[str] | set[str] | None = None,
+    ) -> list[RadioChannel]:
         """Download complete repeater dataset for a state via RepeaterBook API and save to disk."""
+        allowed_set = {u.strip().upper() for u in (allowed_use or ["OPEN"]) if u.strip()} or {"OPEN"}
         st_upper = state_code.upper()
         fips = STATE_TO_FIPS.get(st_upper)
         if not fips:
             raise ValueError(f"Unknown state code '{state_code}'")
 
-        url = f"https://www.repeaterbook.com/api/export.php?state_id={fips}"
+        if fips.startswith("CA"):
+            url = f"https://www.repeaterbook.com/api/export.php?state_id={fips}&country=Canada"
+        else:
+            url = f"https://www.repeaterbook.com/api/export.php?state_id={fips}"
         headers = {
             "X-RB-App-Token": self.api_key or "",
             "User-Agent": "RepeaterBook Python Client/0.6.0 (+micael@jarniac.dev)",
@@ -1205,36 +1469,51 @@ class RepeaterBookProvider:
             resp = client.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                self._save_to_disk_cache(data, date_str=date_str)
+                self._save_to_disk_cache(data, date_str=date_str, default_state=st_upper)
                 results = data if isinstance(data, list) else data.get("results", [])
                 channels = []
-                for idx, item in enumerate(results, start=1):
-                    ch = self._parse_api_item(idx, item)
+                idx = 1
+                for item in results:
+                    item_st = resolve_state_code(item)
+                    if item_st not in {"UNKNOWN", st_upper}:
+                        continue
+                    ch = self._parse_api_item(idx, item, allowed_use=allowed_set)
                     if ch:
                         channels.append(ch)
+                        idx += 1
                 return channels
             else:
                 raise RuntimeError(f"HTTP {resp.status_code}")
 
-    def _save_to_disk_cache(self, data: dict | list, date_str: str | None = None) -> None:
-        """Persist downloaded RepeaterBook data to user's ~/.config/radioplanner/data/repeaterbook/ as rb_STATE_DATE.json."""
+    def _save_to_disk_cache(
+        self,
+        data: dict | list,
+        date_str: str | None = None,
+        default_state: str | None = None,
+    ) -> None:
+        """Persist downloaded RepeaterBook state data to ~/.config/radioplanner/data/repeaterbook/ as rb_STATE_DATE.json."""
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             results = data if isinstance(data, list) else data.get("results", [])
             current_date = date_str or datetime.now().strftime("%Y-%m-%d")
 
-            # Save full downloaded batch file if multiple records
-            if len(results) > 1:
-                all_file = self.cache_dir / f"rb_ALL_{current_date}.json"
-                all_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-            # Split and save state files: rb_STATE_DATE.json (e.g. rb_TX_2026-10-20.json)
+            # Group by state and save per-state files: rb_STATE_DATE.json
             by_state: dict[str, list[dict]] = {}
             for item in results:
                 st_code = resolve_state_code(item)
+                if st_code == "UNKNOWN" and default_state:
+                    st_code = default_state.upper()
                 by_state.setdefault(st_code, []).append(item)
 
             for st_code, items in by_state.items():
+                # Remove older cached files for this state before writing the refreshed one
+                for old_file in self.cache_dir.glob(f"rb_{st_code}_*.json"):
+                    if old_file.name != f"rb_{st_code}_{current_date}.json":
+                        try:
+                            old_file.unlink()
+                        except OSError:
+                            pass
+
                 st_file = self.cache_dir / f"rb_{st_code}_{current_date}.json"
                 st_payload = {
                     "count": len(items),
@@ -1246,10 +1525,39 @@ class RepeaterBookProvider:
         except Exception as e:
             logger.warning(f"Could not persist RepeaterBook data to disk: {e}")
 
-    def _load_from_disk_cache(self) -> list[RadioChannel]:
+    def _load_single_state_file(
+        self,
+        st_file: Path,
+        start_idx: int = 1,
+        allowed_use: set[str] | None = None,
+    ) -> list[RadioChannel]:
+        """Load and filter channels from a single downloaded state file."""
+        try:
+            data = json.loads(st_file.read_text(encoding="utf-8"))
+            results = data if isinstance(data, list) else data.get("results", [])
+            channels: list[RadioChannel] = []
+            idx = start_idx
+            for item in results:
+                ch = self._parse_api_item(idx, item, allowed_use=allowed_use)
+                if ch:
+                    channels.append(ch)
+                    idx += 1
+            return channels
+        except Exception as e:
+            logger.warning(f"Could not read state file '{st_file}': {e}")
+            return []
+
+    def _load_from_disk_cache(
+        self,
+        states: list[str] | None = None,
+        allowed_use: list[str] | set[str] | None = None,
+    ) -> list[RadioChannel]:
         """Load repeaters from newest downloaded state files (rb_STATE_DATE.json) in data cache."""
         if not self.cache_dir.is_dir():
             return []
+
+        allowed_set = {u.strip().upper() for u in (allowed_use or ["OPEN"]) if u.strip()} or {"OPEN"}
+        target_set = {s.strip().upper() for s in states} if states else None
 
         try:
             rb_files = sorted(self.cache_dir.glob("rb_*_*.json"))
@@ -1261,30 +1569,20 @@ class RepeaterBookProvider:
             for f in rb_files:
                 parts = f.stem.split("_", 2)
                 if len(parts) >= 3:
-                    st_code = parts[1]
+                    st_code = parts[1].upper()
                     if st_code == "ALL":
+                        continue
+                    if target_set and st_code not in target_set:
                         continue
                     if st_code not in newest_by_state or f.name > newest_by_state[st_code].name:
                         newest_by_state[st_code] = f
 
-            if not newest_by_state:
-                all_rb_files = sorted(self.cache_dir.glob("rb_ALL_*.json"), reverse=True)
-                if all_rb_files:
-                    data = json.loads(all_rb_files[0].read_text(encoding="utf-8"))
-                    results = data if isinstance(data, list) else data.get("results", [])
-                    return [ch for idx, item in enumerate(results, start=1) if (ch := self._parse_api_item(idx, item))]
-                return []
-
-            channels = []
+            channels: list[RadioChannel] = []
             idx = 1
             for st_file in newest_by_state.values():
-                data = json.loads(st_file.read_text(encoding="utf-8"))
-                results = data if isinstance(data, list) else data.get("results", [])
-                for item in results:
-                    ch = self._parse_api_item(idx, item)
-                    if ch:
-                        channels.append(ch)
-                        idx += 1
+                st_chans = self._load_single_state_file(st_file, start_idx=idx, allowed_use=allowed_set)
+                channels.extend(st_chans)
+                idx += len(st_chans)
             return channels
         except Exception as e:
             logger.warning(f"Could not load RepeaterBook data from downloaded files: {e}")
@@ -1300,6 +1598,8 @@ class RepeaterBookProvider:
             parts = f.stem.split("_", 2)
             if len(parts) >= 3:
                 state_code = parts[1]
+                if state_code == "ALL":
+                    continue
                 date_part = parts[2]
                 try:
                     data = json.loads(f.read_text(encoding="utf-8"))
@@ -1315,21 +1615,31 @@ class RepeaterBookProvider:
                 })
         return entries
 
-    def _parse_api_item(self, idx: int, item: dict) -> RadioChannel | None:
-        """Parse raw RepeaterBook API item into RadioChannel CIR, filtering for On-air and OPEN repeaters."""
+    def _parse_api_item(
+        self,
+        idx: int,
+        item: dict,
+        allowed_use: set[str] | None = None,
+    ) -> RadioChannel | None:
+        """Parse raw RepeaterBook API item into RadioChannel CIR, filtering for On-air and allowed Use types."""
         try:
             # 1. Operational Status: Only On-air repeaters
             op_status = str(item.get("Operational Status", "")).strip().lower()
             if op_status and op_status != "on-air":
                 return None
 
-            # 2. Use: Only OPEN repeaters
+            # 2. Use: Filter against allowed access types (default: OPEN only)
+            allowed_set = allowed_use if allowed_use is not None else {"OPEN"}
             use_val = str(item.get("Use", "")).strip().upper()
-            if use_val and use_val != "OPEN":
+            if use_val and use_val not in allowed_set:
                 return None
 
-            rx_freq = float(item.get("Frequency", item.get("rxFreq", 0.0)))
-            tx_freq = float(item.get("Input Freq", item.get("txFreq", rx_freq)))
+            rx_freq = float(item.get("Frequency", item.get("rxFreq", 0.0)) or 0.0)
+            if rx_freq <= 0.0:
+                return None
+            tx_freq = float(item.get("Input Freq", item.get("txFreq", rx_freq)) or rx_freq)
+            if tx_freq <= 0.0:
+                tx_freq = rx_freq
             offset = abs(tx_freq - rx_freq)
             offset_dir = "+" if tx_freq > rx_freq else ("-" if tx_freq < rx_freq else "off")
             name = item.get("Nearest City", item.get("name", f"RPT {rx_freq:.3f}"))

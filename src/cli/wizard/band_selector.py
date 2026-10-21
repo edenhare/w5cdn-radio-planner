@@ -106,3 +106,81 @@ def select_bands_for_radio(
                     active.remove(b)
                 else:
                     active.add(b)
+
+
+REPEATER_ACCESS_OPTIONS: list[tuple[str, str]] = [
+    ("OPEN", "Open Repeaters (Publicly accessible to all licensed amateurs)"),
+    ("CLOSED", "Closed Repeaters (Club / member access required)"),
+    ("PRIVATE", "Private Repeaters (Owner permission required)"),
+]
+
+
+def select_repeater_access(
+    console: Console,
+    default_access: Optional[List[str]] = None,
+) -> Optional[List[str]]:
+    """Prompt user to select and toggle repeater access types (OPEN, CLOSED, PRIVATE)."""
+    supported = [item[0] for item in REPEATER_ACCESS_OPTIONS]
+    active: Set[str] = {
+        x.strip().upper() for x in (default_access or ["OPEN"]) if x.strip().upper() in supported
+    } or {"OPEN"}
+
+    console.clear()
+    render_header(console, subtitle="Repeater Access Configuration")
+
+    while True:
+        console.print("\n[bold cyan]═══ Select Repeater Access Types (OPEN / CLOSED / PRIVATE) ═══[/bold cyan]")
+        table = Table(border_style="cyan", show_lines=False)
+        table.add_column("#", justify="right", style="cyan", width=4)
+        table.add_column("Status", justify="center", width=8)
+        table.add_column("Access Type", style="bold white", width=14)
+        table.add_column("Description", style="dim")
+
+        for idx, (code, desc) in enumerate(REPEATER_ACCESS_OPTIONS, start=1):
+            is_active = code in active
+            status_badge = "[bold green][X][/bold green]" if is_active else "[dim][ ][/dim]"
+            table.add_row(str(idx), status_badge, code, desc)
+
+        active_sorted = [code for code in supported if code in active]
+        active_summary = ", ".join(active_sorted) if active_sorted else "[italic red]None selected[/italic red]"
+        panel = Panel(
+            table,
+            title=f"Active Repeater Access Filter: {active_summary}",
+            border_style="blue",
+        )
+        console.print(panel)
+
+        console.print("\n[bold cyan]Access Selection Actions:[/bold cyan]")
+        console.print("  [C] [bold green]Confirm Repeater Access & Continue[/bold green]")
+        console.print("  [A] Select All (OPEN, CLOSED, PRIVATE)")
+        console.print("  [O] Open Only (Default)")
+        console.print("  [1-3] Toggle Access Type")
+        console.print("  [B] Back / Cancel")
+
+        valid_choices = ["C", "c", "A", "a", "O", "o", "B", "b", "Q", "q", "1", "2", "3"]
+        choice = Prompt.ask(
+            "Select action or number to toggle",
+            choices=valid_choices,
+            default="C",
+        ).strip().upper()
+
+        if choice in {"B", "Q"}:
+            return None
+        elif choice == "C":
+            if not active:
+                console.print("[red]At least one repeater access type must be selected.[/red]")
+                continue
+            return [code for code in supported if code in active]
+        elif choice == "A":
+            active = set(supported)
+        elif choice == "O":
+            active = {"OPEN"}
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(supported):
+                code = supported[idx]
+                if code in active:
+                    active.remove(code)
+                else:
+                    active.add(code)
+

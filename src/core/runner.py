@@ -15,7 +15,11 @@ from core.managers.radio_manager import RadioManager
 from core.models.codeplug import Codeplug
 from core.providers.airports import AirportsProvider
 from core.providers.geocoding import GeocodingProvider
-from core.providers.repeaterbook import RepeaterBookProvider
+from core.providers.repeaterbook import (
+    RepeaterBookProvider,
+    identify_states_for_proximity,
+    identify_states_for_route,
+)
 from core.sanitizers.sanitizer import DataSanitizer
 
 
@@ -57,7 +61,21 @@ class RecipeRunner:
         if recipe.mode == "ROUTE_CORRIDOR":
             corridor = recipe.corridor  # guaranteed not None by validation
             engine = RouteCorridorEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+            geo_points = []
+            for wp in corridor.waypoints:
+                try:
+                    geo_points.append(self.geocoder.resolve(wp))
+                except Exception:
+                    pass
+            route_states = identify_states_for_route(
+                corridor.waypoints,
+                geo_points=geo_points,
+                corridor_width_miles=corridor.corridor_width_miles,
+            )
+            all_repeaters = self.repeater_provider.get_repeaters_for_states(
+                states=route_states,
+                allowed_use=recipe.radio_target.repeater_access,
+            )
 
             result = engine.plan_route(
                 waypoint_names=corridor.waypoints,
@@ -73,7 +91,19 @@ class RecipeRunner:
         elif recipe.mode == "PROXIMITY_SEARCH":
             proximity = recipe.proximity
             engine = ProximityEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+            try:
+                center_pt = self.geocoder.resolve(proximity.center_location)
+            except Exception:
+                center_pt = None
+            prox_states = identify_states_for_proximity(
+                proximity.center_location,
+                center_point=center_pt,
+                radius_miles=proximity.radius_miles,
+            )
+            all_repeaters = self.repeater_provider.get_repeaters_for_states(
+                states=prox_states,
+                allowed_use=recipe.radio_target.repeater_access,
+            )
 
             result = engine.search_proximity(
                 center_location=proximity.center_location,

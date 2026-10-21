@@ -213,7 +213,7 @@ def test_wizard_flow_preferences_color_theme(tmp_path: Path):
 
 
 def test_wizard_flow_route_corridor_with_band_selection():
-    """Verify Mode 1 Route Corridor flow prompts for radio bands and generates rich codeplug."""
+    """Verify Mode 1 Route Corridor flow prompts for radio bands and repeater access and generates rich codeplug."""
     out = io.StringIO()
     console = Console(file=out)
     wizard = InteractiveWizard(console=console)
@@ -222,6 +222,7 @@ def test_wizard_flow_route_corridor_with_band_selection():
          patch("cli.wizard.interactive.select_and_sequence_blocks", return_value=["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"]), \
          patch.object(wizard, "_select_target_radio", return_value="btech_dmr6x2"), \
          patch("cli.wizard.interactive.select_bands_for_radio", return_value=["2m", "70cm", "WX"]), \
+         patch("cli.wizard.interactive.select_repeater_access", return_value=["OPEN"]), \
          patch("rich.prompt.Prompt.ask", side_effect=["25.0"]), \
          patch("rich.prompt.Confirm.ask", side_effect=[True, True]), \
          patch.object(wizard, "_channel_review_and_export_loop") as mock_review:
@@ -233,6 +234,7 @@ def test_wizard_flow_route_corridor_with_band_selection():
         assert codeplug.total_channels > 20
         assert radio_spec.id == "btech_dmr6x2"
         assert recipe.radio_target.bands == ["2m", "70cm", "WX"]
+        assert recipe.radio_target.repeater_access == ["OPEN"]
         assert "RadioPlanner -- Route Corridor Configuration Review" in out.getvalue()
 
 

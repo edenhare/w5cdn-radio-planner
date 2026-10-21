@@ -40,6 +40,7 @@ class RadioTargetConfig(BaseModel):
     include_simplex: bool = Field(default=True)
     bands: list[str] = Field(default_factory=lambda: ["2m", "70cm", "WX"])
     modes: list[str] = Field(default_factory=lambda: ["FM", "AM"])
+    repeater_access: list[str] = Field(default_factory=lambda: ["OPEN"])
 
 
 class ExportConfig(BaseModel):

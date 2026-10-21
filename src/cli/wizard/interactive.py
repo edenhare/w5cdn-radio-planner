@@ -18,7 +18,7 @@ from cli.ui.renderers import (
     render_review_table,
     render_split_summary,
 )
-from cli.wizard.band_selector import select_bands_for_radio
+from cli.wizard.band_selector import select_bands_for_radio, select_repeater_access
 from cli.wizard.radio_selector import select_target_radio_hierarchical
 from cli.wizard.sequence_editor import select_and_sequence_blocks
 from cli.wizard.waypoint_editor import validate_and_edit_route
@@ -44,7 +44,11 @@ from core.models.template import PresetTemplateFile
 from core.providers.airports import AirportsProvider
 from core.providers.geocoding import GeocodingProvider, GeoPoint, haversine_distance
 from core.providers.radio_id import RadioIdProvider
-from core.providers.repeaterbook import RepeaterBookProvider
+from core.providers.repeaterbook import (
+    RepeaterBookProvider,
+    identify_states_for_proximity,
+    identify_states_for_route,
+)
 from core.sanitizers.sanitizer import DataSanitizer
 from core.special_channels import filter_channels_for_radio
 
@@ -155,9 +159,11 @@ class InteractiveWizard:
 
         total_route_miles = 0.0
         prev_pt = None
+        geo_points = []
         for wp in waypoints:
             try:
                 pt = self.geocoder.resolve(wp)
+                geo_points.append(pt)
                 if prev_pt:
                     total_route_miles += haversine_distance(prev_pt, pt, unit="MILES")
                 prev_pt = pt
@@ -207,6 +213,20 @@ class InteractiveWizard:
             self.console.print("[yellow]Band selection cancelled.[/yellow]")
             return
 
+        selected_access = select_repeater_access(
+            self.console,
+            default_access=getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"]),
+        )
+        if not selected_access:
+            self.console.print("[yellow]Repeater access selection cancelled.[/yellow]")
+            return
+
+        route_states = identify_states_for_route(
+            waypoints,
+            geo_points=geo_points,
+            corridor_width_miles=corridor_width,
+        )
+
         start_city = waypoints[0].split(",")[0].strip()
         end_city = waypoints[-1].split(",")[0].strip()
         plan_name = f"{start_city}_to_{end_city}_Corridor"
@@ -221,6 +241,7 @@ class InteractiveWizard:
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
+                repeater_access=selected_access,
             ),
             sequence_order=sequence_keys,
         )
@@ -229,6 +250,7 @@ class InteractiveWizard:
         self.console.clear()
         render_header(self.console, subtitle="Route Corridor Configuration")
         render_config_panel(self.console, recipe, title="Route Corridor Configuration")
+        self._render_state_cache_status(route_states)
         if not self.repeater_provider.has_api_key():
             self.console.print(
                 Panel(
@@ -244,9 +266,17 @@ class InteractiveWizard:
         if not Confirm.ask("Proceed with route calculation?", default=True):
             return
 
-        with self.console.status("[bold green]Calculating travel corridor repeaters...[/bold green]"):
+        max_age_days = getattr(self.prefs_mgr.preferences, "repeaterMaxAgeDays", 30)
+        states_label = ", ".join(route_states) if route_states else "route states"
+        with self.console.status(
+            f"[bold green]Checking & loading RepeaterBook state data ({states_label})...[/bold green]"
+        ):
             engine = RouteCorridorEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+            all_repeaters = self.repeater_provider.get_repeaters_for_states(
+                states=route_states,
+                max_age_days=max_age_days,
+                allowed_use=selected_access,
+            )
             res = engine.plan_route(
                 waypoint_names=waypoints,
                 candidate_channels=all_repeaters,
@@ -318,6 +348,25 @@ class InteractiveWizard:
             self.console.print("[yellow]Band selection cancelled.[/yellow]")
             return
 
+        selected_access = select_repeater_access(
+            self.console,
+            default_access=getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"]),
+        )
+        if not selected_access:
+            self.console.print("[yellow]Repeater access selection cancelled.[/yellow]")
+            return
+
+        try:
+            center_pt = self.geocoder.resolve(center_loc)
+        except Exception:
+            center_pt = None
+
+        prox_states = identify_states_for_proximity(
+            center_loc,
+            center_point=center_pt,
+            radius_miles=radius,
+        )
+
         city_clean = center_loc.split(",")[0].strip()
         plan_name = f"{city_clean}_Proximity_{int(radius)}mi"
 
@@ -331,6 +380,7 @@ class InteractiveWizard:
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
+                repeater_access=selected_access,
             ),
             sequence_order=[
                 "TEMPLATE:calling_channels",
@@ -343,6 +393,7 @@ class InteractiveWizard:
         self.console.clear()
         render_header(self.console, subtitle="Proximity Search Configuration")
         render_config_panel(self.console, recipe, title="Proximity Search Configuration")
+        self._render_state_cache_status(prox_states)
         if not self.repeater_provider.has_api_key():
             self.console.print(
                 Panel(
@@ -358,11 +409,16 @@ class InteractiveWizard:
         if not Confirm.ask("Proceed with proximity search?", default=True):
             return
 
-        with self.console.status("[bold green]Searching concentric proximity rings...[/bold green]"):
+        max_age_days = getattr(self.prefs_mgr.preferences, "repeaterMaxAgeDays", 30)
+        states_label = ", ".join(prox_states) if prox_states else "proximity states"
+        with self.console.status(
+            f"[bold green]Checking & loading RepeaterBook state data ({states_label})...[/bold green]"
+        ):
             engine = ProximityEngine(geocoder=self.geocoder)
-            center_pt = self.geocoder.resolve(center_loc)
-            all_repeaters = self.repeater_provider.get_repeaters_near(
-                center_pt.lat, center_pt.lon, radius_miles=radius
+            all_repeaters = self.repeater_provider.get_repeaters_for_states(
+                states=prox_states,
+                max_age_days=max_age_days,
+                allowed_use=selected_access,
             )
             res = engine.search_proximity(
                 center_location=center_loc,
@@ -934,6 +990,32 @@ class InteractiveWizard:
         else:
             self.console.print("[yellow]✔ RadioID.net API Key cleared.[/yellow]")
 
+    def _render_state_cache_status(self, states: list[str]) -> None:
+        """Display the identified state files and their freshness status before execution."""
+        if not states:
+            return
+        max_age = getattr(self.prefs_mgr.preferences, "repeaterMaxAgeDays", 30)
+        badges: list[str] = []
+        for st in states:
+            info = self.repeater_provider.get_state_file_info(st, max_age_days=max_age)
+            status = info.get("status", "MISSING")
+            age = info.get("age_days")
+            date_str = info.get("date")
+            if status == "FRESH":
+                badges.append(f"[bold green]{st}[/bold green] [dim](cached {date_str}, {age}d old)[/dim]")
+            elif status == "STALE":
+                badges.append(f"[bold yellow]{st}[/bold yellow] [yellow](stale {date_str}, will refresh)[/yellow]")
+            else:
+                badges.append(f"[bold cyan]{st}[/bold cyan] [cyan](will download)[/cyan]")
+
+        self.console.print(
+            Panel(
+                "  |  ".join(badges),
+                title=f"[bold cyan]Identified State Data Files ({len(states)} states, max age {max_age}d)[/bold cyan]",
+                border_style="cyan",
+            )
+        )
+
     def _edit_channel_naming_format(self) -> None:
         self.console.print("\n[bold cyan]Select Channel Naming Format:[/bold cyan]")
         self.console.print("  [1] City + Frequency (e.g. 'Tyler 7.20', shortened to fit LCD)")
@@ -951,6 +1033,25 @@ class InteractiveWizard:
         new_prefs = self.prefs_mgr.preferences.model_copy(update={"channelNamingFormat": new_format})
         self.prefs_mgr.save_preferences(new_prefs)
         self.console.print(f"[green]✔ Channel naming format saved: {new_format}[/green]")
+
+    def _edit_repeater_access(self) -> None:
+        current = getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"])
+        selected = select_repeater_access(self.console, default_access=current)
+        if selected:
+            new_prefs = self.prefs_mgr.preferences.model_copy(update={"repeaterAccess": selected})
+            self.prefs_mgr.save_preferences(new_prefs)
+            self.console.print(f"[green]✔ Default Repeater Access saved: {', '.join(selected)}[/green]")
+
+    def _edit_repeater_max_age(self) -> None:
+        current = getattr(self.prefs_mgr.preferences, "repeaterMaxAgeDays", 30)
+        days = IntPrompt.ask(
+            "Enter maximum state file age in days before re-downloading",
+            default=current,
+        )
+        days = max(1, days)
+        new_prefs = self.prefs_mgr.preferences.model_copy(update={"repeaterMaxAgeDays": days})
+        self.prefs_mgr.save_preferences(new_prefs)
+        self.console.print(f"[green]✔ State file refresh age saved: {days} days[/green]")
 
     def _flow_preferences(self) -> None:
         """View and edit user preferences with numbered item selection."""
@@ -1005,6 +1106,16 @@ class InteractiveWizard:
                     if getattr(prefs, "channelNamingFormat", "") == "CALLSIGN"
                     else "Standard / Full Name",
                     self._edit_channel_naming_format,
+                ),
+                PreferenceItem(
+                    "Repeater Access Filter",
+                    lambda: ", ".join(getattr(prefs, "repeaterAccess", ["OPEN"])),
+                    self._edit_repeater_access,
+                ),
+                PreferenceItem(
+                    "State File Max Age",
+                    lambda: f"{getattr(prefs, 'repeaterMaxAgeDays', 30)} days",
+                    self._edit_repeater_max_age,
                 ),
             ]
 

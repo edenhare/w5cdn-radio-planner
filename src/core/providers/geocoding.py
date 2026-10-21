@@ -43,6 +43,28 @@ OFFLINE_CITIES: dict[str, tuple[float, float]] = {
     "brandon, ms": (32.2730, -89.9850),
     "madison, ms": (32.4280, -90.1150),
     "ridgeland, ms": (32.4280, -90.1150),
+    # Canadian Cities
+    "toronto, on": (43.6532, -79.3832),
+    "toronto": (43.6532, -79.3832),
+    "ottawa, on": (45.4215, -75.6972),
+    "ottawa": (45.4215, -75.6972),
+    "windsor, on": (42.3149, -83.0364),
+    "montreal, qc": (45.5017, -73.5673),
+    "montreal": (45.5017, -73.5673),
+    "quebec city, qc": (46.8139, -71.2080),
+    "vancouver, bc": (49.2827, -123.1207),
+    "vancouver": (49.2827, -123.1207),
+    "victoria, bc": (48.4284, -123.3656),
+    "calgary, ab": (51.0447, -114.0719),
+    "calgary": (51.0447, -114.0719),
+    "edmonton, ab": (53.5461, -113.4938),
+    "edmonton": (53.5461, -113.4938),
+    "winnipeg, mb": (49.8951, -97.1384),
+    "winnipeg": (49.8951, -97.1384),
+    "regina, sk": (50.4452, -104.6189),
+    "saskatoon, sk": (52.1579, -106.6702),
+    "halifax, ns": (44.6488, -63.5752),
+    "st. john's, nl": (47.5615, -52.7126),
 }
 
 

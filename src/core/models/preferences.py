@@ -21,6 +21,15 @@ class UserPreferences(BaseModel):
         default="CITY_FREQ",
         description="Channel naming format: CITY_FREQ (e.g. 'Tyler 7.20'), CALLSIGN_FREQ, CALLSIGN, STANDARD",
     )
+    repeaterAccess: list[str] = Field(
+        default_factory=lambda: ["OPEN"],
+        description="Repeater access types to include: OPEN, CLOSED, PRIVATE",
+    )
+    repeaterMaxAgeDays: int = Field(
+        default=30,
+        ge=1,
+        description="Maximum age in days for downloaded RepeaterBook state files before refreshing",
+    )
 
     @field_validator("callsign", mode="before")
     @classmethod
@@ -103,6 +112,24 @@ class UserPreferences(BaseModel):
         if val_upper in {"CITY_FREQ", "CALLSIGN_FREQ", "CALLSIGN", "STANDARD"}:
             return val_upper
         return "CITY_FREQ"
+
+    @field_validator("repeaterAccess", mode="before")
+    @classmethod
+    def normalize_repeater_access(cls, v: str | list[str]) -> list[str]:
+        """Normalize repeater access list to valid uppercase values (OPEN, CLOSED, PRIVATE)."""
+        valid = {"OPEN", "CLOSED", "PRIVATE"}
+        if isinstance(v, str):
+            val_upper = v.strip().upper()
+            if val_upper == "ALL":
+                return ["OPEN", "CLOSED", "PRIVATE"]
+            items = [x.strip().upper() for x in v.split(",") if x.strip()]
+        elif isinstance(v, (list, tuple, set)):
+            items = [str(x).strip().upper() for x in v if str(x).strip()]
+        else:
+            return ["OPEN"]
+        filtered = {x for x in items if x in valid}
+        ordered = [k for k in ["OPEN", "CLOSED", "PRIVATE"] if k in filtered]
+        return ordered if ordered else ["OPEN"]
 
 
     def update_settings(self, **kwargs) -> UserPreferences:

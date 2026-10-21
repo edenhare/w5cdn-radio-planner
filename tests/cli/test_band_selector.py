@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from cli.wizard.band_selector import select_bands_for_radio
+from cli.wizard.band_selector import select_bands_for_radio, select_repeater_access
 from core.models.radio_spec import TargetRadioSpec
 
 
@@ -91,3 +91,26 @@ def test_select_bands_for_radio_cancel_returns_none():
         bands = select_bands_for_radio(console, spec)
 
     assert bands is None
+
+
+def test_select_repeater_access_toggle_and_confirm():
+    console = Console(record=True)
+    # Default is ["OPEN"]; toggle 2 (CLOSED) on, then confirm with C
+    with patch("rich.prompt.Prompt.ask", side_effect=["2", "C"]):
+        access = select_repeater_access(console, default_access=["OPEN"])
+
+    assert access == ["OPEN", "CLOSED"]
+
+
+def test_select_repeater_access_all_and_open_only():
+    console = Console(record=True)
+    # Select all (A), then confirm (C)
+    with patch("rich.prompt.Prompt.ask", side_effect=["A", "C"]):
+        access_all = select_repeater_access(console)
+    assert access_all == ["OPEN", "CLOSED", "PRIVATE"]
+
+    # Reset to Open only (O), then confirm (C)
+    with patch("rich.prompt.Prompt.ask", side_effect=["A", "O", "C"]):
+        access_open = select_repeater_access(console)
+    assert access_open == ["OPEN"]
+
