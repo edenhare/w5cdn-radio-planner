@@ -94,7 +94,7 @@ def select_target_radio_hierarchical(
             model_table.add_column("Col 2", style="bold white")
 
             model_items = [
-                f"[{idx}] {m.model} ([dim]{m.programmerType}, {m.maxChannels} ch, LCD {m.maxNameLength}c[/dim])"
+                f"[{idx}] {m.model} ([dim]{m.maxChannels} ch, LCD {m.maxNameLength}c[/dim])"
                 for idx, m in enumerate(models, start=1)
             ]
             m_mid = (len(model_items) + 1) // 2

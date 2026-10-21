@@ -77,8 +77,11 @@ def render_header(
     console: Console,
     title: str = "RadioPlanner",
     subtitle: str = "Travel Corridor & Codeplug Generator",
+    clear_screen: bool = True,
 ) -> None:
-    """Render clean, styled application header banner."""
+    """Render clean, styled application header banner after clearing the screen."""
+    if clear_screen:
+        console.clear()
     header_text = Text()
     header_text.append("[RADIO] ", style="bold gold1")
     header_text.append(title, style="bold cyan")
@@ -165,22 +168,76 @@ def render_split_summary(
     console.print(Columns([left_table, right_table], equal=True))
 
 
+def render_proximity_summary(
+    console: Console,
+    title: str = "Proximity Summary",
+    center_name: str = "Center",
+    radius_miles: float = 50.0,
+    rings: dict[int, list] | None = None,
+    ring_ranges: dict[int, tuple[float, float]] | None = None,
+    band_counts: dict[str, int] | None = None,
+    total_channels: int = 0,
+) -> None:
+    """Render dual-column summary for Mode 2 showing concentric distance rings and band breakdown."""
+    rings_map = rings or {}
+    ranges_map = ring_ranges or {}
+    bands = band_counts or {}
+
+    # Left Column: Concentric Distance Rings Information
+    left_table = Table(title="Distance Rings Information", border_style="cyan", show_header=True)
+    left_table.add_column("Ring", style="bold cyan", width=8)
+    left_table.add_column("Distance Range", style="white", width=18)
+    left_table.add_column("Channels", justify="right", style="green")
+
+    for ring_idx in sorted(rings_map.keys()):
+        ch_list = rings_map[ring_idx]
+        if ring_idx in ranges_map:
+            d_start, d_end = ranges_map[ring_idx]
+            rng_str = f"{d_start:.1f} - {d_end:.1f} mi"
+        else:
+            rng_str = f"Ring {ring_idx}"
+        left_table.add_row(f"Ring {ring_idx}", rng_str, f"{len(ch_list)} channels")
+
+    left_table.add_section()
+    total_rpt = sum(len(ch_list) for ch_list in rings_map.values())
+    left_table.add_row(
+        "TOTAL",
+        f"Up to {radius_miles:.1f} mi",
+        f"{total_rpt} repeaters",
+        style="bold cyan",
+    )
+
+    # Right Column: Frequency Band & Channel Breakdown
+    right_table = Table(title="Channel Breakdown", border_style="magenta", show_header=True)
+    right_table.add_column("Band / Category", style="bold")
+    right_table.add_column("Channels", justify="right", style="bold yellow")
+
+    for band, count in sorted(bands.items()):
+        right_table.add_row(band, str(count))
+
+    right_table.add_section()
+    right_table.add_row("Total Channels", str(total_channels), style="bold green")
+
+    # Render split view in dual columns
+    console.print(Columns([left_table, right_table], equal=True))
+
+
 def render_review_table(
     console: Console,
     codeplug: Codeplug,
-    max_display: int = 50,
+    max_display: int | None = None,
     target_spec: TargetRadioSpec | None = None,
+    naming_format: str = "CITY_FREQ",
     clear_screen: bool = True,
 ) -> None:
     """Render Channel Review Table with color-coded badges and details."""
     if clear_screen:
-        console.clear()
         render_header(console, subtitle="Codeplug Channel Review")
 
     table = Table(
         title=f"Codeplug Channel Review: {codeplug.name} ({codeplug.total_channels} channels)",
         border_style="blue",
-        show_lines=True,
+        show_lines=False,
     )
     table.add_column("Slot", justify="right", style="cyan", width=5)
     table.add_column("Badges", width=20)
@@ -190,14 +247,18 @@ def render_review_table(
     table.add_column("Tone / DCS", width=12)
     table.add_column("Location", style="italic", width=20)
 
-    channels_to_show = codeplug.channels[:max_display]
+    channels_to_show = codeplug.channels if max_display is None else codeplug.channels[:max_display]
     for ch in channels_to_show:
         badges = make_channel_badges(ch)
         tone_str = (
             ch.ctcss if ch.toneMode.upper() in {"TONE", "TSQL"} else ch.dcs if ch.toneMode.upper() == "DCS" else "-"
         )
         loc_str = format_location(ch.city, ch.state)
-        ch_name = NameCondenser.condense(ch.name, target_spec) if target_spec else ch.name
+        ch_name = (
+            NameCondenser.condense_channel(ch, target_spec, naming_format=naming_format)
+            if target_spec
+            else ch.name
+        )
 
         table.add_row(
             str(ch.number),
@@ -210,9 +271,6 @@ def render_review_table(
         )
 
     console.print(table)
-    if codeplug.total_channels > max_display:
-        remaining = codeplug.total_channels - max_display
-        console.print(f"[dim italic]... and {remaining} more channels not shown in preview.[/dim italic]")
 
 
 def render_yaml_error(console: Console, err: YamlDiagnosticError) -> None:

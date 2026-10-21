@@ -1,11 +1,11 @@
 id: "wouxun_kg_uv980p"
 brand: "Wouxun"
-model: "KG-UV980P / KG-1000G"
-description: "Wouxun Quad-Band Mobile Base Station (RT Systems)"
+model: "KG-UV980P"
+description: "Wouxun Quad-Band Amateur Mobile Station"
 maxChannels: 999
 maxNameLength: 8
-allowDots: false
-allowSpaces: false
+allowDots: true
+allowSpaces: true
 allowedSpecialChars: "-_"
 programmerType: "RT_SYSTEMS"
 supportedBands:

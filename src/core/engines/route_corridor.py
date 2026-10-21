@@ -8,6 +8,7 @@ from core.models.channel import RadioChannel
 from core.providers.geocoding import (
     GeocodingProvider,
     GeoPoint,
+    along_track_distance,
     cross_track_distance,
     haversine_distance,
 )
@@ -86,12 +87,12 @@ class RouteCorridorEngine:
                     continue
 
                 xtrack = cross_track_distance(r_point, start_p, end_p, unit=unit)
-                d_start = haversine_distance(start_p, r_point, unit=unit)
+                atd = along_track_distance(r_point, start_p, end_p, unit=unit)
 
-                if xtrack <= corridor_width_miles and d_start <= (leg_len + corridor_width_miles):
+                if xtrack <= corridor_width_miles and -corridor_width_miles <= atd <= (leg_len + corridor_width_miles):
                     if xtrack < min_xtrack:
                         min_xtrack = xtrack
-                        progress = leg_start_dist + d_start
+                        progress = leg_start_dist + atd
                         best_progress = progress
 
             if best_progress is not None:

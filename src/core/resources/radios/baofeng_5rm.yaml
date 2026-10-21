@@ -1,11 +1,11 @@
 id: "baofeng_5rm"
 brand: "Baofeng"
-model: "5RM / UV-21R"
-description: "Baofeng 5RM Multi-band Handheld Transceiver (RT Systems)"
+model: "5RM"
+description: "Baofeng 5RM Multi-band Handheld Transceiver"
 maxChannels: 999
 maxNameLength: 10
-allowDots: false
-allowSpaces: false
+allowDots: true
+allowSpaces: true
 allowedSpecialChars: "-_"
 programmerType: "RT_SYSTEMS"
 supportedBands:

@@ -9,7 +9,11 @@ from core.engines.sequence import SequenceOrganizer
 from core.managers.radio_manager import RadioManager
 from core.models.channel import RadioChannel
 from core.providers.airports import AirportsProvider
-from core.providers.geocoding import GeocodingProvider
+from core.providers.geocoding import (
+    GeocodingProvider,
+    GeoPoint,
+    along_track_distance,
+)
 from core.providers.repeaterbook import RepeaterBookProvider
 
 
@@ -34,7 +38,7 @@ def test_route_corridor_engine_good_data():
     # Ensure chronological order: Tyler repeaters should appear before Jackson repeaters
     first_ch_city = result.channels[0].city or ""
     last_ch_city = result.channels[-1].city or ""
-    assert first_ch_city.lower() in {"tyler", "lindale", "kilgore", "longview"}
+    assert first_ch_city.lower() in {"tyler", "lindale", "hideaway", "kilgore", "longview"}
     assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe", "pearl", "brandon", "madison", "shiloh"}
     assert len(result.channels) >= 20
 
@@ -152,4 +156,18 @@ def test_sequence_organizer_allowed_bands_filtering():
     assert codeplug.total_channels == 1
     assert codeplug.channels[0].name == "2m Rpt"
     assert codeplug.channels[0].band == "2m"
+
+
+def test_along_track_distance_calculation():
+    """Verify along_track_distance correctly measures progress along segment."""
+    p_start = GeoPoint(lat=32.0, lon=-95.0, name="Start")
+    p_end = GeoPoint(lat=32.0, lon=-90.0, name="End")
+    p_mid = GeoPoint(lat=32.1, lon=-92.5, name="Mid")
+    p_behind = GeoPoint(lat=32.0, lon=-96.0, name="Behind")
+
+    atd_mid = along_track_distance(p_mid, p_start, p_end, unit="MILES")
+    assert atd_mid > 100.0
+
+    atd_behind = along_track_distance(p_behind, p_start, p_end, unit="MILES")
+    assert atd_behind < 0.0
 

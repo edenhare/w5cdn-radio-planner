@@ -105,3 +105,44 @@ def test_name_condenser_empty_or_special_chars():
     assert NameCondenser.condense("", spec) == "CH"
     assert NameCondenser.condense("A.B.C", spec) == "ABC"
     assert NameCondenser.condense("TEST@#$", spec) == "TEST--"
+
+
+def test_name_condenser_city_frequency_format():
+    """Verify city + frequency formatting produces 'City x.xx' conforming to radio LCD constraints."""
+    spec_10c = TargetRadioSpec(
+        id="baofeng_5rm",
+        brand="Baofeng",
+        model="5RM",
+        description="Baofeng test",
+        maxChannels=999,
+        maxNameLength=10,
+        allowDots=True,
+        allowSpaces=True,
+        allowedSpecialChars="-_",
+    )
+
+    # Tyler 147.20000 -> Tyler 7.20 (len 10)
+    res1 = NameCondenser.format_city_frequency("Tyler", 147.20000, spec_10c)
+    assert res1 == "Tyler 7.20"
+    assert len(res1) <= 10
+
+    # Shreveport 146.76000 -> Shrev 6.76 (len 10)
+    res2 = NameCondenser.format_city_frequency("Shreveport", 146.76000, spec_10c)
+    assert res2 == "Shrev 6.76"
+    assert len(res2) <= 10
+
+    # 16-char radio allows full city name
+    spec_16c = TargetRadioSpec(
+        id="btech_dmr6x2",
+        brand="BTECH",
+        model="DMR-6X2",
+        description="BTech test",
+        maxChannels=4000,
+        maxNameLength=16,
+        allowDots=True,
+        allowSpaces=True,
+        allowedSpecialChars="-_",
+    )
+    res3 = NameCondenser.format_city_frequency("Shreveport", 146.76000, spec_16c)
+    assert res3 == "Shreveport 6.76"
+    assert len(res3) <= 16

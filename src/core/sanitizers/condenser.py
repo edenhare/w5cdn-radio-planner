@@ -46,6 +46,63 @@ class NameCondenser:
     """Condenses long channel names using word-boundary abbreviations to fit radio LCD limits."""
 
     @classmethod
+    def format_city_frequency(
+        cls,
+        city: str,
+        rx_freq: float,
+        spec: TargetRadioSpec,
+    ) -> str:
+        """Format repeater name as 'City x.xx' (1 digit before decimal, 2 after), shortening city to fit."""
+        int_part = int(rx_freq)
+        digit_before = int_part % 10
+        decimal_part = int(round((rx_freq - int_part) * 100)) % 100
+        freq_tag = f"{digit_before}.{decimal_part:02d}"
+
+        # Clean city name (remove any trailing state abbreviations, punctuation, or spaces)
+        clean_city = city.split(",")[0].strip()
+
+        # Apply abbreviations if any (e.g. Fort -> Ft, Mount -> Mt, North -> N)
+        for full_word, abbr in ABBREVIATIONS.items():
+            clean_city = re.sub(rf"\b{full_word}\b", abbr, clean_city, flags=re.IGNORECASE)
+
+        use_space = spec.allowSpaces
+        suffix = f" {freq_tag}" if use_space else freq_tag
+        suffix_len = len(suffix)
+
+        max_city_len = max(1, spec.maxNameLength - suffix_len)
+        shortened_city = clean_city[:max_city_len].strip()
+        if not shortened_city:
+            shortened_city = "RPT"[:max_city_len]
+
+        candidate = f"{shortened_city}{suffix}"
+        return cls._apply_hardware_char_rules(candidate, spec, is_frequency_formatted=True)
+
+    @classmethod
+    def condense_channel(
+        cls,
+        ch: any,
+        spec: TargetRadioSpec,
+        naming_format: str = "CITY_FREQ",
+    ) -> str:
+        """Condense RadioChannel name respecting radio hardware limits and user naming format."""
+        if getattr(ch, "specialType", None) in {"CALLING", "WX", "AVIATION"}:
+            return cls.condense(ch.name, spec)
+
+        city = getattr(ch, "city", None)
+        rx_freq = getattr(ch, "rxFreq", None)
+        callsign = getattr(ch, "callsign", None)
+
+        if naming_format == "CITY_FREQ" and city and rx_freq:
+            return cls.format_city_frequency(city, rx_freq, spec)
+        elif naming_format == "CALLSIGN_FREQ" and callsign and rx_freq:
+            return cls.format_city_frequency(callsign, rx_freq, spec)
+        elif naming_format == "CALLSIGN" and callsign:
+            return cls.condense(callsign, spec)
+
+        # Fallback to general condenser
+        return cls.condense(getattr(ch, "name", "CH"), spec)
+
+    @classmethod
     def condense(cls, name: str, spec: TargetRadioSpec) -> str:
         """Condense channel name to fit spec.maxNameLength, character restrictions, and whitespace rules."""
         if not name:
@@ -56,6 +113,17 @@ class NameCondenser:
         # If already fits and conforms, check allowed chars
         if len(result) <= spec.maxNameLength:
             return cls._apply_hardware_char_rules(result, spec)
+
+        # Check if name is in "City Frequency" pattern (e.g. "Tyler 147.20" or "Tyler 147.2000")
+        freq_match = re.search(r"^(.*?)\s+(\d{2,4}\.\d{2,5})$", result)
+        if freq_match:
+            city_part = freq_match.group(1).strip()
+            if city_part and not any(city_part.upper().startswith(t) for t in ("WX", "NOAA", "AIR")):
+                try:
+                    rx_val = float(freq_match.group(2))
+                    return cls.format_city_frequency(city_part, rx_val, spec)
+                except ValueError:
+                    pass
 
         # 1. Apply word abbreviations
         words = re.split(r"(\s+|-|_|/)", result)
@@ -90,15 +158,22 @@ class NameCondenser:
         return cls._apply_hardware_char_rules(result, spec)
 
     @classmethod
-    def _apply_hardware_char_rules(cls, text: str, spec: TargetRadioSpec) -> str:
+    def _apply_hardware_char_rules(
+        cls, text: str, spec: TargetRadioSpec, is_frequency_formatted: bool = False
+    ) -> str:
         """Filter characters according to allowDots, allowSpaces, and allowedSpecialChars."""
         cleaned = []
-        for char in text:
-            if char == "." and not spec.allowDots:
+        for idx, char in enumerate(text):
+            if char == ".":
+                # Always preserve dot when between digits for frequency format x.xx (e.g. 7.20)
+                is_freq_dot = (0 < idx < len(text) - 1 and text[idx - 1].isdigit() and text[idx + 1].isdigit())
+                if not spec.allowDots and not (is_frequency_formatted or is_freq_dot):
+                    continue
+            if char == " ":
+                if spec.allowSpaces:
+                    cleaned.append(" ")
                 continue
-            if char == " " and not spec.allowSpaces:
-                continue
-            if char.isalnum() or char in spec.allowedSpecialChars:
+            if char.isalnum() or char in spec.allowedSpecialChars or char == ".":
                 cleaned.append(char)
             else:
                 # Replace unsupported special char with underscore or dash if allowed

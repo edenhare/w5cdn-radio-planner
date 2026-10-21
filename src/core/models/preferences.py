@@ -17,6 +17,10 @@ class UserPreferences(BaseModel):
     language: str = Field(default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN")
     defaultRadioId: str | None = Field(default=None, description="Default target radio spec ID (or None)")
     colorTheme: str = Field(default="DARK", description="UI color theme: DARK, LIGHT, HIGH_CONTRAST")
+    channelNamingFormat: str = Field(
+        default="CITY_FREQ",
+        description="Channel naming format: CITY_FREQ (e.g. 'Tyler 7.20'), CALLSIGN_FREQ, CALLSIGN, STANDARD",
+    )
 
     @field_validator("callsign", mode="before")
     @classmethod
@@ -78,6 +82,27 @@ class UserPreferences(BaseModel):
         if val_upper in {"DARK", "LIGHT", "HIGH_CONTRAST"}:
             return val_upper
         return "DARK"
+
+    @field_validator("channelNamingFormat", mode="before")
+    @classmethod
+    def normalize_channel_naming_format(cls, v: str | int) -> str:
+        """Allow number selection 1-4 or uppercase format names."""
+        mapping = {
+            "1": "CITY_FREQ",
+            "2": "CALLSIGN_FREQ",
+            "3": "CALLSIGN",
+            "4": "STANDARD",
+            1: "CITY_FREQ",
+            2: "CALLSIGN_FREQ",
+            3: "CALLSIGN",
+            4: "STANDARD",
+        }
+        if str(v).strip() in mapping:
+            return mapping[str(v).strip()]
+        val_upper = str(v).strip().upper()
+        if val_upper in {"CITY_FREQ", "CALLSIGN_FREQ", "CALLSIGN", "STANDARD"}:
+            return val_upper
+        return "CITY_FREQ"
 
 
     def update_settings(self, **kwargs) -> UserPreferences:

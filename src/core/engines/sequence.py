@@ -30,6 +30,7 @@ class SequenceOrganizer:
         allowed_bands: list[str] | None = None,
         allowed_modes: list[str] | None = None,
         deduplicate: bool = True,
+        naming_format: str = "CITY_FREQ",
     ) -> Codeplug:
         """Merge sequence blocks, filter against radio hardware specs and active bands, and renumber."""
         custom_map = custom_templates or {}
@@ -77,7 +78,7 @@ class SequenceOrganizer:
 
         # 3. Apply target radio name condensation rules
         condensed_channels = [
-            ch.with_name(NameCondenser.condense(ch.name, target_spec))
+            ch.with_name(NameCondenser.condense_channel(ch, target_spec, naming_format=naming_format))
             for ch in filtered
         ]
 

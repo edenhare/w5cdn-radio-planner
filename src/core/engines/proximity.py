@@ -20,11 +20,26 @@ class ProximityResult:
     radius_miles: float
     channels: list[RadioChannel] = field(default_factory=list)
     rings: dict[int, list[RadioChannel]] = field(default_factory=dict)
+    ring_ranges: dict[int, tuple[float, float]] = field(default_factory=dict)
     channel_counts_by_band: dict[str, int] = field(default_factory=dict)
 
 
+def calculate_rings_count(radius_miles: float) -> int:
+    """Calculate the number of concentric proximity rings based on search radius distance."""
+    if radius_miles <= 15.0:
+        return 3
+    elif radius_miles <= 30.0:
+        return 4
+    elif radius_miles <= 75.0:
+        return 5
+    elif radius_miles <= 150.0:
+        return 6
+    else:
+        return min(10, max(5, int(round(radius_miles / 25.0))))
+
+
 class ProximityEngine:
-    """Gathers and organizes repeaters into 5 concentric distance bands."""
+    """Gathers and organizes repeaters into concentric distance bands."""
 
     def __init__(self, geocoder: GeocodingProvider | None = None):
         self.geocoder = geocoder or GeocodingProvider()
@@ -37,16 +52,15 @@ class ProximityEngine:
         include_simplex: bool = True,
         unit: str = "MILES",
     ) -> ProximityResult:
-        """Resolve center point and distribute repeaters across 5 concentric distance rings."""
+        """Resolve center point and distribute repeaters across distance rings."""
         center = self.geocoder.resolve(center_location)
 
-        ring_step = radius_miles / 5.0
-        rings: dict[int, list[tuple[float, RadioChannel]]] = {
-            1: [],
-            2: [],
-            3: [],
-            4: [],
-            5: [],
+        num_rings = calculate_rings_count(radius_miles)
+        ring_step = radius_miles / float(num_rings)
+
+        rings: dict[int, list[tuple[float, RadioChannel]]] = {i: [] for i in range(1, num_rings + 1)}
+        ring_ranges: dict[int, tuple[float, float]] = {
+            i: ((i - 1) * ring_step, min(radius_miles, i * ring_step)) for i in range(1, num_rings + 1)
         }
         all_matched: list[tuple[float, RadioChannel]] = []
 
@@ -60,8 +74,7 @@ class ProximityEngine:
             dist = haversine_distance(center, r_point, unit=unit)
 
             if dist <= radius_miles:
-                # Determine ring 1 to 5
-                ring_idx = min(5, max(1, int(dist // ring_step) + 1))
+                ring_idx = min(num_rings, max(1, int(dist // ring_step) + 1))
                 comment_with_dist = f"{ch.comment} [Ring {ring_idx}: {dist:.1f} mi]".strip()
                 annotated_ch = ch.model_copy(update={"comment": comment_with_dist})
 
@@ -70,7 +83,7 @@ class ProximityEngine:
 
         # Sort each ring by distance
         sorted_rings: dict[int, list[RadioChannel]] = {}
-        for ring_idx in range(1, 6):
+        for ring_idx in range(1, num_rings + 1):
             rings[ring_idx].sort(key=lambda x: x[0])
             sorted_rings[ring_idx] = [item[1] for item in rings[ring_idx]]
 
@@ -87,5 +100,6 @@ class ProximityEngine:
             radius_miles=radius_miles,
             channels=ordered_channels,
             rings=sorted_rings,
+            ring_ranges=ring_ranges,
             channel_counts_by_band=counts,
         )

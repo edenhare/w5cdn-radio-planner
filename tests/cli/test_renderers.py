@@ -8,6 +8,7 @@ from cli.ui.renderers import (
     format_location,
     render_config_panel,
     render_header,
+    render_proximity_summary,
     render_review_table,
     render_split_summary,
     render_yaml_error,
@@ -159,3 +160,35 @@ def test_format_location_and_badges_styling():
     # Ensure no 'on ' background style substring in badge styles
     for span in badges.spans:
         assert "on " not in str(span.style).lower()
+
+
+def test_render_proximity_summary():
+    """Verify render_proximity_summary dual-column output with concentric distance rings."""
+    output = io.StringIO()
+    console = Console(file=output, width=120)
+
+    rings = {
+        1: [RadioChannel(number=1, name="DAL 4.10", rxFreq=444.1, txFreq=449.1, mode="FM", band="70cm")],
+        2: [RadioChannel(number=2, name="FTW 6.94", rxFreq=146.94, txFreq=146.34, mode="FM", band="2m")],
+    }
+    ranges = {1: (0.0, 10.0), 2: (10.0, 20.0)}
+    bands = {"2m": 1, "70cm": 1}
+
+    render_proximity_summary(
+        console=console,
+        title="Proximity Summary",
+        center_name="Dallas, TX",
+        radius_miles=20.0,
+        rings=rings,
+        ring_ranges=ranges,
+        band_counts=bands,
+        total_channels=2,
+    )
+
+    content = output.getvalue()
+    assert "Distance Rings Information" in content
+    assert "Ring 1" in content
+    assert "Ring 2" in content
+    assert "0.0 - 10.0 mi" in content
+    assert "Channel Breakdown" in content
+    assert "Total Channels" in content

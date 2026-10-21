@@ -14,6 +14,7 @@ from cli.ui.menu import DynamicMenu, PreferenceItem, prompt_choice_from_list
 from cli.ui.renderers import (
     render_config_panel,
     render_header,
+    render_proximity_summary,
     render_review_table,
     render_split_summary,
 )
@@ -174,7 +175,7 @@ class InteractiveWizard:
 
         # Prompt for corridor search width
         corridor_width = float(Prompt.ask("\nCorridor search width in miles", default="25.0"))
-        include_simplex = Confirm.ask("Include Simplex & National Calling frequencies?", default=True)
+        include_simplex = Confirm.ask("Include Simplex?", default=True)
 
         # Interactive sequence block and template organizer BEFORE radio selection
         sequence_keys = select_and_sequence_blocks(
@@ -260,6 +261,7 @@ class InteractiveWizard:
                 template_manager=self.template_mgr,
                 allowed_bands=selected_bands,
                 allowed_modes=recipe.radio_target.modes,
+                naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
             )
 
         # Clear screen and render header before notice and review split summary
@@ -293,11 +295,10 @@ class InteractiveWizard:
 
     def _flow_proximity(self) -> None:
         """Mode 2: Radial Proximity Ring Search Wizard."""
-        self.console.clear()
-        self.console.print("\n[bold green]═══ Mode 2: Radial Proximity Ring Search ═══[/bold green]")
+        render_header(self.console, subtitle="Radial Proximity Ring Search")
         center_loc = Prompt.ask("Center location / city", default="Dallas, TX")
         radius = float(Prompt.ask("Search radius in miles", default="50.0"))
-        include_simplex = Confirm.ask("Include Simplex & Calling frequencies?", default=True)
+        include_simplex = Confirm.ask("Include Simplex?", default=True)
 
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
         if not radio_id:
@@ -357,9 +358,10 @@ class InteractiveWizard:
         if not Confirm.ask("Proceed with proximity search?", default=True):
             return
 
-        with self.console.status("[bold green]Searching 5 concentric proximity rings...[/bold green]"):
+        with self.console.status("[bold green]Searching concentric proximity rings...[/bold green]"):
             engine = ProximityEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+            center_pt = self.geocoder.resolve(center_loc)
+            all_repeaters = self.repeater_provider.get_repeaters_near(center_pt.lat, center_pt.lon, radius_miles=radius)
             res = engine.search_proximity(
                 center_location=center_loc,
                 candidate_channels=all_repeaters,
@@ -374,6 +376,7 @@ class InteractiveWizard:
                 template_manager=self.template_mgr,
                 allowed_bands=selected_bands,
                 allowed_modes=recipe.radio_target.modes,
+                naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
             )
 
         # Clear screen and render header before notice and review split summary
@@ -393,12 +396,13 @@ class InteractiveWizard:
             codeplug_band_counts[b] = codeplug_band_counts.get(b, 0) + 1
 
         # Summary view
-        render_split_summary(
+        render_proximity_summary(
             self.console,
             title="Proximity Summary",
-            waypoints=[res.center_point],
-            cumulative_miles=[0.0],
-            total_miles=res.radius_miles,
+            center_name=center_loc,
+            radius_miles=res.radius_miles,
+            rings=res.rings,
+            ring_ranges=res.ring_ranges,
             band_counts=codeplug_band_counts,
             total_channels=codeplug.total_channels,
         )
@@ -968,6 +972,24 @@ class InteractiveWizard:
         else:
             self.console.print("[yellow]✔ RadioID.net API Key cleared.[/yellow]")
 
+    def _edit_channel_naming_format(self) -> None:
+        self.console.print("\n[bold cyan]Select Channel Naming Format:[/bold cyan]")
+        self.console.print("  [1] City + Frequency (e.g. 'Tyler 7.20', shortened to fit LCD)")
+        self.console.print("  [2] Callsign + Frequency (e.g. 'W5ETX 7.20')")
+        self.console.print("  [3] Callsign Only (e.g. 'W5ETX')")
+        self.console.print("  [4] Standard / Full Name")
+        choice = Prompt.ask("Choose naming format", choices=["1", "2", "3", "4"], default="1")
+        format_map = {
+            "1": "CITY_FREQ",
+            "2": "CALLSIGN_FREQ",
+            "3": "CALLSIGN",
+            "4": "STANDARD",
+        }
+        new_format = format_map[choice]
+        new_prefs = self.prefs_mgr.preferences.model_copy(update={"channelNamingFormat": new_format})
+        self.prefs_mgr.save_preferences(new_prefs)
+        self.console.print(f"[green]✔ Channel naming format saved: {new_format}[/green]")
+
     def _flow_preferences(self) -> None:
         """View and edit user preferences with numbered item selection."""
         self.console.clear()
@@ -1010,6 +1032,17 @@ class InteractiveWizard:
                     if tokens.radioIdApiKey
                     else "(None)",
                     self._edit_radioid_key,
+                ),
+                PreferenceItem(
+                    "Channel Naming Format",
+                    lambda: "City + Freq (e.g. Tyler 7.20)"
+                    if getattr(prefs, "channelNamingFormat", "CITY_FREQ") == "CITY_FREQ"
+                    else "Callsign + Freq (e.g. W5ETX 7.20)"
+                    if getattr(prefs, "channelNamingFormat", "") == "CALLSIGN_FREQ"
+                    else "Callsign Only (e.g. W5ETX)"
+                    if getattr(prefs, "channelNamingFormat", "") == "CALLSIGN"
+                    else "Standard / Full Name",
+                    self._edit_channel_naming_format,
                 ),
             ]
 
@@ -1097,19 +1130,27 @@ class InteractiveWizard:
             ).upper()
 
             if act == "R":
-                dynamic_display = max(10, self.console.height - 10)
-                render_review_table(self.console, current_codeplug, max_display=dynamic_display, target_spec=spec)
+                render_review_table(self.console, current_codeplug, target_spec=spec)
             elif act == "C":
                 render_config_panel(self.console, recipe, title="Current Active Configuration")
             elif act == "E":
+                self.console.print("\n[bold cyan]Choose Export Programmer Format:[/bold cyan]")
+                self.console.print("  [1] RT Systems CSV")
+                self.console.print("  [2] CHIRP Standard CSV")
+                self.console.print("  [3] CPS / Generic CSV")
+                fmt_choice = Prompt.ask("Select format", choices=["1", "2", "3"], default="1")
+                fmt_map = {"1": "RT_SYSTEMS", "2": "CHIRP", "3": "GENERIC_CSV"}
+                chosen_format = fmt_map[fmt_choice]
+                export_spec = spec.model_copy(update={"programmerType": chosen_format})
+
                 date_str = datetime.now().strftime("%m%d%y")
                 out_dir = Path("./exports").resolve()
                 out_dir.mkdir(parents=True, exist_ok=True)
-                default_name = f"{DataSanitizer.sanitize_filename(recipe.name)}-{spec.id}-{date_str}.csv"
+                default_name = f"{DataSanitizer.sanitize_filename(recipe.name)}-{spec.id}-{chosen_format.lower()}-{date_str}.csv"
                 file_name = Prompt.ask("Output CSV filename", default=default_name)
                 dest = out_dir / file_name
-                export_codeplug(current_codeplug, spec, dest)
-                self.console.print(f"[bold green]✔ Codeplug exported successfully to: {dest}[/bold green]")
+                export_codeplug(current_codeplug, export_spec, dest)
+                self.console.print(f"[bold green]✔ Codeplug exported successfully to: {dest} ({chosen_format})[/bold green]")
             elif act == "D":
                 dmr_channels = [ch for ch in current_codeplug.channels if ch.mode.upper() == "DMR"]
                 if not dmr_channels:

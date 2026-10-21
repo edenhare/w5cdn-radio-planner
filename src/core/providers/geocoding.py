@@ -79,6 +79,30 @@ def cross_track_distance(point: GeoPoint, start: GeoPoint, end: GeoPoint, unit: 
     return abs(xtrack_rad * r)
 
 
+def along_track_distance(point: GeoPoint, start: GeoPoint, end: GeoPoint, unit: str = "MILES") -> float:
+    """Calculate along-track distance from start point to projection of point onto great circle segment (start -> end)."""
+    r = EARTH_RADIUS_MILES if unit.upper() == "MILES" else EARTH_RADIUS_KM
+    d13 = haversine_distance(start, point, unit=unit) / r  # Angular distance
+
+    lat1, lon1 = start.to_radians()
+    lat2, lon2 = end.to_radians()
+    lat3, lon3 = point.to_radians()
+
+    # Bearing start -> end
+    y12 = math.sin(lon2 - lon1) * math.cos(lat2)
+    x12 = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(lon2 - lon1)
+    brng12 = math.atan2(y12, x12)
+
+    # Bearing start -> point
+    y13 = math.sin(lon3 - lon1) * math.cos(lat3)
+    x13 = math.cos(lat1) * math.sin(lat3) - math.sin(lat1) * math.cos(lat3) * math.cos(lon3 - lon1)
+    brng13 = math.atan2(y13, x13)
+
+    delta_brng = brng13 - brng12
+    atd_rad = math.atan2(math.tan(d13) * math.cos(delta_brng), 1.0)
+    return atd_rad * r
+
+
 class GeocodingProvider:
     """Resolves location names into geographic coordinates with online query and offline fallback."""
 
