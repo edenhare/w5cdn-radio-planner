@@ -21,7 +21,7 @@ def test_route_corridor_engine_good_data():
     """Good Data: Calculate travel corridor repeaters from Tyler, TX -> Shreveport, LA -> Jackson, MS."""
     geocoder = GeocodingProvider()
     repeater_provider = RepeaterBookProvider(api_key="")
-    all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+    all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0, merge_offline=True)
 
     engine = RouteCorridorEngine(geocoder=geocoder)
     result = engine.plan_route(
@@ -33,14 +33,16 @@ def test_route_corridor_engine_good_data():
 
     assert len(result.waypoints) == 3
     assert result.total_distance_miles > 150.0
-    assert len(result.channels) > 0
+    assert len(result.channels) >= 50
 
     # Ensure chronological order: Tyler repeaters should appear before Jackson repeaters
     first_ch_city = result.channels[0].city or ""
     last_ch_city = result.channels[-1].city or ""
     assert first_ch_city.lower() in {"tyler", "lindale", "hideaway", "kilgore", "longview"}
     assert last_ch_city.lower() in {"jackson", "vicksburg", "monroe", "pearl", "brandon", "madison", "shiloh"}
-    assert len(result.channels) >= 20
+    corridor_cities = {c.city.lower() for c in result.channels if c.city}
+    assert "vicksburg" in corridor_cities
+    assert "ruston" in corridor_cities
 
 
 def test_route_corridor_engine_bad_data():

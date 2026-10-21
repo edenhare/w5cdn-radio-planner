@@ -11,6 +11,7 @@ from cli.wizard.radio_selector import select_target_radio_hierarchical
 from cli.wizard.waypoint_editor import validate_and_edit_route
 from core.managers.preferences_manager import PreferencesManager
 from core.managers.radio_manager import RadioManager
+from core.managers.template_manager import TemplateManager
 from core.providers.geocoding import GeocodingProvider
 
 
@@ -275,5 +276,26 @@ def test_wizard_flow_preferences_repeaterbook_key_clear(tmp_path: Path):
     assert wizard.repeater_provider.api_key is None
     assert wizard.repeater_provider.has_api_key() is False
     assert "RepeaterBook API Key cleared" in out.getvalue()
+
+
+def test_wizard_flow_preset_templates_customize_direct_copy(tmp_path: Path):
+    """Test customizing a template directly copies YAML to user directory without questions."""
+    out = io.StringIO()
+    console = Console(file=out)
+    wizard = InteractiveWizard(console=console)
+
+    user_tpl_dir = tmp_path / "templates"
+    wizard.template_mgr = TemplateManager(custom_templates_dir=user_tpl_dir)
+
+    # Action "D", choose template 1, then "B" to exit
+    with patch("rich.prompt.Prompt.ask", side_effect=["D", "B"]), \
+         patch("rich.prompt.IntPrompt.ask", side_effect=[1]):
+        wizard._flow_templates_manager()
+
+    assert "copied to your config directory" in out.getvalue()
+    templates = wizard.template_mgr.list_templates()
+    copied_file = user_tpl_dir / f"{templates[0].id}.yaml"
+    assert copied_file.is_file()
+
 
 

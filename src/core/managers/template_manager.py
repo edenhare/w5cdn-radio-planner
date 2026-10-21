@@ -92,7 +92,18 @@ class TemplateManager:
 
     def copy_to_user_directory(self, template_id: str) -> PresetTemplateFile:
         """Copy an application template to the user config directory as YAML for customization."""
-        tpl = self.get_template(template_id)
+        import shutil
+
+        self.user_dir.mkdir(parents=True, exist_ok=True)
+        resolved_id = self._resolve_id(template_id)
+        src_file = self.app_dir / f"{resolved_id}.yaml"
+        dest_file = self.user_dir / f"{resolved_id}.yaml"
+        if src_file.is_file():
+            shutil.copy2(src_file, dest_file)
+            tpl = self.get_template(resolved_id)
+            self._user_templates[resolved_id] = tpl
+            return tpl
+        tpl = self.get_template(resolved_id)
         self.save_template(tpl)
         return tpl
 

@@ -1109,11 +1109,31 @@ class RepeaterBookProvider:
         """Returns True if a valid RepeaterBook API key is configured."""
         return bool(self.api_key and self.api_key.strip())
 
+    def _merge_with_offline(self, channels: list[RadioChannel]) -> list[RadioChannel]:
+        """Combine external/disk channels with curated built-in corridor repeaters so travel routes remain complete."""
+        combined = list(channels)
+        seen = {
+            (round(ch.rxFreq, 4), (ch.callsign or "").upper(), (ch.city or "").lower())
+            for ch in channels
+        }
+        for off_ch in self._get_offline_repeaters():
+            key = (round(off_ch.rxFreq, 4), (off_ch.callsign or "").upper(), (off_ch.city or "").lower())
+            if key not in seen:
+                seen.add(key)
+                combined.append(off_ch)
+        return combined
+
     def get_repeaters_near(
-        self, lat: float, lon: float, radius_miles: float = 50.0
+        self,
+        lat: float,
+        lon: float,
+        radius_miles: float = 50.0,
+        merge_offline: bool = False,
     ) -> list[RadioChannel]:
         """Fetch repeaters within radius of coordinates, falling back to local dataset."""
         if self._cached_channels is not None:
+            if merge_offline:
+                return self._merge_with_offline(self._cached_channels)
             return self._cached_channels
 
         # 1. Attempt live API query if API key is configured
@@ -1123,6 +1143,8 @@ class RepeaterBookProvider:
                 if channels:
                     self.last_status = "LIVE_API_SUCCESS"
                     self._cached_channels = channels
+                    if merge_offline:
+                        return self._merge_with_offline(channels)
                     return channels
             except Exception as e:
                 self.last_status = f"LIVE_API_FALLBACK ({e})"
@@ -1133,6 +1155,8 @@ class RepeaterBookProvider:
             self._cached_channels = disk_channels
             if not self.has_api_key():
                 self.last_status = "DISK_CACHE"
+            if merge_offline:
+                return self._merge_with_offline(disk_channels)
             return disk_channels
 
         # 3. Fallback to built-in offline dataset

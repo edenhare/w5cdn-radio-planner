@@ -246,7 +246,7 @@ class InteractiveWizard:
 
         with self.console.status("[bold green]Calculating travel corridor repeaters...[/bold green]"):
             engine = RouteCorridorEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
+            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0, merge_offline=True)
             res = engine.plan_route(
                 waypoint_names=waypoints,
                 candidate_channels=all_repeaters,
@@ -361,7 +361,9 @@ class InteractiveWizard:
         with self.console.status("[bold green]Searching concentric proximity rings...[/bold green]"):
             engine = ProximityEngine(geocoder=self.geocoder)
             center_pt = self.geocoder.resolve(center_loc)
-            all_repeaters = self.repeater_provider.get_repeaters_near(center_pt.lat, center_pt.lon, radius_miles=radius)
+            all_repeaters = self.repeater_provider.get_repeaters_near(
+                center_pt.lat, center_pt.lon, radius_miles=radius, merge_offline=True
+            )
             res = engine.search_proximity(
                 center_location=center_loc,
                 candidate_channels=all_repeaters,
@@ -556,57 +558,17 @@ class InteractiveWizard:
                 pick = IntPrompt.ask(f"Select template number to edit/customize (1-{len(templates)})", default=1)
                 if 1 <= pick <= len(templates):
                     tpl = templates[pick - 1]
-                    is_user = self.template_mgr.is_user_template(tpl.id)
-                    if not is_user:
-                        self.console.print(
-                            f"[cyan]Customizing app default template '{tpl.name}'.\n"
-                            f"An editable copy will be saved to ~/.config/radioplanner/templates/{tpl.id}.yaml\n"
-                            f"which will override the app default template.[/cyan]"
-                        )
-                    else:
-                        self.console.print(
-                            f"[cyan]Editing user template '{tpl.name}' (~/.config/radioplanner/templates/{tpl.id}.yaml):[/cyan]"
-                        )
-                    new_name = Prompt.ask("Template Display Name", default=tpl.name)
-                    new_tag = Prompt.ask("Badge Tag Label", default=tpl.tagText).upper()
-                    new_desc = Prompt.ask("Description", default=tpl.description)
-
-                    channels = list(tpl.channels)
-                    replace_channels = Confirm.ask(
-                        "Do you want to update/replace channels from a YAML or CSV file?", default=False
+                    dest_file = self.template_mgr.user_dir / f"{tpl.id}.yaml"
+                    if not self.template_mgr.is_user_template(tpl.id):
+                        self.template_mgr.copy_to_user_directory(tpl.id)
+                    elif not dest_file.is_file():
+                        self.template_mgr.save_template(tpl)
+                    self.console.print(
+                        f"\n[bold green]✔ Template '{tpl.name}' copied to your config directory:[/bold green]\n"
+                        f"  [cyan]{dest_file}[/cyan]\n\n"
+                        f"[white]You can edit this YAML file directly in any text editor. "
+                        f"Your changes will override the app default template.[/white]\n"
                     )
-                    if replace_channels:
-                        import_path_str = Prompt.ask("Enter path to file (.yaml or .csv)")
-                        import_path = Path(import_path_str.strip())
-                        if import_path.is_file():
-                            if import_path.suffix.lower() in {".yaml", ".yml"}:
-                                from core.config.yaml_loader import load_yaml_file
-
-                                data = load_yaml_file(import_path)
-                                temp_tpl = PresetTemplateFile.model_validate(data)
-                                channels = temp_tpl.channels
-                            elif import_path.suffix.lower() == ".csv":
-                                temp_tpl = PresetTemplateFile(
-                                    id=tpl.id,
-                                    name=new_name,
-                                    rawCsvContent=import_path.read_text(encoding="utf-8"),
-                                )
-                                channels = temp_tpl.channels
-                        else:
-                            self.console.print(
-                                f"[yellow]File not found: {import_path}. Retaining existing channel data.[/yellow]"
-                            )
-
-                    updated_tpl = PresetTemplateFile(
-                        id=tpl.id,
-                        name=new_name,
-                        description=new_desc,
-                        tagText=new_tag,
-                        tagColorHex=tpl.tagColorHex,
-                        channels=channels,
-                    )
-                    saved_path = self.template_mgr.save_template(updated_tpl)
-                    self.console.print(f"[bold green]✔ Template '{updated_tpl.name}' saved to: {saved_path}[/bold green]")
             elif act == "I":
                 self.console.print("\n[bold cyan]Import / Add YAML Template:[/bold cyan]")
                 file_path_str = Prompt.ask("Enter path to template file (.yaml or .csv)")
