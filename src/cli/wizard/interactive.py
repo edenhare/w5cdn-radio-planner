@@ -246,7 +246,7 @@ class InteractiveWizard:
 
         with self.console.status("[bold green]Calculating travel corridor repeaters...[/bold green]"):
             engine = RouteCorridorEngine(geocoder=self.geocoder)
-            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0, merge_offline=True)
+            all_repeaters = self.repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
             res = engine.plan_route(
                 waypoint_names=waypoints,
                 candidate_channels=all_repeaters,
@@ -362,7 +362,7 @@ class InteractiveWizard:
             engine = ProximityEngine(geocoder=self.geocoder)
             center_pt = self.geocoder.resolve(center_loc)
             all_repeaters = self.repeater_provider.get_repeaters_near(
-                center_pt.lat, center_pt.lon, radius_miles=radius, merge_offline=True
+                center_pt.lat, center_pt.lon, radius_miles=radius
             )
             res = engine.search_proximity(
                 center_location=center_loc,

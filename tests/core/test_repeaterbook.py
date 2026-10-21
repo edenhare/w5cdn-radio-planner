@@ -54,9 +54,9 @@ def test_repeaterbook_provider_api_key_discovery_file(tmp_path, monkeypatch):
         assert provider.has_api_key() is False
 
 
-def test_repeaterbook_provider_live_api_graceful_fallback_on_error():
+def test_repeaterbook_provider_live_api_graceful_fallback_on_error(tmp_path: Path):
     """Resilience: Live API HTTP error gracefully falls back to offline dataset."""
-    provider = RepeaterBookProvider(api_key="dummy_token")
+    provider = RepeaterBookProvider(api_key="dummy_token", cache_dir=tmp_path / "empty_cache")
 
     with patch("httpx.Client") as mock_client:
         mock_instance = MagicMock()
@@ -172,4 +172,52 @@ def test_repeaterbook_provider_disk_cache_save_and_load(tmp_path: Path):
     callsigns = {c.callsign for c in cached_channels}
     assert "W5ETX" in callsigns
     assert "K5SHR" in callsigns
+
+
+def test_repeaterbook_filter_on_air_and_open_only():
+    """Verify that off-air, closed, and private repeaters are filtered out, keeping only On-air OPEN."""
+    provider = RepeaterBookProvider(api_key="")
+
+    # Item 1: On-air and OPEN (should pass)
+    item_valid = {
+        "Frequency": "146.9400",
+        "Input Freq": "146.3400",
+        "Callsign": "W5OK",
+        "Operational Status": "On-air",
+        "Use": "OPEN",
+    }
+    ch1 = provider._parse_api_item(1, item_valid)
+    assert ch1 is not None
+    assert ch1.callsign == "W5OK"
+
+    # Item 2: Off-air and OPEN (should be filtered out)
+    item_off_air = {
+        "Frequency": "146.8200",
+        "Input Freq": "146.2200",
+        "Callsign": "W5OFF",
+        "Operational Status": "Off-air",
+        "Use": "OPEN",
+    }
+    assert provider._parse_api_item(2, item_off_air) is None
+
+    # Item 3: On-air and CLOSED (should be filtered out)
+    item_closed = {
+        "Frequency": "444.2000",
+        "Input Freq": "449.2000",
+        "Callsign": "W5CLS",
+        "Operational Status": "On-air",
+        "Use": "CLOSED",
+    }
+    assert provider._parse_api_item(3, item_closed) is None
+
+    # Item 4: On-air and PRIVATE (should be filtered out)
+    item_private = {
+        "Frequency": "444.5000",
+        "Input Freq": "449.5000",
+        "Callsign": "W5PVT",
+        "Operational Status": "On-air",
+        "Use": "PRIVATE",
+    }
+    assert provider._parse_api_item(4, item_private) is None
+
 

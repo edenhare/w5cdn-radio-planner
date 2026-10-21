@@ -1047,6 +1047,18 @@ FIPS_STATE_ABBR: dict[str, str] = {
 }
 
 
+STATE_TO_FIPS: dict[str, str] = {
+    "AL": "01", "AK": "02", "AZ": "04", "AR": "05", "CA": "06", "CO": "08", "CT": "09",
+    "DE": "10", "DC": "11", "FL": "12", "GA": "13", "HI": "15", "ID": "16", "IL": "17",
+    "IN": "18", "IA": "19", "KS": "20", "KY": "21", "LA": "22", "ME": "23", "MD": "24",
+    "MA": "25", "MI": "26", "MN": "27", "MS": "28", "MO": "29", "MT": "30", "NE": "31",
+    "NV": "32", "NH": "33", "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38",
+    "OH": "39", "OK": "40", "OR": "41", "PA": "42", "RI": "44", "SC": "45", "SD": "46",
+    "TN": "47", "TX": "48", "UT": "49", "VT": "50", "VA": "51", "WA": "53", "WV": "54",
+    "WI": "55", "WY": "56",
+}
+
+
 def resolve_state_code(item: dict) -> str:
     """Resolve standard two-letter state abbreviation or uppercase name for state file naming."""
     state_name = str(item.get("State", "")).strip().lower()
@@ -1099,6 +1111,11 @@ class RepeaterBookProvider:
                 if p.is_file():
                     content = p.read_text(encoding="utf-8").strip()
                     if content:
+                        if "repeaterBookApiKey:" in content:
+                            import yaml
+                            parsed = yaml.safe_load(content)
+                            if isinstance(parsed, dict) and parsed.get("repeaterBookApiKey"):
+                                return str(parsed["repeaterBookApiKey"]).strip(), str(p)
                         return content, str(p)
             except Exception:
                 pass
@@ -1109,31 +1126,14 @@ class RepeaterBookProvider:
         """Returns True if a valid RepeaterBook API key is configured."""
         return bool(self.api_key and self.api_key.strip())
 
-    def _merge_with_offline(self, channels: list[RadioChannel]) -> list[RadioChannel]:
-        """Combine external/disk channels with curated built-in corridor repeaters so travel routes remain complete."""
-        combined = list(channels)
-        seen = {
-            (round(ch.rxFreq, 4), (ch.callsign or "").upper(), (ch.city or "").lower())
-            for ch in channels
-        }
-        for off_ch in self._get_offline_repeaters():
-            key = (round(off_ch.rxFreq, 4), (off_ch.callsign or "").upper(), (off_ch.city or "").lower())
-            if key not in seen:
-                seen.add(key)
-                combined.append(off_ch)
-        return combined
-
     def get_repeaters_near(
         self,
         lat: float,
         lon: float,
         radius_miles: float = 50.0,
-        merge_offline: bool = False,
     ) -> list[RadioChannel]:
-        """Fetch repeaters within radius of coordinates, falling back to local dataset."""
+        """Fetch repeaters within radius of coordinates from live API or downloaded state files."""
         if self._cached_channels is not None:
-            if merge_offline:
-                return self._merge_with_offline(self._cached_channels)
             return self._cached_channels
 
         # 1. Attempt live API query if API key is configured
@@ -1143,23 +1143,19 @@ class RepeaterBookProvider:
                 if channels:
                     self.last_status = "LIVE_API_SUCCESS"
                     self._cached_channels = channels
-                    if merge_offline:
-                        return self._merge_with_offline(channels)
                     return channels
             except Exception as e:
                 self.last_status = f"LIVE_API_FALLBACK ({e})"
 
-        # 2. Check offline disk cache in ~/.config/radioplanner/data/repeaterbook/
+        # 2. Check downloaded state files in ~/.config/radioplanner/data/repeaterbook/
         disk_channels = self._load_from_disk_cache()
         if disk_channels:
             self._cached_channels = disk_channels
             if not self.has_api_key():
                 self.last_status = "DISK_CACHE"
-            if merge_offline:
-                return self._merge_with_offline(disk_channels)
             return disk_channels
 
-        # 3. Fallback to built-in offline dataset
+        # 3. Fallback to built-in offline dataset (only if no download files exist)
         return self._get_offline_repeaters()
 
     def _query_live_api(
@@ -1169,7 +1165,6 @@ class RepeaterBookProvider:
         url = "https://www.repeaterbook.com/api/export.php"
         headers = {
             "X-RB-App-Token": self.api_key or "",
-            "Authorization": f"Bearer {self.api_key}",
             "User-Agent": "RepeaterBook Python Client/0.6.0 (+micael@jarniac.dev)",
             "Accept": "application/json",
         }
@@ -1193,6 +1188,34 @@ class RepeaterBookProvider:
             else:
                 raise RuntimeError(f"HTTP {resp.status_code}")
 
+    def download_state(self, state_code: str, date_str: str | None = None) -> list[RadioChannel]:
+        """Download complete repeater dataset for a state via RepeaterBook API and save to disk."""
+        st_upper = state_code.upper()
+        fips = STATE_TO_FIPS.get(st_upper)
+        if not fips:
+            raise ValueError(f"Unknown state code '{state_code}'")
+
+        url = f"https://www.repeaterbook.com/api/export.php?state_id={fips}"
+        headers = {
+            "X-RB-App-Token": self.api_key or "",
+            "User-Agent": "RepeaterBook Python Client/0.6.0 (+micael@jarniac.dev)",
+            "Accept": "application/json",
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                self._save_to_disk_cache(data, date_str=date_str)
+                results = data if isinstance(data, list) else data.get("results", [])
+                channels = []
+                for idx, item in enumerate(results, start=1):
+                    ch = self._parse_api_item(idx, item)
+                    if ch:
+                        channels.append(ch)
+                return channels
+            else:
+                raise RuntimeError(f"HTTP {resp.status_code}")
+
     def _save_to_disk_cache(self, data: dict | list, date_str: str | None = None) -> None:
         """Persist downloaded RepeaterBook data to user's ~/.config/radioplanner/data/repeaterbook/ as rb_STATE_DATE.json."""
         try:
@@ -1200,10 +1223,10 @@ class RepeaterBookProvider:
             results = data if isinstance(data, list) else data.get("results", [])
             current_date = date_str or datetime.now().strftime("%Y-%m-%d")
 
-            # Save full export cache as rb_ALL_DATE.json and repeaterbook_cache.json
-            all_file = self.cache_dir / f"rb_ALL_{current_date}.json"
-            all_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            (self.cache_dir / "repeaterbook_cache.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+            # Save full downloaded batch file if multiple records
+            if len(results) > 1:
+                all_file = self.cache_dir / f"rb_ALL_{current_date}.json"
+                all_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
             # Split and save state files: rb_STATE_DATE.json (e.g. rb_TX_2026-10-20.json)
             by_state: dict[str, list[dict]] = {}
@@ -1221,61 +1244,41 @@ class RepeaterBookProvider:
                 }
                 st_file.write_text(json.dumps(st_payload, indent=2), encoding="utf-8")
         except Exception as e:
-            logger.warning(f"Could not persist RepeaterBook data to disk cache: {e}")
+            logger.warning(f"Could not persist RepeaterBook data to disk: {e}")
 
     def _load_from_disk_cache(self) -> list[RadioChannel]:
-        """Load repeaters from newest cached state files (rb_STATE_DATE.json) in data cache."""
+        """Load repeaters from newest downloaded state files (rb_STATE_DATE.json) in data cache."""
         if not self.cache_dir.is_dir():
             return []
 
         try:
-            # 1. Check for rb_STATE_DATE.json files
             rb_files = sorted(self.cache_dir.glob("rb_*_*.json"))
-            if rb_files:
-                # Group by state code and select the newest date file for each state
-                newest_by_state: dict[str, Path] = {}
-                for f in rb_files:
-                    # Expect rb_STATE_DATE.json
-                    parts = f.stem.split("_", 2)
-                    if len(parts) >= 3:
-                        st_code = parts[1]
-                        if st_code == "ALL":
-                            continue
-                        if st_code not in newest_by_state or f.name > newest_by_state[st_code].name:
-                            newest_by_state[st_code] = f
+            if not rb_files:
+                return []
 
-                if newest_by_state:
-                    channels = []
-                    idx = 1
-                    for st_file in newest_by_state.values():
-                        data = json.loads(st_file.read_text(encoding="utf-8"))
-                        results = data if isinstance(data, list) else data.get("results", [])
-                        for item in results:
-                            ch = self._parse_api_item(idx, item)
-                            if ch:
-                                channels.append(ch)
-                                idx += 1
-                    return channels
+            # Group by state code and select the newest date file for each state
+            newest_by_state: dict[str, Path] = {}
+            for f in rb_files:
+                parts = f.stem.split("_", 2)
+                if len(parts) >= 3:
+                    st_code = parts[1]
+                    if st_code == "ALL":
+                        continue
+                    if st_code not in newest_by_state or f.name > newest_by_state[st_code].name:
+                        newest_by_state[st_code] = f
 
-                # If only rb_ALL_*.json exists, load from the newest one
+            if not newest_by_state:
                 all_rb_files = sorted(self.cache_dir.glob("rb_ALL_*.json"), reverse=True)
                 if all_rb_files:
                     data = json.loads(all_rb_files[0].read_text(encoding="utf-8"))
                     results = data if isinstance(data, list) else data.get("results", [])
                     return [ch for idx, item in enumerate(results, start=1) if (ch := self._parse_api_item(idx, item))]
+                return []
 
-            # 2. Fallback to legacy repeaterbook_cache.json or state_*.json
-            legacy_all = self.cache_dir / "repeaterbook_cache.json"
-            if legacy_all.is_file():
-                data = json.loads(legacy_all.read_text(encoding="utf-8"))
-                results = data if isinstance(data, list) else data.get("results", [])
-                return [ch for idx, item in enumerate(results, start=1) if (ch := self._parse_api_item(idx, item))]
-
-            state_files = sorted(self.cache_dir.glob("state_*.json"))
             channels = []
             idx = 1
-            for sf in state_files:
-                data = json.loads(sf.read_text(encoding="utf-8"))
+            for st_file in newest_by_state.values():
+                data = json.loads(st_file.read_text(encoding="utf-8"))
                 results = data if isinstance(data, list) else data.get("results", [])
                 for item in results:
                     ch = self._parse_api_item(idx, item)
@@ -1284,7 +1287,7 @@ class RepeaterBookProvider:
                         idx += 1
             return channels
         except Exception as e:
-            logger.warning(f"Could not load RepeaterBook data from disk cache: {e}")
+            logger.warning(f"Could not load RepeaterBook data from downloaded files: {e}")
             return []
 
     def list_cached_state_files(self) -> list[dict]:
@@ -1313,8 +1316,18 @@ class RepeaterBookProvider:
         return entries
 
     def _parse_api_item(self, idx: int, item: dict) -> RadioChannel | None:
-        """Parse raw RepeaterBook API item into RadioChannel CIR."""
+        """Parse raw RepeaterBook API item into RadioChannel CIR, filtering for On-air and OPEN repeaters."""
         try:
+            # 1. Operational Status: Only On-air repeaters
+            op_status = str(item.get("Operational Status", "")).strip().lower()
+            if op_status and op_status != "on-air":
+                return None
+
+            # 2. Use: Only OPEN repeaters
+            use_val = str(item.get("Use", "")).strip().upper()
+            if use_val and use_val != "OPEN":
+                return None
+
             rx_freq = float(item.get("Frequency", item.get("rxFreq", 0.0)))
             tx_freq = float(item.get("Input Freq", item.get("txFreq", rx_freq)))
             offset = abs(tx_freq - rx_freq)

@@ -17,11 +17,11 @@ from core.providers.geocoding import (
 from core.providers.repeaterbook import RepeaterBookProvider
 
 
-def test_route_corridor_engine_good_data():
+def test_route_corridor_engine_good_data(tmp_path):
     """Good Data: Calculate travel corridor repeaters from Tyler, TX -> Shreveport, LA -> Jackson, MS."""
     geocoder = GeocodingProvider()
-    repeater_provider = RepeaterBookProvider(api_key="")
-    all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0, merge_offline=True)
+    repeater_provider = RepeaterBookProvider(api_key="", cache_dir=tmp_path / "empty_cache")
+    all_repeaters = repeater_provider.get_repeaters_near(32.0, -94.0, radius_miles=500.0)
 
     engine = RouteCorridorEngine(geocoder=geocoder)
     result = engine.plan_route(
