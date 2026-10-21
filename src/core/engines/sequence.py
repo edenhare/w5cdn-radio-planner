@@ -7,6 +7,7 @@ from typing import Any
 from core.models.channel import RadioChannel
 from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
+from core.sanitizers.condenser import NameCondenser
 from core.special_channels import (
     filter_channels_for_radio,
     get_national_calling_channels,
@@ -74,6 +75,12 @@ class SequenceOrganizer:
                     unique_channels.append(ch)
             filtered = unique_channels
 
-        # 3. Create codeplug and renumber
-        codeplug = Codeplug(name=codeplug_name, channels=filtered).renumbered()
+        # 3. Apply target radio name condensation rules
+        condensed_channels = [
+            ch.with_name(NameCondenser.condense(ch.name, target_spec))
+            for ch in filtered
+        ]
+
+        # 4. Create codeplug and renumber
+        codeplug = Codeplug(name=codeplug_name, channels=condensed_channels).renumbered()
         return codeplug

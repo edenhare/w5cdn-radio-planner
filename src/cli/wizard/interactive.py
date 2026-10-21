@@ -1072,7 +1072,8 @@ class InteractiveWizard:
             )
             codeplug, out_file = runner.run(recipe)
             self.console.print(f"[bold green]✔ Codeplug successfully exported to: {out_file}[/bold green]")
-            render_review_table(self.console, codeplug)
+            target_spec = self.radio_mgr.get_radio(recipe.radio_target.radio_id)
+            render_review_table(self.console, codeplug, target_spec=target_spec)
         except Exception as exc:
             self.console.print(f"[bold red]Failed to execute recipe: {exc}[/bold red]")
 
@@ -1097,7 +1098,7 @@ class InteractiveWizard:
 
             if act == "R":
                 dynamic_display = max(10, self.console.height - 10)
-                render_review_table(self.console, current_codeplug, max_display=dynamic_display)
+                render_review_table(self.console, current_codeplug, max_display=dynamic_display, target_spec=spec)
             elif act == "C":
                 render_config_panel(self.console, recipe, title="Current Active Configuration")
             elif act == "E":

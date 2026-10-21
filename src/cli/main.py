@@ -112,7 +112,8 @@ def main() -> int:
                     codeplug, out_file = runner.run(recipe)
 
                 console.print(f"\n[bold green]✔ Codeplug successfully exported to: {out_file}[/bold green]")
-                render_review_table(console, codeplug)
+                target_spec = runner.radio_manager.get_radio(recipe.radio_target.radio_id)
+                render_review_table(console, codeplug, target_spec=target_spec)
                 return 0
             except YamlDiagnosticError as err:
                 render_yaml_error(console, err)
