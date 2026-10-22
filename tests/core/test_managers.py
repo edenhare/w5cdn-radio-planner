@@ -21,9 +21,8 @@ def test_radio_manager_load_and_get():
     # Check known radios
     btech = mgr.get_radio("btech_dmr6x2")
     assert btech.brand == "BTECH"
-    assert btech.programmerType == "RT_SYSTEMS"
 
-    assert mgr.has_radio("chirp_standard")
+    assert mgr.has_radio("baofeng_5rm")
     assert not mgr.has_radio("non_existent_radio")
 
     with pytest.raises(KeyError, match="not found"):
@@ -42,7 +41,6 @@ def test_radio_manager_save_and_delete_user_radio(tmp_path: Path):
         description="Custom radio spec",
         maxChannels=200,
         maxNameLength=12,
-        programmerType="GENERIC_CSV",
     )
     dest = mgr.save_user_radio(custom_spec)
     assert dest.is_file()

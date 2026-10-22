@@ -52,8 +52,6 @@ class RecipeRunner:
             radio_spec = radio_spec.model_copy(update={"supportedBands": recipe.radio_target.bands})
         if recipe.radio_target.modes:
             radio_spec = radio_spec.model_copy(update={"supportedModes": recipe.radio_target.modes})
-        if recipe.radio_target.programmer_format:
-            radio_spec = radio_spec.model_copy(update={"programmerType": recipe.radio_target.programmer_format})
 
         # 2. Execute Mode Engine
         date_str = datetime.now().strftime("%m%d%y")
@@ -144,5 +142,10 @@ class RecipeRunner:
         filename = recipe.export.filename_pattern or default_filename
         dest_file = out_dir / filename
 
-        export_codeplug(codeplug, radio_spec, dest_file)
+        export_codeplug(
+            codeplug,
+            radio_spec,
+            dest_file,
+            programmer_type=recipe.radio_target.programmer_format or "RT_SYSTEMS",
+        )
         return codeplug, dest_file

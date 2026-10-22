@@ -7,7 +7,6 @@ maxNameLength: 10
 allowDots: true
 allowSpaces: true
 allowedSpecialChars: " -_./+#*"
-programmerType: "RT_SYSTEMS"
 supportedBands:
   - "2m"
   - "1.25m"

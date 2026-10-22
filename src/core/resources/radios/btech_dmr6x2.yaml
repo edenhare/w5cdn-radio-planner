@@ -1,13 +1,12 @@
 id: "btech_dmr6x2"
 brand: "BTECH"
 model: "DMR-6X2"
-description: "BTECH DMR-6X2 Dual Band DMR / Analog Mobile & Handheld (RT Systems)"
+description: "BTECH DMR-6X2 Dual Band DMR / Analog Handheld"
 maxChannels: 4000
 maxNameLength: 16
 allowDots: true
 allowSpaces: true
 allowedSpecialChars: " -_./+#*()[]"
-programmerType: "RT_SYSTEMS"
 supportedBands:
   - "2m"
   - "70cm"

@@ -10,7 +10,7 @@ corridor:
   corridor_width_miles: 25.0
 
 radio_target:
-  radio_id: "chirp_standard"
+  radio_id: "baofeng_5rm"
   programmer_format: "CHIRP"
   include_simplex: true
   bands:

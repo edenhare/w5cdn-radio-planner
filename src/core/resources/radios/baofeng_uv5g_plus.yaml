@@ -1,13 +1,12 @@
 id: "baofeng_uv5g_plus"
 brand: "Baofeng"
 model: "UV-5G Plus GMRS"
-description: "Baofeng UV-5G Plus GMRS Handheld Radio (RT Systems)"
+description: "Baofeng UV-5G Plus GMRS Handheld Radio"
 maxChannels: 999
 maxNameLength: 10
 allowDots: true
 allowSpaces: true
 allowedSpecialChars: " -_./+#*"
-programmerType: "RT_SYSTEMS"
 supportedBands:
   - "GMRS"
   - "WX"

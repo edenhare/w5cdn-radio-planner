@@ -35,7 +35,7 @@ class AviationConfig(BaseModel):
 class RadioTargetConfig(BaseModel):
     """Target radio selection and filtering configuration."""
 
-    radio_id: str = Field(default="chirp_standard")
+    radio_id: str = Field(default="baofeng_5rm")
     programmer_format: str | None = Field(default=None)
     include_simplex: bool = Field(default=True)
     bands: list[str] = Field(default_factory=lambda: ["2m", "70cm", "WX"])

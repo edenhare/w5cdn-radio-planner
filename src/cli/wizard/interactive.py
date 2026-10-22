@@ -238,7 +238,6 @@ class InteractiveWizard:
             corridor=CorridorConfig(waypoints=waypoints, corridor_width_miles=corridor_width),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
-                programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
@@ -377,7 +376,6 @@ class InteractiveWizard:
             proximity=ProximityConfig(center_location=center_loc, radius_miles=radius),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
-                programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
@@ -506,7 +504,6 @@ class InteractiveWizard:
             aviation=AviationConfig(center_location=center_loc, radius_miles=radius),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
-                programmer_format=radio_spec.programmerType,
                 include_simplex=False,
                 bands=active_bands,
                 modes=active_modes,
@@ -630,7 +627,6 @@ class InteractiveWizard:
                         name=tpl.name,
                         radio_target=RadioTargetConfig(
                             radio_id=radio_id,
-                            programmer_format=spec.programmerType,
                             include_simplex=True,
                             bands=spec.supportedBands,
                             modes=spec.supportedModes,
@@ -729,7 +725,6 @@ class InteractiveWizard:
             table.add_column("Brand", style="bold white")
             table.add_column("Model", style="bold white")
             table.add_column("ID", style="italic")
-            table.add_column("Programmer", style="yellow")
             table.add_column("Max Ch", justify="right", style="green", width=8)
             table.add_column("LCD Limit", justify="right", style="cyan", width=10)
             table.add_column("Supported Bands", style="dim")
@@ -743,7 +738,6 @@ class InteractiveWizard:
                     r.brand,
                     r.model,
                     r.id,
-                    r.programmerType,
                     str(r.maxChannels),
                     f"{r.maxNameLength} chars",
                     ", ".join(r.supportedBands),
@@ -780,7 +774,6 @@ class InteractiveWizard:
                         f"[bold white]{r.brand} {r.model}[/bold white] ([dim]{r.id}[/dim])\n"
                         f"Source: {'[green]User Override / Custom[/green]' if is_user else '[cyan]Factory Specification[/cyan]'}\n"
                         f"Description: {r.description}\n"
-                        f"Default Programmer: [bold yellow]{r.programmerType}[/bold yellow]\n"
                         f"Memory Limit: [bold green]{r.maxChannels} channels[/bold green]\n"
                         f"LCD Display Limit: [bold cyan]{r.maxNameLength} characters[/bold cyan]\n"
                         f"Allowed Special Characters: `{r.allowedSpecialChars}` (allowDots={r.allowDots}, allowSpaces={r.allowSpaces})\n"
@@ -798,11 +791,6 @@ class InteractiveWizard:
                 default_id = f"{brand.lower().replace(' ', '_')}_{model.lower().replace(' ', '_').replace('-', '_')}"
                 radio_id = Prompt.ask("Unique Radio ID Slug", default=default_id)
                 desc = Prompt.ask("Description", default=f"{brand} {model} Handheld Transceiver")
-                prog = Prompt.ask(
-                    "Programmer Format",
-                    choices=["CHIRP", "RT_SYSTEMS", "VENDOR_CPS", "GENERIC_CSV"],
-                    default="CHIRP",
-                )
                 max_ch = IntPrompt.ask("Maximum Channel Capacity", default=128)
                 max_name = IntPrompt.ask("Max LCD Name Length (characters)", default=8)
                 bands_in = Prompt.ask("Supported Bands (comma-separated)", default="2m, 70cm, Airband, WX")
@@ -820,7 +808,6 @@ class InteractiveWizard:
                     allowDots=True,
                     allowSpaces=True,
                     allowedSpecialChars=" -_./#",
-                    programmerType=prog,
                     supportedBands=bands,
                     supportedModes=modes,
                     columns=[],
@@ -836,11 +823,6 @@ class InteractiveWizard:
                     )
                     max_ch = IntPrompt.ask("Max Channel Capacity", default=r.maxChannels)
                     max_name = IntPrompt.ask("Max LCD Name Length", default=r.maxNameLength)
-                    prog = Prompt.ask(
-                        "Programmer Format",
-                        choices=["CHIRP", "RT_SYSTEMS", "VENDOR_CPS", "GENERIC_CSV"],
-                        default=r.programmerType,
-                    )
                     bands_in = Prompt.ask("Supported Bands", default=", ".join(r.supportedBands))
                     bands = [b.strip() for b in bands_in.split(",") if b.strip()]
                     modes_in = Prompt.ask("Supported Modes", default=", ".join(r.supportedModes))
@@ -856,7 +838,6 @@ class InteractiveWizard:
                         allowDots=r.allowDots,
                         allowSpaces=r.allowSpaces,
                         allowedSpecialChars=r.allowedSpecialChars,
-                        programmerType=prog,
                         supportedBands=bands,
                         supportedModes=modes,
                         columns=r.columns,
@@ -1242,7 +1223,6 @@ class InteractiveWizard:
                 fmt_choice = Prompt.ask("Select format", choices=["1", "2", "3"], default="1")
                 fmt_map = {"1": "RT_SYSTEMS", "2": "CHIRP", "3": "GENERIC_CSV"}
                 chosen_format = fmt_map[fmt_choice]
-                export_spec = spec.model_copy(update={"programmerType": chosen_format})
 
                 date_str = datetime.now().strftime("%m%d%y")
                 out_dir = Path("./exports").resolve()
@@ -1250,7 +1230,7 @@ class InteractiveWizard:
                 default_name = f"{DataSanitizer.sanitize_filename(recipe.name)}-{spec.id}-{chosen_format.lower()}-{date_str}.csv"
                 file_name = Prompt.ask("Output CSV filename", default=default_name)
                 dest = out_dir / file_name
-                export_codeplug(current_codeplug, export_spec, dest)
+                export_codeplug(current_codeplug, spec, dest, programmer_type=chosen_format)
                 self.console.print(f"[bold green]✔ Codeplug exported successfully to: {dest} ({chosen_format})[/bold green]")
             elif act == "D":
                 dmr_channels = [ch for ch in current_codeplug.channels if ch.mode.upper() == "DMR"]

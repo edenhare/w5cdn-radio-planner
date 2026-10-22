@@ -167,9 +167,9 @@ def test_wizard_flow_preferences_default_radio_clear(tmp_path: Path):
 
     # First set a default radio
     wizard.prefs_mgr.save_preferences(
-        wizard.prefs_mgr.preferences.update_settings(defaultRadioId="chirp_standard")
+        wizard.prefs_mgr.preferences.update_settings(defaultRadioId="baofeng_5rm")
     )
-    assert wizard.prefs_mgr.preferences.defaultRadioId == "chirp_standard"
+    assert wizard.prefs_mgr.preferences.defaultRadioId == "baofeng_5rm"
 
     # Option "5", select "0" to clear, then "Q"
     with patch("rich.prompt.Prompt.ask", side_effect=["5", "0", "Q"]):

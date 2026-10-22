@@ -19,10 +19,6 @@ class TargetRadioSpec(BaseModel):
     allowDots: bool = Field(default=True, description="Whether LCD supports dot '.' characters")
     allowSpaces: bool = Field(default=True, description="Whether LCD supports spaces")
     allowedSpecialChars: str = Field(default=" -_./#", description="Allowed special symbols on LCD")
-    programmerType: str = Field(
-        default="CHIRP",
-        description="Default programmer: CHIRP, RT_SYSTEMS, VENDOR_CPS, GENERIC_CSV",
-    )
     supportedBands: list[str] = Field(
         default_factory=lambda: ["2m", "70cm"],
         description="Supported bands: 10m, 6m, 2m, 1.25m, 70cm, GMRS, Airband, WX",

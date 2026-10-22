@@ -46,10 +46,10 @@ def test_chirp_exporter_format_and_columns():
     """Good Data: Verify CHIRP exporter generates exactly 21 columns with compliant header."""
     cp = create_sample_codeplug()
     mgr = RadioManager()
-    chirp_spec = mgr.get_radio("chirp_standard")
+    spec = mgr.get_radio("btech_dmr6x2")
 
     exporter = get_exporter("CHIRP")
-    csv_text = exporter.to_csv_string(cp, chirp_spec)
+    csv_text = exporter.to_csv_string(cp, spec)
 
     reader = csv.reader(io.StringIO(csv_text))
     rows = list(reader)
@@ -103,7 +103,7 @@ def test_rt_systems_exporters():
 def test_exporter_clamping_to_max_channels():
     """Bad / Edge Data: Codeplug exceeding maxChannels is clamped."""
     mgr = RadioManager()
-    spec = mgr.get_radio("chirp_standard").model_copy(update={"maxChannels": 2})
+    spec = mgr.get_radio("baofeng_5rm").model_copy(update={"maxChannels": 2})
 
     channels = [RadioChannel(number=i, name=f"CH{i}", rxFreq=146.52, txFreq=146.52) for i in range(1, 10)]
     cp = Codeplug(name="LargeCodeplug", channels=channels)
@@ -121,9 +121,9 @@ def test_export_to_file(tmp_path: Path):
     """Test exporting codeplug to file on disk."""
     cp = create_sample_codeplug()
     mgr = RadioManager()
-    spec = mgr.get_radio("chirp_standard")
+    spec = mgr.get_radio("baofeng_5rm")
 
     out_file = tmp_path / "exports" / "test_out.csv"
-    res = export_codeplug(cp, spec, out_file)
+    res = export_codeplug(cp, spec, out_file, programmer_type="CHIRP")
     assert res.is_file()
     assert res.stat().st_size > 0

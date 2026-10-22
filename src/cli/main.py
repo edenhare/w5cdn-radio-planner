@@ -74,7 +74,7 @@ def main() -> int:
             for r in radios:
                 console.print(
                     f"- [bold white]{r.brand} {r.model}[/bold white] (ID: [green]{r.id}[/green])\n"
-                    f"  Programmer: {r.programmerType} | Max Channels: {r.maxChannels} | Name Limit: {r.maxNameLength} chars\n"
+                    f"  Max Channels: {r.maxChannels} | Name Limit: {r.maxNameLength} chars\n"
                     f"  Bands: {', '.join(r.supportedBands)} | Modes: {', '.join(r.supportedModes)}\n"
                 )
             return 0
