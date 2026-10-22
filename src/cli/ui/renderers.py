@@ -171,6 +171,53 @@ def render_split_summary(
     console.print(Columns([left_table, right_table], equal=True))
 
 
+def render_aviation_summary(
+    console: Console,
+    title: str = "Aviation Summary",
+    airfields: list | None = None,
+    distances_miles: list[float] | None = None,
+    radius_miles: float = 35.0,
+    band_counts: dict[str, int] | None = None,
+    total_channels: int = 0,
+) -> None:
+    """Render dual-column summary for Mode 3 showing matched airfields with distance to airfield and channel breakdown."""
+    arpts = airfields or []
+    dists = distances_miles or [0.0] * len(arpts)
+    bands = band_counts or {}
+
+    # Left Column: Airfields Within Range
+    left_table = Table(title="Airfields Within Range", border_style="cyan", show_header=True)
+    left_table.add_column("#", style="dim", width=4)
+    left_table.add_column("Airport / Airfield", style="bold white")
+    left_table.add_column("Distance to Airfield", justify="right", style="green")
+
+    for idx, (arpt, dist) in enumerate(zip(arpts, dists), start=1):
+        label = arpt.name if hasattr(arpt, "name") and not hasattr(arpt, "ident") else f"{arpt.ident} ({arpt.name})"
+        left_table.add_row(str(idx), label, f"{dist:.1f} mi")
+
+    left_table.add_section()
+    left_table.add_row(
+        "TOTAL",
+        f"{len(arpts)} Airfields",
+        f"Max {radius_miles:.1f} mi",
+        style="bold cyan",
+    )
+
+    # Right Column: Frequency Band & Channel Breakdown
+    right_table = Table(title="Channel Breakdown", border_style="magenta", show_header=True)
+    right_table.add_column("Band / Category", style="bold")
+    right_table.add_column("Channels", justify="right", style="bold yellow")
+
+    for band, count in sorted(bands.items()):
+        right_table.add_row(band, str(count))
+
+    right_table.add_section()
+    right_table.add_row("Total Channels", str(total_channels), style="bold green")
+
+    # Render split view in dual columns
+    console.print(Columns([left_table, right_table], equal=True))
+
+
 def render_proximity_summary(
     console: Console,
     title: str = "Proximity Summary",

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from core.models.aviation import AirfieldRecord
 from core.models.channel import RadioChannel
 from core.providers.airports import AirportsProvider
-from core.providers.geocoding import GeocodingProvider, GeoPoint
+from core.providers.geocoding import GeocodingProvider, GeoPoint, haversine_distance
 
 
 @dataclass
@@ -17,6 +17,7 @@ class AviationResult:
     center_point: GeoPoint
     radius_miles: float
     matched_airports: list[AirfieldRecord]
+    airport_distances: list[float] = field(default_factory=list)
     channels: list[RadioChannel] = field(default_factory=list)
     channel_counts_by_type: dict[str, int] = field(default_factory=dict)
 
@@ -40,6 +41,10 @@ class AviationEngine:
         """Find airports near location and build Airband channels list."""
         center = self.geocoder.resolve(center_location)
         airports = self.airports_provider.find_airports_near(center.lat, center.lon, radius_miles=radius_miles)
+        distances = [
+            round(haversine_distance(center, GeoPoint(lat=a.latitude, lon=a.longitude), unit="MILES"), 1)
+            for a in airports
+        ]
         channels = self.airports_provider.convert_to_channels(airports)
 
         # Count frequencies by type (CTAF, TWR, GND, ATIS, APP, etc.)
@@ -54,6 +59,7 @@ class AviationEngine:
             center_point=center,
             radius_miles=radius_miles,
             matched_airports=airports,
+            airport_distances=distances,
             channels=channels,
             channel_counts_by_type=counts,
         )

@@ -25,4 +25,5 @@ class AirfieldRecord(BaseModel):
     latitude: float = Field(..., description="Airfield latitude")
     longitude: float = Field(..., description="Airfield longitude")
     municipality: str = Field(default="", description="Associated city or municipality")
+    state: str = Field(default="", description="2-letter state or province abbreviation")
     frequencies: list[AviationFrequency] = Field(default_factory=list, description="Frequencies at this field")

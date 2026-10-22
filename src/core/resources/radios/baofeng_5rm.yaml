@@ -6,7 +6,7 @@ maxChannels: 999
 maxNameLength: 10
 allowDots: true
 allowSpaces: true
-allowedSpecialChars: "-_"
+allowedSpecialChars: " -_./+#*"
 programmerType: "RT_SYSTEMS"
 supportedBands:
   - "2m"

@@ -6,7 +6,7 @@ maxChannels: 999
 maxNameLength: 8
 allowDots: true
 allowSpaces: true
-allowedSpecialChars: "-_"
+allowedSpecialChars: " -_./+*"
 programmerType: "RT_SYSTEMS"
 supportedBands:
   - "GMRS"

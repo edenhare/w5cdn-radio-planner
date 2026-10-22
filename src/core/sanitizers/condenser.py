@@ -39,6 +39,16 @@ ABBREVIATIONS = {
     "DEPARTMENT": "DEPT",
     "SECURITY": "SEC",
     "TRANSIT": "TRN",
+    "ATIS": "AT",
+    "CTAF": "CT",
+    "TWR": "TW",
+    "GND": "GD",
+    "APP": "AP",
+    "DEP": "DP",
+    "UNICOM": "UN",
+    "AWOS": "AW",
+    "ASOS": "AS",
+    "CLNC": "CL",
 }
 
 
@@ -56,7 +66,7 @@ class NameCondenser:
         int_part = int(rx_freq)
         digit_before = int_part % 10
         decimal_part = int(round((rx_freq - int_part) * 100)) % 100
-        freq_tag = f"{digit_before}.{decimal_part:02d}"
+        freq_tag = f"{digit_before}.{decimal_part:02d}" if spec.allowDots else f"{digit_before}{decimal_part:02d}"
 
         # Clean city name (remove any trailing state abbreviations, punctuation, or spaces)
         clean_city = city.split(",")[0].strip()
@@ -65,7 +75,7 @@ class NameCondenser:
         for full_word, abbr in ABBREVIATIONS.items():
             clean_city = re.sub(rf"\b{full_word}\b", abbr, clean_city, flags=re.IGNORECASE)
 
-        use_space = spec.allowSpaces
+        use_space = spec.allowSpaces and (spec.maxNameLength - len(freq_tag) >= 4)
         suffix = f" {freq_tag}" if use_space else freq_tag
         suffix_len = len(suffix)
 
@@ -75,7 +85,7 @@ class NameCondenser:
             shortened_city = "RPT"[:max_city_len]
 
         candidate = f"{shortened_city}{suffix}"
-        return cls._apply_hardware_char_rules(candidate, spec, is_frequency_formatted=True)
+        return cls._apply_hardware_char_rules(candidate, spec)
 
     @classmethod
     def condense_channel(
@@ -159,24 +169,23 @@ class NameCondenser:
 
     @classmethod
     def _apply_hardware_char_rules(
-        cls, text: str, spec: TargetRadioSpec, is_frequency_formatted: bool = False
+        cls, text: str, spec: TargetRadioSpec
     ) -> str:
         """Filter characters according to allowDots, allowSpaces, and allowedSpecialChars."""
         cleaned = []
-        for idx, char in enumerate(text):
+        for char in text:
             if char == ".":
-                # Always preserve dot when between digits for frequency format x.xx (e.g. 7.20)
-                is_freq_dot = (0 < idx < len(text) - 1 and text[idx - 1].isdigit() and text[idx + 1].isdigit())
-                if not spec.allowDots and not (is_frequency_formatted or is_freq_dot):
-                    continue
+                if spec.allowDots:
+                    cleaned.append(".")
+                continue
             if char == " ":
                 if spec.allowSpaces:
                     cleaned.append(" ")
                 continue
-            if char.isalnum() or char in spec.allowedSpecialChars or char == ".":
+            if char.isalnum() or char in spec.allowedSpecialChars:
                 cleaned.append(char)
             else:
-                # Replace unsupported special char with underscore or dash if allowed
+                # Replace unsupported special char with dash, underscore, or space if allowed
                 if "-" in spec.allowedSpecialChars:
                     cleaned.append("-")
                 elif "_" in spec.allowedSpecialChars:

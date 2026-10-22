@@ -6,7 +6,7 @@ maxChannels: 1000
 maxNameLength: 16
 allowDots: true
 allowSpaces: true
-allowedSpecialChars: " -_./#"
+allowedSpecialChars: " -_./+#*"
 programmerType: "CHIRP"
 supportedBands:
   - "10m"

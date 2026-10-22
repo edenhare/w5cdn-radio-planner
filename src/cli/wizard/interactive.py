@@ -12,6 +12,7 @@ from rich.table import Table
 
 from cli.ui.menu import DynamicMenu, PreferenceItem, prompt_choice_from_list
 from cli.ui.renderers import (
+    render_aviation_summary,
     render_config_panel,
     render_header,
     render_proximity_summary,
@@ -42,7 +43,7 @@ from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
 from core.models.template import PresetTemplateFile
 from core.providers.airports import AirportsProvider
-from core.providers.geocoding import GeocodingProvider, GeoPoint, haversine_distance
+from core.providers.geocoding import GeocodingProvider, haversine_distance
 from core.providers.radio_id import RadioIdProvider
 from core.providers.repeaterbook import (
     RepeaterBookProvider,
@@ -469,10 +470,21 @@ class InteractiveWizard:
 
     def _flow_aviation(self) -> None:
         """Mode 3: Local Aviation Planner Wizard."""
-        self.console.clear()
-        self.console.print("\n[bold green]═══ Mode 3: Local Aviation & Airport Planner ═══[/bold green]")
+        render_header(self.console, subtitle="Local Aviation & Airport Planner")
         center_loc = Prompt.ask("Target city or airport", default="Tyler, TX")
         radius = float(Prompt.ask("Search radius in miles", default="35.0"))
+
+        # Allow user to select and sequence templates to add to the aviation plan
+        sequence_keys = select_and_sequence_blocks(
+            self.console,
+            self.template_mgr,
+            primary_block_key="AVIATION_BLOCK",
+            primary_block_title="Local Airport Aviation Channels",
+            initial_sequence=["AVIATION_BLOCK"],
+        )
+        if not sequence_keys:
+            self.console.print("[yellow]Sequence selection cancelled.[/yellow]")
+            return
 
         radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
         if not radio_id:
@@ -480,6 +492,10 @@ class InteractiveWizard:
             return
 
         radio_spec = self.radio_mgr.get_radio(radio_id)
+
+        has_templates = any(k.startswith("TEMPLATE:") for k in sequence_keys)
+        active_bands = list(radio_spec.supportedBands) if has_templates else ["Airband"]
+        active_modes = list(radio_spec.supportedModes) if has_templates else ["AM"]
 
         city_clean = center_loc.split(",")[0].strip()
         plan_name = f"{city_clean}_Aviation_{int(radius)}mi"
@@ -492,13 +508,15 @@ class InteractiveWizard:
                 radio_id=radio_id,
                 programmer_format=radio_spec.programmerType,
                 include_simplex=False,
-                bands=["Airband"],
-                modes=["AM"],
+                bands=active_bands,
+                modes=active_modes,
             ),
-            sequence_order=["AVIATION_BLOCK"],
+            sequence_order=sequence_keys,
         )
 
         # Show intermittent configuration preview
+        self.console.clear()
+        render_header(self.console, subtitle="Aviation Planner Configuration")
         render_config_panel(self.console, recipe, title="Aviation Planner Configuration")
         if not Confirm.ask("Proceed with airport query?", default=True):
             return
@@ -511,19 +529,29 @@ class InteractiveWizard:
                 sequence_keys=recipe.sequence_order,
                 primary_channels=res.channels,
                 target_spec=radio_spec,
+                template_manager=self.template_mgr,
+                allowed_bands=active_bands,
+                allowed_modes=active_modes,
+                naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
             )
 
-        # Aviation Summary
-        arpt_pts = [
-            GeoPoint(lat=a.latitude, lon=a.longitude, name=f"{a.ident} ({a.name})") for a in res.matched_airports
-        ]
-        render_split_summary(
+        self.console.clear()
+        render_header(self.console, subtitle="Aviation Configuration Review")
+
+        # Compute breakdown across airband types + any added template bands
+        breakdown: dict[str, int] = dict(res.channel_counts_by_type)
+        for ch in codeplug.channels:
+            if ch.specialType != "AVIATION":
+                b_label = f"Template ({ch.band})"
+                breakdown[b_label] = breakdown.get(b_label, 0) + 1
+
+        render_aviation_summary(
             self.console,
             title="Aviation Summary",
-            waypoints=arpt_pts,
-            cumulative_miles=[0.0] * len(arpt_pts),
-            total_miles=res.radius_miles,
-            band_counts={"Airband": len(res.channels)},
+            airfields=res.matched_airports,
+            distances_miles=res.airport_distances,
+            radius_miles=res.radius_miles,
+            band_counts=breakdown,
             total_channels=codeplug.total_channels,
         )
 

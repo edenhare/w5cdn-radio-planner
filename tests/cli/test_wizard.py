@@ -300,4 +300,37 @@ def test_wizard_flow_preset_templates_customize_direct_copy(tmp_path: Path):
     assert copied_file.is_file()
 
 
+def test_wizard_flow_aviation_with_template_selection():
+    """Verify Mode 3 Aviation flow allows template selection and shows distance to airfield (no Waypoints)."""
+    out = io.StringIO()
+    console = Console(file=out, width=120)
+    wizard = InteractiveWizard(console=console)
+
+    with patch("cli.wizard.interactive.select_and_sequence_blocks", return_value=["AVIATION_BLOCK", "TEMPLATE:noaa_wx_channels"]), \
+         patch.object(wizard, "_select_target_radio", return_value="alinco_dr735t"), \
+         patch("rich.prompt.Prompt.ask", side_effect=["Tyler, TX", "35.0"]), \
+         patch("rich.prompt.Confirm.ask", side_effect=[True]), \
+         patch.object(wizard, "_channel_review_and_export_loop") as mock_review:
+        wizard._flow_aviation()
+        assert mock_review.called
+        args, _ = mock_review.call_args
+        codeplug, recipe, radio_spec = args
+        assert radio_spec.id == "alinco_dr735t"
+        assert radio_spec.maxNameLength == 6
+        assert "TEMPLATE:noaa_wx_channels" in recipe.sequence_order
+        # Verify both Airband and WX template channels are present and condensed to <= 6 chars
+        bands = {ch.band for ch in codeplug.channels}
+        assert "Airband" in bands
+        assert "WX" in bands
+        for ch in codeplug.channels:
+            assert len(ch.name) <= 6
+
+        rendered = out.getvalue()
+        assert "Airfields Within Range" in rendered
+        assert "Distance to Airfield" in rendered
+        assert "Airfields" in rendered
+        assert "Waypoints" not in rendered
+
+
+
 

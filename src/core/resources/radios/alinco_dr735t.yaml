@@ -3,10 +3,10 @@ brand: "Alinco"
 model: "DR-735T"
 description: "Alinco DR-735T Dual Band Mobile Transceiver (RT Systems)"
 maxChannels: 1000
-maxNameLength: 14
-allowDots: true
+maxNameLength: 6
+allowDots: false
 allowSpaces: true
-allowedSpecialChars: " -_./#"
+allowedSpecialChars: " -/"
 programmerType: "RT_SYSTEMS"
 supportedBands:
   - "2m"

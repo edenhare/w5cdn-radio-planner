@@ -75,17 +75,24 @@ def test_proximity_engine_good_data(tmp_path):
 
 
 def test_aviation_engine_good_data():
-    """Good Data: Local airport frequencies around Tyler, TX (KTYR)."""
+    """Good Data: Local airport frequencies around Tyler, TX (KTYR and regional airfields within 35 mi)."""
     geocoder = GeocodingProvider()
     airports_provider = AirportsProvider()
 
     engine = AviationEngine(geocoder=geocoder, airports_provider=airports_provider)
     result = engine.plan_aviation(center_location="Tyler, TX", radius_miles=35.0)
 
-    assert len(result.matched_airports) >= 1
-    ktyr = next((a for a in result.matched_airports if a.ident == "KTYR"), None)
-    assert ktyr is not None
-    assert len(result.channels) > 0
+    assert len(result.matched_airports) >= 8
+    assert len(result.airport_distances) == len(result.matched_airports)
+    # Closest airport should be KTYR (~5.8 mi), and distances must be sorted ascending and > 0
+    assert result.matched_airports[0].ident == "KTYR"
+    assert 4.0 <= result.airport_distances[0] <= 10.0
+    assert result.airport_distances == sorted(result.airport_distances)
+
+    matched_idents = {a.ident for a in result.matched_airports}
+    assert {"KTYR", "7F3", "3F9", "KJDD", "F12", "F44", "KJSO", "KGGG"}.issubset(matched_idents)
+
+    assert len(result.channels) > 15
     for ch in result.channels:
         assert ch.band == "Airband"
         assert ch.mode == "AM"

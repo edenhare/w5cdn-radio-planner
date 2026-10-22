@@ -146,3 +146,21 @@ def test_name_condenser_city_frequency_format():
     res3 = NameCondenser.format_city_frequency("Shreveport", 146.76000, spec_16c)
     assert res3 == "Shreveport 6.76"
     assert len(res3) <= 16
+
+    # Alinco DR-735T: 6-char limit, allowDots=False, allowSpaces=True, allowedSpecialChars=" -/"
+    from core.managers.radio_manager import RadioManager
+
+    rm = RadioManager()
+    alinco_spec = rm.get_radio("alinco_dr735t")
+    assert alinco_spec.maxNameLength == 6
+    assert alinco_spec.allowDots is False
+    assert alinco_spec.allowedSpecialChars == " -/"
+
+    res_alinco_rpt = NameCondenser.format_city_frequency("Tyler", 147.20000, alinco_spec)
+    assert len(res_alinco_rpt) <= 6
+    assert "." not in res_alinco_rpt
+    assert res_alinco_rpt == "Tyl720"
+
+    res_alinco_air = NameCondenser.condense("KTYR ATIS", alinco_spec)
+    assert len(res_alinco_air) <= 6
+    assert res_alinco_air == "KTYRAT"
