@@ -22,6 +22,14 @@ def test_radio_manager_load_and_get():
     btech = mgr.get_radio("btech_dmr6x2")
     assert btech.brand == "BTECH"
 
+    anytone = mgr.get_radio("anytone_at778uv")
+    assert anytone.brand == "AnyTone"
+    assert anytone.model == "AT-778UV"
+    assert anytone.programmerType == "CHIRP"
+    assert anytone.startChannel == 0
+    assert anytone.maxChannels == 127
+    assert anytone.maxNameLength == 5
+
     assert mgr.has_radio("baofeng_5rm")
     assert not mgr.has_radio("non_existent_radio")
 

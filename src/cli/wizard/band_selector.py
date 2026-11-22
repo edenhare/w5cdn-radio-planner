@@ -184,3 +184,96 @@ def select_repeater_access(
                 else:
                     active.add(code)
 
+
+NAMING_FORMAT_OPTIONS: list[tuple[str, str, str]] = [
+    ("CITY_FREQ", "City + Frequency", "Shortened city name + '.xx' frequency suffix"),
+    ("CALLSIGN_FREQ", "Callsign + Frequency", "Repeater callsign + '.xx' frequency suffix"),
+    ("CALLSIGN", "Callsign Only", "Repeater station callsign only"),
+    ("CITY", "City Only", "City / town name only (no frequency suffix)"),
+    ("STANDARD", "Standard / Full Name", "Full channel name abbreviated to fit LCD"),
+]
+
+AVIATION_NAMING_FORMAT_OPTIONS: list[tuple[str, str, str]] = [
+    ("IDENT_TYPE", "Airport ID + Service Type", "ICAO/FAA Identifier + Service (e.g. KTYR ATIS / KTYRAT)"),
+    ("CITY_TYPE", "City + Service Type", "Municipality + Service (e.g. Tyler ATIS / TyleAT)"),
+    ("IDENT_FREQ", "Airport ID + Frequency", "ICAO/FAA Identifier + '.xx' frequency suffix"),
+    ("IDENT_ONLY", "Airport ID Only", "ICAO/FAA Airport Identifier only (e.g. KTYR)"),
+]
+
+
+def select_channel_naming_format(
+    console: Console,
+    spec: TargetRadioSpec,
+    default_format: str = "CITY_FREQ",
+) -> Optional[str]:
+    """Prompt user to select or verify channel naming format with live LCD preview for the target radio."""
+    from core.models.channel import RadioChannel
+    from core.sanitizers.condenser import NameCondenser
+
+    valid_codes = [item[0] for item in NAMING_FORMAT_OPTIONS]
+    active_format = (default_format or "CITY_FREQ").strip().upper()
+    if active_format not in valid_codes:
+        active_format = "CITY_FREQ"
+
+    sample_ch = RadioChannel(
+        number=1,
+        name="Tyler 147.20",
+        callsign="W5ETX",
+        rxFreq=147.20,
+        txFreq=147.80,
+        city="Tyler",
+        state="TX",
+    )
+
+    console.clear()
+    render_header(console, subtitle="Channel Naming Configuration")
+
+    while True:
+        console.print(
+            f"\n[bold cyan]═══ Select Channel Naming Format for {spec.brand} {spec.model} (Max {spec.maxNameLength} chars) ═══[/bold cyan]"
+        )
+        table = Table(border_style="cyan", show_lines=False)
+        table.add_column("#", justify="right", style="cyan", width=4)
+        table.add_column("Active", justify="center", width=8)
+        table.add_column("Naming Format", style="bold white", width=22)
+        table.add_column(f"Sample ({spec.maxNameLength}c LCD)", style="bold yellow", width=18)
+        table.add_column("Description", style="dim")
+
+        for idx, (code, label, desc) in enumerate(NAMING_FORMAT_OPTIONS, start=1):
+            is_active = code == active_format
+            status_badge = "[bold green][X][/bold green]" if is_active else "[dim][ ][/dim]"
+            preview = NameCondenser.condense_channel(sample_ch, spec, naming_format=code)
+            table.add_row(str(idx), status_badge, label, f"'{preview}'", desc)
+
+        active_label = next((lbl for c, lbl, _ in NAMING_FORMAT_OPTIONS if c == active_format), active_format)
+        panel = Panel(
+            table,
+            title=f"Hardware: {spec.brand} {spec.model} ({spec.maxNameLength}-char LCD) | Active Format: [bold green]{active_label}[/bold green]",
+            border_style="blue",
+        )
+        console.print(panel)
+
+        console.print("\n[bold cyan]Channel Naming Actions:[/bold cyan]")
+        console.print("  [C] [bold green]Confirm Channel Naming Format & Continue[/bold green]")
+        console.print(f"  [1-{len(NAMING_FORMAT_OPTIONS)}] Select Naming Format")
+        console.print("  [B] Back / Cancel")
+
+        valid_choices = ["C", "c", "B", "b", "Q", "q"] + [str(i) for i in range(1, len(NAMING_FORMAT_OPTIONS) + 1)]
+        choice = Prompt.ask(
+            "Select action or format number",
+            choices=valid_choices,
+            default="C",
+        ).strip().upper()
+
+        if choice in {"B", "Q"}:
+            return None
+        elif choice == "C":
+            return active_format
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(NAMING_FORMAT_OPTIONS):
+                active_format = NAMING_FORMAT_OPTIONS[idx][0]
+                console.clear()
+                render_header(console, subtitle="Channel Naming Configuration")
+
+

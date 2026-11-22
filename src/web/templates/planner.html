@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-6">
+  <!-- Loaded Recipe Verification Banner (if loaded from Saved Recipes) -->
+  {% if loaded_recipe_file %}
+  <div class="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/40 flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wider text-cyan-400">
+        ✔ Loaded Saved Recipe: <span class="text-white font-mono">{{ loaded_recipe_file }}</span>
+      </div>
+      <p class="text-xs text-slate-300 mt-0.5">
+        Values from <strong class="text-white">{{ initial_recipe.name }}</strong> have been pre-filled below. Click <strong>Assemble Plan &amp; Map</strong>, then choose any Target Radio in the Codeplug View to export.
+      </p>
+    </div>
+    <a href="/?mode={{ mode }}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+      Reset to Defaults
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <!-- Left Column: Interactive Configuration Form (5 cols on LG) -->
+    <div data-collapsible-panel class="lg:col-span-5 min-w-0 overflow-hidden bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-5 shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h1 class="text-base font-bold text-white flex items-center gap-2">
+            {% if mode == 'ROUTE_CORRIDOR' %}
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Mode 1: Highway Route Corridor
+            {% elif mode == 'PROXIMITY_SEARCH' %}
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Mode 2: Radial Proximity Rings
+            {% else %}
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span> Mode 3: Local Aviation &amp; Airport Planner
+            {% endif %}
+          </h1>
+          <p class="text-xs text-slate-400 mt-0.5">Configure parameters and sequence blocks for your plan.</p>
+        </div>
+        <button type="button" onclick="togglePanelCollapse(this)" class="panel-collapse-btn" title="Collapse / Expand Panel" aria-expanded="true">
+          <span class="collapse-arrow">▾</span>
+        </button>
+      </div>
+
+      <div class="collapsible-panel-body">
+      <form id="planner-form"
+            hx-post="/htmx/plan/generate"
+            hx-target="#plan-results-container"
+            hx-indicator="#plan-loading"
+            class="space-y-5">
+        <input type="hidden" name="mode" value="{{ mode }}" />
+        <input type="hidden" name="plan_name" value="{{ initial_recipe.name if initial_recipe else '' }}" />
+        <input type="hidden" name="plan_description" value="{{ initial_recipe.description if initial_recipe else '' }}" />
+
+        {% if mode == 'ROUTE_CORRIDOR' %}
+        <!-- Waypoints List Editor -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Highway Route Waypoints (Ordered Stops)
+            </label>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="reverseWaypoints()"
+                      class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-cyan-300 border border-slate-700 transition">
+                ⇅ Reverse Route
+              </button>
+              <button type="button" onclick="addWaypoint('')"
+                      class="px-2 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-[11px] text-cyan-300 border border-cyan-500/40 transition font-medium">
+                + Add Stop
+              </button>
+            </div>
+          </div>
+
+          <div id="waypoints-list" class="space-y-2">
+            {% for wp in waypoints %}
+            <div class="waypoint-row flex items-center gap-2">
+              <span class="cursor-move text-slate-500 hover:text-slate-300 px-1 select-none" title="Drag to reorder">☰</span>
+              <input type="text" name="waypoints" value="{{ wp }}" required
+                     placeholder="City, ST (e.g. Tyler, TX)"
+                     class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:border-cyan-500 outline-none" />
+              <button type="button" onclick="removeWaypoint(this)"
+                      class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition"
+                      title="Remove stop">✕</button>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 pt-2">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Corridor Width (miles)</label>
+              <input type="number" step="any" min="1" max="200" name="corridor_width" value="{{ corridor_width }}"
+                     class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 outline-none" />
+            </div>
+            <div class="flex items-end pb-1">
+              <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-200">
+                <input type="checkbox" name="include_simplex" value="true" {% if include_simplex %}checked{% endif %}
+                       class="rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500" />
+                <span>Include Simplex Channels</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {% elif mode == 'PROXIMITY_SEARCH' %}
+        <!-- Proximity Center & Radius -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="sm:col-span-2">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">Center Location / City</label>
+              <button type="button" onclick="useCurrentLocation('center-location-input', this)"
+                      class="px-2.5 py-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-[11px] text-cyan-300 font-semibold transition flex items-center gap-1">
+                <span>📍 Use Current Location</span>
+              </button>
+            </div>
+            <input type="text" id="center-location-input" name="center_location" value="{{ center_location }}" required
+                   placeholder="e.g. Dallas, TX"
+                   class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:border-cyan-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Search Radius (miles)</label>
+            <input type="number" step="any" min="1" max="300" name="radius_miles" value="{{ radius_miles }}"
+                   class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 outline-none" />
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-200">
+              <input type="checkbox" name="include_simplex" value="true" {% if include_simplex %}checked{% endif %}
+                     class="rounded border-slate-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500" />
+              <span>Include Simplex Channels</span>
+            </label>
+          </div>
+        </div>
+
+        {% else %}
+        <!-- Aviation Center & Radius -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="sm:col-span-2">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">Target City or Airport</label>
+              <button type="button" onclick="useCurrentLocation('center-location-input', this)"
+                      class="px-2.5 py-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-[11px] text-cyan-300 font-semibold transition flex items-center gap-1">
+                <span>📍 Use Current Location</span>
+              </button>
+            </div>
+            <input type="text" id="center-location-input" name="center_location" value="{{ center_location }}" required
+                   placeholder="e.g. Tyler, TX or KTYR"
+                   class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:border-cyan-500 outline-none" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">Search Radius (miles)</label>
+            <input type="number" step="any" min="1" max="250" name="radius_miles" value="{{ radius_miles }}"
+                   class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:border-cyan-500 outline-none" />
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Drag & Drop Codeplug Sequence & Template Blocks -->
+        <div class="space-y-2 border-t border-slate-800 pt-4">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Codeplug Sequence &amp; Template Blocks <span class="text-slate-500 font-normal normal-case">(Drag to reorder)</span>
+            </label>
+          </div>
+
+          <div id="sequence-list" class="space-y-1.5">
+            {% for seq in sequence_blocks %}
+            <div class="sequence-item flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+              <div class="flex items-center gap-2">
+                <span class="cursor-move text-slate-500 hover:text-slate-300 select-none">☰</span>
+                <input type="hidden" name="sequence_order" value="{{ seq.key }}" />
+                <span class="font-medium text-slate-200">{{ seq.title }}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono {{ 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' if seq.is_primary else 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' }}">
+                  {{ seq.badge }}
+                </span>
+              </div>
+              {% if not seq.is_primary %}
+              <button type="button" onclick="this.closest('.sequence-item').remove()"
+                      class="text-slate-500 hover:text-rose-400 text-xs px-1">✕</button>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+
+          <!-- Add Template Block Selector -->
+          <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1 w-full min-w-0">
+            <select id="add-template-select"
+                    class="flex-1 min-w-0 w-full truncate bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-slate-300 outline-none">
+              {% for tpl in available_templates %}
+              <option value="TEMPLATE:{{ tpl.id }}" data-title="{{ tpl.name }}" data-badge="{{ tpl.tagText }}">
+                + {{ tpl.name }} [{{ tpl.tagText }}]
+              </option>
+              {% endfor %}
+            </select>
+            <button type="button" onclick="addTemplateToSequence()"
+                    class="shrink-0 whitespace-nowrap px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-cyan-300 font-medium transition">
+              + Insert Block
+            </button>
+          </div>
+        </div>
+
+        {% if mode in ['ROUTE_CORRIDOR', 'PROXIMITY_SEARCH'] %}
+        <!-- Repeater Access Filter -->
+        <div class="border-t border-slate-800 pt-4">
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+            Repeater Access Filter
+          </label>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            {% for acc in ['OPEN', 'CLOSED', 'PRIVATE'] %}
+            <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+              <input type="checkbox" name="repeater_access" value="{{ acc }}"
+                     {% if acc in active_access %}checked{% endif %}
+                     class="rounded border-slate-600 bg-slate-800 text-cyan-500" />
+              <span class="font-medium text-slate-200">{{ acc }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Submit Button -->
+        <div class="pt-2">
+          <button type="submit"
+                  class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-cyan-950/50 transition flex items-center justify-center gap-2">
+            <span>⚡ Assemble Plan &amp; Map</span>
+            <span id="plan-loading" class="htmx-indicator items-center gap-1.5 text-xs font-normal text-cyan-100">
+              <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              Calculating...
+            </span>
+          </button>
+        </div>
+      </form>
+      </div>
+    </div>
+
+    <!-- Right Column: Live Map, Summary & Channel Review Table (7 cols on LG) -->
+    <div id="plan-results-container" class="lg:col-span-7">
+      {% if has_active_plan %}
+        {% include "partials/plan_results.html" %}
+      {% else %}
+        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-10 text-center space-y-3">
+          <div class="inline-flex p-3 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-2xl">
+            📡
+          </div>
+          <h2 class="text-base font-bold text-slate-200">Ready to Assemble Your Route or Area Plan</h2>
+          <p class="text-xs text-slate-400 max-w-md mx-auto">
+            Configure your route waypoints or search radius and sequence blocks on the left, then click <strong>Assemble Plan &amp; Map</strong>. You can then target and export the assembled channels for as many different radios as you like in the Codeplug View!
+          </p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  // Initialize drag-and-drop sorting on sequence blocks and waypoints
+  document.addEventListener('DOMContentLoaded', function() {
+    const seqList = document.getElementById('sequence-list');
+    if (seqList && typeof Sortable !== 'undefined') {
+      Sortable.create(seqList, { animation: 150 });
+    }
+    const wpList = document.getElementById('waypoints-list');
+    if (wpList && typeof Sortable !== 'undefined') {
+      Sortable.create(wpList, { animation: 150 });
+    }
+    {% if auto_submit %}
+    // Automatically calculate plan when page loads if requested
+    setTimeout(() => {
+      const form = document.getElementById('planner-form');
+      if (form) htmx.trigger(form, 'submit');
+    }, 100);
+    {% endif %}
+  });
+
+  function addWaypoint(val) {
+    const container = document.getElementById('waypoints-list');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'waypoint-row flex items-center gap-2';
+    row.innerHTML = `
+      <span class="cursor-move text-slate-500 hover:text-slate-300 px-1 select-none" title="Drag to reorder">☰</span>
+      <input type="text" name="waypoints" value="${val || ''}" required
+             placeholder="City, ST (e.g. Shreveport, LA)"
+             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:border-cyan-500 outline-none" />
+      <button type="button" onclick="removeWaypoint(this)"
+              class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition"
+              title="Remove stop">✕</button>
+    `;
+    container.appendChild(row);
+  }
+
+  function removeWaypoint(btn) {
+    const container = document.getElementById('waypoints-list');
+    if (container && container.querySelectorAll('.waypoint-row').length > 2) {
+      btn.closest('.waypoint-row').remove();
+    } else {
+      alert('At least 2 waypoints are required for a route corridor.');
+    }
+  }
+
+  function reverseWaypoints() {
+    const container = document.getElementById('waypoints-list');
+    if (!container) return;
+    const rows = Array.from(container.children);
+    rows.reverse().forEach(row => container.appendChild(row));
+  }
+
+  function addTemplateToSequence() {
+    const sel = document.getElementById('add-template-select');
+    const seqList = document.getElementById('sequence-list');
+    if (!sel || !seqList || !sel.value) return;
+    const key = sel.value;
+    const opt = sel.options[sel.selectedIndex];
+    const title = opt.getAttribute('data-title') || key;
+    const badge = opt.getAttribute('data-badge') || 'Template';
+
+    // Prevent duplicates
+    const existing = Array.from(seqList.querySelectorAll('input[name="sequence_order"]')).map(i => i.value);
+    if (existing.includes(key)) return;
+
+    const div = document.createElement('div');
+    div.className = 'sequence-item flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs';
+    div.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="cursor-move text-slate-500 hover:text-slate-300 select-none">☰</span>
+        <input type="hidden" name="sequence_order" value="${key}" />
+        <span class="font-medium text-slate-200">${title}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">${badge}</span>
+      </div>
+      <button type="button" onclick="this.closest('.sequence-item').remove()"
+              class="text-slate-500 hover:text-rose-400 text-xs px-1">✕</button>
+    `;
+    seqList.appendChild(div);
+  }
+
+  async function useCurrentLocation(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const origText = btnEl ? btnEl.innerHTML : '';
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<span>⏳ Detecting...</span>';
+    }
+
+    const fetchFromServer = async (queryUrl) => {
+      try {
+        const resp = await fetch(queryUrl);
+        const data = await resp.json();
+        if (data && data.ok && data.location) {
+          input.value = data.location;
+          if (window.showAppNotification) {
+            window.showAppNotification(`Detected current location: ${data.location}`, 'success');
+          }
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const ok = await fetchFromServer(`/api/geolocate?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+          if (!ok) await fetchFromServer('/api/geolocate');
+          if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = origText; }
+        },
+        async () => {
+          // Fallback to server IP geolocation if browser permission denied or unavailable
+          const ok = await fetchFromServer('/api/geolocate');
+          if (!ok && window.showAppNotification) {
+            window.showAppNotification('Unable to detect current location automatically.', 'warning');
+          }
+          if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = origText; }
+        },
+        { timeout: 4000 }
+      );
+    } else {
+      const ok = await fetchFromServer('/api/geolocate');
+      if (!ok && window.showAppNotification) {
+        window.showAppNotification('Unable to detect current location automatically.', 'warning');
+      }
+      if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = origText; }
+    }
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,20 @@
+id: shari
+name: Local SHARI Node
+description: A template to include my Allstar node
+tagText: ALLSTAR
+tagColorHex: '#d416b1'
+channels:
+- name: W5CDN-L
+  rxFreq: 446.1
+  txFreq: 446.1
+  offsetDir: 'off'
+  mode: FM
+  power: Low
+  toneMode: TSQL
+  ctcss: '91.5'
+  rxCtcss: '91.5'
+  dcs: None
+  rxDcs: None
+  dcsPolarity: NN
+  bandwidth: 25KHz
+  comment: Primary Simplex Frequency

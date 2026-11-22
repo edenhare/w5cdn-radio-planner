@@ -1,0 +1,303 @@
+/* RadioPlanner Web Studio — Native CSS Stylesheet (Themes, Fonts, Font Sizes) */
+
+:root,
+html[data-theme="dark"] {
+  --bg-primary: #0a0f1a;
+  --bg-panel: #0f172a;
+  --bg-card: #151f32;
+  --border-subtle: #1e293b;
+  --border-accent: rgba(34, 211, 238, 0.35);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent-cyan: #22d3ee;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+}
+
+/* ─── Font Size Scaling (scales all rem-based elements across the entire UI) ─── */
+html[data-font-size="small"] {
+  font-size: 13px;
+}
+
+html[data-font-size="medium"] {
+  font-size: 15px;
+}
+
+html[data-font-size="large"] {
+  font-size: 17px;
+}
+
+html[data-font-size="xlarge"] {
+  font-size: 19px;
+}
+
+/* ─── Font Family Selection ─── */
+html[data-font="sans"],
+html[data-font="sans"] body {
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+html[data-font="mono"],
+html[data-font="mono"] body {
+  --font-ui: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace;
+}
+
+html[data-font="serif"],
+html[data-font="serif"] body {
+  --font-ui: Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+html[data-font="system"],
+html[data-font="system"] body {
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+select,
+input,
+textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui, "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif) !important;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 0;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ─── Light Theme Overrides ─── */
+html[data-theme="light"] {
+  --bg-primary: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-card: #f1f5f9;
+  --border-subtle: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+}
+
+html[data-theme="light"] body {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .bg-slate-950,
+html[data-theme="light"] .bg-slate-950\/90,
+html[data-theme="light"] .bg-slate-950\/70,
+html[data-theme="light"] .bg-slate-950\/60 {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .bg-slate-900,
+html[data-theme="light"] .bg-slate-900\/95,
+html[data-theme="light"] .bg-slate-900\/90,
+html[data-theme="light"] .bg-slate-900\/60 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .bg-slate-800 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .border-slate-800,
+html[data-theme="light"] .border-slate-800\/80,
+html[data-theme="light"] .border-slate-800\/70,
+html[data-theme="light"] .border-slate-800\/60,
+html[data-theme="light"] .border-slate-700,
+html[data-theme="light"] .border-slate-700\/80 {
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .text-white,
+html[data-theme="light"] .text-slate-100,
+html[data-theme="light"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] .text-slate-300,
+html[data-theme="light"] .text-slate-400 {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .text-cyan-400,
+html[data-theme="light"] .text-cyan-300 {
+  color: #0284c7 !important;
+}
+
+html[data-theme="light"] .text-emerald-400,
+html[data-theme="light"] .text-emerald-300 {
+  color: #059669 !important;
+}
+
+html[data-theme="light"] .text-amber-300 {
+  color: #b45309 !important;
+}
+
+html[data-theme="light"] button.text-white,
+html[data-theme="light"] a.text-white {
+  color: #ffffff !important;
+}
+
+/* ─── High Contrast Theme Overrides ─── */
+html[data-theme="high_contrast"] body,
+html[data-theme="high_contrast"] .bg-slate-950,
+html[data-theme="high_contrast"] .bg-slate-900,
+html[data-theme="high_contrast"] .bg-slate-900\/90,
+html[data-theme="high_contrast"] header {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="high_contrast"] .border-slate-800,
+html[data-theme="high_contrast"] .border-slate-700 {
+  border-color: #ffffff !important;
+}
+
+html[data-theme="high_contrast"] .text-slate-300,
+html[data-theme="high_contrast"] .text-slate-400 {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme="high_contrast"] .text-cyan-400,
+html[data-theme="high_contrast"] .text-cyan-300 {
+  color: #00ffff !important;
+}
+
+html[data-theme="high_contrast"] .text-amber-300 {
+  color: #ffff00 !important;
+}
+
+html[data-theme="high_contrast"] .text-emerald-300,
+html[data-theme="high_contrast"] .text-emerald-400 {
+  color: #00ff66 !important;
+}
+
+/* HTMX Loading Indicators */
+.htmx-indicator {
+  display: none;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-flex;
+}
+
+/* Collapsible Panels */
+.panel-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  color: #38bdf8;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.2s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.panel-collapse-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.6);
+}
+
+.panel-collapse-btn .collapse-arrow {
+  display: inline-block;
+  font-size: 13px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+[data-collapsible-panel].is-collapsed > .collapsible-panel-body {
+  display: none !important;
+}
+
+[data-collapsible-panel].is-collapsed .panel-collapse-btn .collapse-arrow {
+  transform: rotate(-90deg);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-panel);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Leaflet Map Container Enhancements */
+#plan-leaflet-map {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #0f172a !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Channel Table & LCD Name Badges */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+tbody tr:hover {
+  background-color: rgba(30, 41, 59, 0.35);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+select {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+select:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15);
+  outline: none;
+}

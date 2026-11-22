@@ -88,6 +88,26 @@ class NameCondenser:
         return cls._apply_hardware_char_rules(candidate, spec)
 
     @classmethod
+    def format_aviation_prefix_type(
+        cls,
+        prefix: str,
+        svc_type: str,
+        spec: TargetRadioSpec,
+    ) -> str:
+        """Format aviation channel as '<Prefix> <ServiceType>', condensing service type and prefix to fit LCD."""
+        clean_prefix = prefix.split(",")[0].strip()
+        full_candidate = f"{clean_prefix} {svc_type}".strip()
+        if len(full_candidate) <= spec.maxNameLength and spec.allowSpaces:
+            return cls._apply_hardware_char_rules(full_candidate, spec)
+
+        short_svc = ABBREVIATIONS.get(svc_type.upper(), svc_type[:2].upper())
+        use_space = spec.allowSpaces and (spec.maxNameLength - len(short_svc) >= 5)
+        suffix = f" {short_svc}" if use_space else short_svc
+        max_pref_len = max(1, spec.maxNameLength - len(suffix))
+        short_pref = clean_prefix[:max_pref_len].strip()
+        return cls._apply_hardware_char_rules(f"{short_pref}{suffix}", spec)
+
+    @classmethod
     def condense_channel(
         cls,
         ch: any,
@@ -95,12 +115,27 @@ class NameCondenser:
         naming_format: str = "CITY_FREQ",
     ) -> str:
         """Condense RadioChannel name respecting radio hardware limits and user naming format."""
-        if getattr(ch, "specialType", None) in {"CALLING", "WX", "AVIATION"}:
+        special_type = getattr(ch, "specialType", None)
+        city = getattr(ch, "city", None)
+        if special_type in {"CALLING", "WX"} or (special_type == "GMRS" and not city):
             return cls.condense(ch.name, spec)
 
-        city = getattr(ch, "city", None)
         rx_freq = getattr(ch, "rxFreq", None)
         callsign = getattr(ch, "callsign", None)
+
+        if special_type == "AVIATION":
+            raw_name = getattr(ch, "name", "AIR") or "AIR"
+            parts = raw_name.split()
+            svc_type = parts[-1] if len(parts) > 1 else "CTAF"
+            ident = callsign or (parts[0] if parts else "AIR")
+            if naming_format == "CITY_TYPE" and city:
+                return cls.format_aviation_prefix_type(city, svc_type, spec)
+            elif naming_format == "IDENT_FREQ" and ident and rx_freq:
+                return cls.format_city_frequency(ident, rx_freq, spec)
+            elif naming_format == "IDENT_ONLY" and ident:
+                return cls.condense(ident, spec, allow_freq_shorthand=False)
+            else:
+                return cls.condense(f"{ident} {svc_type}".strip(), spec, allow_freq_shorthand=False)
 
         if naming_format == "CITY_FREQ" and city and rx_freq:
             return cls.format_city_frequency(city, rx_freq, spec)
@@ -108,12 +143,27 @@ class NameCondenser:
             return cls.format_city_frequency(callsign, rx_freq, spec)
         elif naming_format == "CALLSIGN" and callsign:
             return cls.condense(callsign, spec)
+        elif naming_format == "CITY" and city:
+            clean_city = city.split(",")[0].strip()
+            return cls.condense(clean_city, spec, allow_freq_shorthand=False)
+        elif naming_format == "STANDARD":
+            raw_name = getattr(ch, "name", None) or "CH"
+            if city and rx_freq:
+                clean_city = city.split(",")[0].strip()
+                if raw_name in {
+                    callsign,
+                    cls.format_city_frequency(city, rx_freq, spec),
+                    cls.format_city_frequency(callsign or "", rx_freq, spec) if callsign else "",
+                    cls.condense(clean_city, spec, allow_freq_shorthand=False),
+                }:
+                    raw_name = f"{clean_city} {rx_freq:.2f}"
+            return cls.condense(raw_name, spec, allow_freq_shorthand=False)
 
         # Fallback to general condenser
         return cls.condense(getattr(ch, "name", "CH"), spec)
 
     @classmethod
-    def condense(cls, name: str, spec: TargetRadioSpec) -> str:
+    def condense(cls, name: str, spec: TargetRadioSpec, allow_freq_shorthand: bool = True) -> str:
         """Condense channel name to fit spec.maxNameLength, character restrictions, and whitespace rules."""
         if not name:
             return "CH"
@@ -125,15 +175,16 @@ class NameCondenser:
             return cls._apply_hardware_char_rules(result, spec)
 
         # Check if name is in "City Frequency" pattern (e.g. "Tyler 147.20" or "Tyler 147.2000")
-        freq_match = re.search(r"^(.*?)\s+(\d{2,4}\.\d{2,5})$", result)
-        if freq_match:
-            city_part = freq_match.group(1).strip()
-            if city_part and not any(city_part.upper().startswith(t) for t in ("WX", "NOAA", "AIR")):
-                try:
-                    rx_val = float(freq_match.group(2))
-                    return cls.format_city_frequency(city_part, rx_val, spec)
-                except ValueError:
-                    pass
+        if allow_freq_shorthand:
+            freq_match = re.search(r"^(.*?)\s+(\d{2,4}\.\d{2,5})$", result)
+            if freq_match:
+                city_part = freq_match.group(1).strip()
+                if city_part and not any(city_part.upper().startswith(t) for t in ("WX", "NOAA", "AIR")):
+                    try:
+                        rx_val = float(freq_match.group(2))
+                        return cls.format_city_frequency(city_part, rx_val, spec)
+                    except ValueError:
+                        pass
 
         # 1. Apply word abbreviations
         words = re.split(r"(\s+|-|_|/)", result)

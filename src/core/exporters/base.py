@@ -30,4 +30,5 @@ class BaseExporter(ABC):
         """Prepare channels by applying LCD name condensation and clamping to maxChannels."""
         channels = codeplug.channels[: spec.maxChannels]
         prepared = [ch.with_name(NameCondenser.condense(ch.name, spec)) for ch in channels]
-        return Codeplug(name=codeplug.name, channels=prepared).renumbered()
+        start_slot = getattr(spec, "startChannel", 1)
+        return Codeplug(name=codeplug.name, channels=prepared).renumbered(start_slot=start_slot)

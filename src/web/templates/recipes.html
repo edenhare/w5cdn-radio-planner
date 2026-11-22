@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-6">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-white">Saved Configuration Recipes</h1>
+      <p class="text-xs text-slate-400 mt-0.5">
+        Stored in <code class="text-cyan-300 font-mono">{{ recipes_dir }}</code> &bull; Load any recipe into the interactive planner to verify settings and target radio before exporting.
+      </p>
+    </div>
+
+    <!-- Upload Custom YAML Recipe -->
+    <form action="/recipes/upload" method="post" enctype="multipart/form-data" class="flex items-center gap-2 text-xs">
+      <input type="file" name="recipe_file" accept=".yaml,.yml" required
+             class="text-xs text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-cyan-300 hover:file:bg-slate-700" />
+      <button type="submit" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition">
+        Upload YAML Recipe
+      </button>
+    </form>
+  </div>
+
+  {% if flash_message %}
+  <div class="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs">
+    ✔ {{ flash_message }}
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    {% for item in recipes %}
+    <div class="bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-xl p-5 flex flex-col justify-between space-y-4 transition">
+      <div class="space-y-2.5">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-bold text-white">{{ item.recipe.name }}</h3>
+            <div class="text-[11px] text-slate-400 font-mono">{{ item.filename }}</div>
+          </div>
+          <span class="px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono font-bold">
+            {{ item.recipe.mode }}
+          </span>
+        </div>
+
+        {% if item.recipe.description %}
+        <p class="text-xs text-cyan-200/90 bg-cyan-500/10 border border-cyan-500/20 rounded-lg px-3 py-2">
+          {{ item.recipe.description }}
+        </p>
+        {% else %}
+        <p class="text-xs text-slate-500 italic">No description provided.</p>
+        {% endif %}
+
+        <div class="text-xs text-slate-300 space-y-1 bg-slate-950/70 p-3 rounded-lg border border-slate-800/80">
+          {% if item.recipe.mode == 'ROUTE_CORRIDOR' and item.recipe.corridor %}
+          <div><span class="text-slate-500">Waypoints:</span> <span class="text-white">{{ item.recipe.corridor.waypoints|join(' ➜ ') }}</span></div>
+          <div><span class="text-slate-500">Corridor Width:</span> <span class="font-mono text-emerald-300">{{ item.recipe.corridor.corridor_width_miles }} mi</span></div>
+          {% elif item.recipe.mode == 'PROXIMITY_SEARCH' and item.recipe.proximity %}
+          <div><span class="text-slate-500">Center:</span> <span class="text-white">{{ item.recipe.proximity.center_location }}</span></div>
+          <div><span class="text-slate-500">Radius:</span> <span class="font-mono text-emerald-300">{{ item.recipe.proximity.radius_miles }} mi</span></div>
+          {% elif item.recipe.mode == 'AVIATION_PLANNER' and item.recipe.aviation %}
+          <div><span class="text-slate-500">Airfield/City:</span> <span class="text-white">{{ item.recipe.aviation.center_location }}</span></div>
+          <div><span class="text-slate-500">Radius:</span> <span class="font-mono text-emerald-300">{{ item.recipe.aviation.radius_miles }} mi</span></div>
+          {% endif %}
+          <div>
+            <span class="text-slate-500">Bands:</span>
+            <span class="font-mono text-cyan-300">{{ item.recipe.radio_target.bands|join(', ') }}</span>
+            &bull;
+            <span class="text-slate-500">Naming:</span>
+            <span class="font-mono text-slate-200">{{ item.recipe.radio_target.naming_format }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800">
+        <a href="/?recipe_file={{ item.filename }}"
+           class="flex-1 py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white text-xs font-bold text-center transition">
+          ▶ Load &amp; Verify in Planner
+        </a>
+        <form action="/recipes/delete" method="post" onsubmit="return confirm('Delete saved recipe {{ item.filename }}?');">
+          <input type="hidden" name="filename" value="{{ item.filename }}" />
+          <button type="submit" class="py-2 px-3 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700 text-xs transition">
+            Delete
+          </button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="col-span-full bg-slate-900/60 border border-slate-800 rounded-xl p-8 text-center text-xs text-slate-400">
+      No saved recipes found in <code>{{ recipes_dir }}</code>. Assemble a plan and click <strong>Save Recipe YAML</strong> to save one!
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,662 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-6">
+  <!-- Header & Action Buttons -->
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold text-white">Preset Codeplug Templates Manager</h1>
+      <p class="text-xs text-slate-400 mt-0.5">
+        Edit core templates directly in the app (<code class="text-cyan-300 font-mono">{{ core_templates_dir }}</code>) — add, edit, reorder, or remove channels and save immediately.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2.5 text-xs">
+      <button type="button" onclick="toggleNewTemplateCard()"
+              class="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold shadow transition flex items-center gap-1.5">
+        <span>＋</span> New Blank Template
+      </button>
+      <button type="button" onclick="toggleImportCard()"
+              class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold transition flex items-center gap-1.5">
+        <span>📂</span> Import CSV / YAML
+      </button>
+    </div>
+  </div>
+
+  {% if flash_message %}
+  <div class="p-3 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-between">
+    <span>✔ {{ flash_message }}</span>
+  </div>
+  {% endif %}
+
+  <!-- Standard CTCSS & DCS Datalist for Autocomplete -->
+  <datalist id="standard-tones-list">
+    <option value="None"></option>
+    <option value="67.0"></option>
+    <option value="71.9"></option>
+    <option value="74.4"></option>
+    <option value="77.0"></option>
+    <option value="79.7"></option>
+    <option value="82.5"></option>
+    <option value="85.4"></option>
+    <option value="88.5"></option>
+    <option value="91.5"></option>
+    <option value="94.8"></option>
+    <option value="97.4"></option>
+    <option value="100.0"></option>
+    <option value="103.5"></option>
+    <option value="107.2"></option>
+    <option value="110.9"></option>
+    <option value="114.8"></option>
+    <option value="118.8"></option>
+    <option value="123.0"></option>
+    <option value="127.3"></option>
+    <option value="131.8"></option>
+    <option value="136.5"></option>
+    <option value="141.3"></option>
+    <option value="146.2"></option>
+    <option value="151.4"></option>
+    <option value="156.7"></option>
+    <option value="162.2"></option>
+    <option value="167.9"></option>
+    <option value="173.8"></option>
+    <option value="179.9"></option>
+    <option value="186.2"></option>
+    <option value="192.8"></option>
+    <option value="203.5"></option>
+    <option value="210.7"></option>
+    <option value="023"></option>
+    <option value="025"></option>
+    <option value="047"></option>
+    <option value="065"></option>
+    <option value="114"></option>
+    <option value="155"></option>
+    <option value="205"></option>
+  </datalist>
+
+  <!-- Collapsible: Create New Blank Template From Scratch -->
+  <div id="new-template-card" class="hidden bg-slate-900 border-2 border-cyan-500/50 rounded-xl p-5 space-y-4 shadow-xl">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <div class="flex items-center gap-2">
+        <span class="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono font-bold text-xs">NEW</span>
+        <h2 class="text-sm font-bold text-white">Create New Template in Core Library</h2>
+      </div>
+      <button type="button" onclick="toggleNewTemplateCard()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800">✕ Close</button>
+    </div>
+
+    <form action="/templates/save" method="post" class="space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs">
+        <div class="md:col-span-3">
+          <label class="block text-slate-400 mb-1">Template ID Slug</label>
+          <input type="text" name="tpl_id" placeholder="e.g. east_tx_skywarn" required
+                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono" />
+        </div>
+        <div class="md:col-span-3">
+          <label class="block text-slate-400 mb-1">Display Name</label>
+          <input type="text" name="name" placeholder="e.g. East Texas Skywarn" required
+                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-slate-400 mb-1">Badge Tag</label>
+          <div class="flex items-center gap-1.5">
+            <input type="text" name="tag_text" value="CUSTOM" required
+                   class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono uppercase" />
+            <input type="color" name="tag_color_hex" value="#10b981"
+                   class="w-8 h-8 rounded bg-slate-950 border border-slate-700 cursor-pointer shrink-0" title="Badge Hex Color" />
+          </div>
+        </div>
+        <div class="md:col-span-4">
+          <label class="block text-slate-400 mb-1">Description</label>
+          <input type="text" name="description" placeholder="Purpose or region of this template"
+                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100" />
+        </div>
+      </div>
+
+      <div class="overflow-x-auto border border-slate-800 rounded-lg bg-slate-950/70">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="text-slate-400 bg-slate-900/90 border-b border-slate-800 uppercase text-[10px]">
+            <tr>
+              <th class="py-2 px-2 w-16">Order</th>
+              <th class="py-2 px-2 w-8">#</th>
+              <th class="py-2 px-2 min-w-[130px]">Channel Name</th>
+              <th class="py-2 px-2 min-w-[115px]">RX Freq (MHz)</th>
+              <th class="py-2 px-2 min-w-[105px]">Duplex</th>
+              <th class="py-2 px-2 min-w-[95px]">Offset (MHz)</th>
+              <th class="py-2 px-2 min-w-[80px]">Mode</th>
+              <th class="py-2 px-2 min-w-[80px]">Power</th>
+              <th class="py-2 px-2 min-w-[90px]">Tone Mode</th>
+              <th class="py-2 px-2 min-w-[95px]">CTCSS / DCS</th>
+              <th class="py-2 px-2 min-w-[200px]">Comment</th>
+              <th class="py-2 px-2 w-10 text-center">Del</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-new-template" class="divide-y divide-slate-800/60 tpl-rows-body">
+            <tr class="tpl-channel-row hover:bg-slate-900/50 transition" draggable="true">
+              <td class="py-1.5 px-2 whitespace-nowrap">
+                <div class="flex items-center gap-1">
+                  <span class="cursor-grab text-slate-500 hover:text-cyan-400 px-1" title="Drag row to reorder">☰</span>
+                  <button type="button" onclick="moveTemplateRow(this, -1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Up">▲</button>
+                  <button type="button" onclick="moveTemplateRow(this, 1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Down">▼</button>
+                </div>
+              </td>
+              <td class="py-1.5 px-2 text-cyan-400 font-bold tpl-row-num">1</td>
+              <td class="py-1.5 px-2">
+                <input type="text" name="ch_name" value="2m CALL" required
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 font-bold" />
+              </td>
+              <td class="py-1.5 px-2">
+                <input type="number" step="0.00001" name="ch_rx_freq" value="146.52000" required
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-400" />
+              </td>
+              <td class="py-1.5 px-2">
+                <select name="ch_offset_dir" onchange="onDuplexChange(this)"
+                        class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                  <option value="off" selected>Simplex</option>
+                  <option value="+">+ Offset</option>
+                  <option value="-">- Offset</option>
+                </select>
+              </td>
+              <td class="py-1.5 px-2">
+                <input type="number" step="0.005" name="ch_offset" value="0.000" readonly
+                       class="w-full bg-slate-900/50 border border-slate-800 rounded px-2 py-1 text-slate-500" />
+              </td>
+              <td class="py-1.5 px-2">
+                <select name="ch_mode" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                  <option value="FM" selected>FM</option>
+                  <option value="NFM">NFM</option>
+                  <option value="AM">AM</option>
+                  <option value="DMR">DMR</option>
+                  <option value="USB">USB</option>
+                  <option value="LSB">LSB</option>
+                </select>
+              </td>
+              <td class="py-1.5 px-2">
+                <select name="ch_power" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                  <option value="High" selected>High</option>
+                  <option value="Mid">Mid</option>
+                  <option value="Low">Low</option>
+                </select>
+              </td>
+              <td class="py-1.5 px-2">
+                <select name="ch_tone_mode" onchange="onToneModeChange(this)"
+                        class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                  <option value="None" selected>None</option>
+                  <option value="Tone">Tone</option>
+                  <option value="TSQL">TSQL</option>
+                  <option value="DCS">DCS</option>
+                </select>
+              </td>
+              <td class="py-1.5 px-2">
+                <input type="text" name="ch_tone_val" value="None" list="standard-tones-list" readonly
+                       class="w-full bg-slate-900/50 border border-slate-800 rounded px-2 py-1 text-slate-500" />
+              </td>
+              <td class="py-1.5 px-2 font-sans">
+                <input type="text" name="ch_comment" value="Primary Simplex Frequency"
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+              </td>
+              <td class="py-1.5 px-2 text-center">
+                <button type="button" onclick="deleteTemplateRow(this)"
+                        class="px-2 py-1 rounded bg-slate-800 hover:bg-rose-500/20 text-rose-400 transition" title="Remove Row">✕</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <button type="button" onclick="addTemplateRow('tbody-new-template')"
+                class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-semibold transition">
+          ＋ Add Channel Row
+        </button>
+        <button type="submit"
+                class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition">
+          💾 Save New Core Template
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Collapsible: Import CSV or YAML Template -->
+  <div id="import-template-card" class="hidden bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <h2 class="text-sm font-bold text-cyan-400 uppercase tracking-wider">Import Template from CSV or YAML File</h2>
+      <button type="button" onclick="toggleImportCard()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800">✕ Close</button>
+    </div>
+    <form action="/templates/import" method="post" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs items-end">
+      <div class="md:col-span-2">
+        <label class="block text-slate-300 mb-1">Template ID Slug</label>
+        <input type="text" name="tpl_id" placeholder="e.g. custom_skywarn" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 font-mono" />
+      </div>
+      <div class="md:col-span-3">
+        <label class="block text-slate-300 mb-1">Display Name</label>
+        <input type="text" name="name" placeholder="e.g. East Texas Skywarn" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100" />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-slate-300 mb-1">Badge Tag</label>
+        <input type="text" name="tag_text" value="CUSTOM" required
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 font-mono uppercase" />
+      </div>
+      <div class="md:col-span-3">
+        <label class="block text-slate-300 mb-1">CSV or YAML File</label>
+        <input type="file" name="template_file" accept=".csv,.yaml,.yml" required
+               class="w-full text-slate-300 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:bg-slate-800 file:text-cyan-300" />
+      </div>
+      <div class="md:col-span-2">
+        <input type="hidden" name="description" value="Imported template channel list" />
+        <button type="submit" class="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition">
+          Import &amp; Save
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Core & Custom Templates List with Inline Expandable Spreadsheet Editor -->
+  <div class="space-y-4">
+    {% for item in templates %}
+    {% set is_open = (expanded_id == item.tpl.id) %}
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+      <!-- Card Header -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 cursor-pointer" onclick="toggleTemplateEditorById('tpl-editor-{{ item.tpl.id }}')">
+          <button type="button"
+                  class="w-7 h-7 flex items-center justify-center rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs transition tpl-arrow-btn"
+                  title="Collapse / Expand Template Editor">
+            {{ '▾' if is_open else '▸' }}
+          </button>
+          <span class="px-2.5 py-0.5 rounded font-mono font-bold text-xs border"
+                style="background-color: {{ item.tpl.tagColorHex }}22; border-color: {{ item.tpl.tagColorHex }}66; color: {{ item.tpl.tagColorHex }};">
+            {{ item.tpl.tagText }}
+          </span>
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <span>{{ item.tpl.name }}</span>
+              <code class="text-[11px] font-normal text-slate-500">{{ item.tpl.id }}.yaml</code>
+            </h3>
+            <p class="text-xs text-slate-400">{{ item.tpl.description }}</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+          <span class="px-2.5 py-1 rounded font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            Core Template &bull; <span id="count-badge-{{ item.tpl.id }}">{{ item.tpl.channels|length }}</span> ch
+          </span>
+
+          <button type="button" onclick="toggleTemplateEditorById('tpl-editor-{{ item.tpl.id }}')"
+                  class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold transition tpl-edit-btn">
+            {{ '▾ Hide Editor' if is_open else '✏️ Edit Channels' }}
+          </button>
+
+          {% if not item.is_builtin %}
+          <form action="/templates/delete" method="post" onsubmit="return confirm('Delete custom template {{ item.tpl.name }} ({{ item.tpl.id }})?');">
+            <input type="hidden" name="template_id" value="{{ item.tpl.id }}" />
+            <button type="submit" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-rose-500/20 border border-slate-700 text-rose-300 transition">
+              🗑 Delete
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Inline Expandable Spreadsheet Editor -->
+      <div id="tpl-editor-{{ item.tpl.id }}" class="{{ '' if is_open else 'hidden' }} pt-3 border-t border-slate-800 space-y-4">
+        <form action="/templates/save" method="post" class="space-y-4">
+          <input type="hidden" name="tpl_id" value="{{ item.tpl.id }}" />
+
+          <!-- Template Metadata Row -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <div class="md:col-span-4">
+              <label class="block text-slate-400 mb-1">Template Display Name</label>
+              <input type="text" name="name" value="{{ item.tpl.name }}" required
+                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-semibold" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-slate-400 mb-1">Badge Tag &amp; Color</label>
+              <div class="flex items-center gap-1.5">
+                <input type="text" name="tag_text" value="{{ item.tpl.tagText }}" required
+                       class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono uppercase" />
+                <input type="color" name="tag_color_hex" value="{{ item.tpl.tagColorHex or '#00BCD4' }}"
+                       class="w-8 h-8 rounded bg-slate-900 border border-slate-700 cursor-pointer shrink-0" title="Badge Color" />
+              </div>
+            </div>
+            <div class="md:col-span-6">
+              <label class="block text-slate-400 mb-1">Description</label>
+              <input type="text" name="description" value="{{ item.tpl.description }}"
+                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100" />
+            </div>
+          </div>
+
+          <!-- Spreadsheet Table -->
+          <div class="overflow-x-auto border border-slate-800 rounded-lg bg-slate-950/70">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="text-slate-400 bg-slate-900/90 border-b border-slate-800 uppercase text-[10px]">
+                <tr>
+                  <th class="py-2 px-2 w-16">Order</th>
+                  <th class="py-2 px-2 w-8">#</th>
+                  <th class="py-2 px-2 min-w-[130px]">Channel Name</th>
+                  <th class="py-2 px-2 min-w-[115px]">RX Freq (MHz)</th>
+                  <th class="py-2 px-2 min-w-[105px]">Duplex</th>
+                  <th class="py-2 px-2 min-w-[95px]">Offset (MHz)</th>
+                  <th class="py-2 px-2 min-w-[80px]">Mode</th>
+                  <th class="py-2 px-2 min-w-[80px]">Power</th>
+                  <th class="py-2 px-2 min-w-[90px]">Tone Mode</th>
+                  <th class="py-2 px-2 min-w-[95px]">CTCSS / DCS</th>
+                  <th class="py-2 px-2 min-w-[200px]">Comment</th>
+                  <th class="py-2 px-2 w-10 text-center">Del</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-{{ item.tpl.id }}" class="divide-y divide-slate-800/60 tpl-rows-body">
+                {% for ch in item.tpl.channels %}
+                {% set tx_f = ch.txFreq if ch.txFreq is not none else ch.rxFreq %}
+                {% set calc_off = ch.offset if ch.offset is not none else (tx_f - ch.rxFreq)|abs %}
+                {% set eff_dir = ch.offsetDir if ch.offsetDir in ['+', '-'] else ('+' if (tx_f - ch.rxFreq) > 0.0001 else ('-' if (ch.rxFreq - tx_f) > 0.0001 else 'off')) %}
+                {% set eff_tone_val = ch.dcs if ch.toneMode == 'DCS' else (ch.ctcss if ch.toneMode in ['Tone', 'TSQL'] else 'None') %}
+                <tr class="tpl-channel-row hover:bg-slate-900/50 transition" draggable="true">
+                  <td class="py-1.5 px-2 whitespace-nowrap">
+                    <div class="flex items-center gap-1">
+                      <span class="cursor-grab text-slate-500 hover:text-cyan-400 px-1" title="Drag row to reorder">☰</span>
+                      <button type="button" onclick="moveTemplateRow(this, -1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Up">▲</button>
+                      <button type="button" onclick="moveTemplateRow(this, 1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Down">▼</button>
+                    </div>
+                  </td>
+                  <td class="py-1.5 px-2 text-cyan-400 font-bold tpl-row-num">{{ loop.index }}</td>
+                  <td class="py-1.5 px-2">
+                    <input type="text" name="ch_name" value="{{ ch.name }}" required
+                           class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 font-bold" />
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <input type="number" step="0.00001" name="ch_rx_freq" value="{{ '%.5f'|format(ch.rxFreq) }}" required
+                           class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-400" />
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <select name="ch_offset_dir" onchange="onDuplexChange(this)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                      <option value="off" {% if eff_dir == 'off' %}selected{% endif %}>Simplex</option>
+                      <option value="+" {% if eff_dir == '+' %}selected{% endif %}>+ Offset</option>
+                      <option value="-" {% if eff_dir == '-' %}selected{% endif %}>- Offset</option>
+                    </select>
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <input type="number" step="0.005" name="ch_offset"
+                           value="{{ '%.3f'|format(calc_off if eff_dir != 'off' else 0.0) }}"
+                           {% if eff_dir == 'off' %}readonly{% endif %}
+                           class="w-full rounded px-2 py-1 {{ 'bg-slate-900/50 border border-slate-800 text-slate-500' if eff_dir == 'off' else 'bg-slate-900 border border-slate-700 text-slate-200' }}" />
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <select name="ch_mode" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                      {% for m in ['FM', 'NFM', 'AM', 'DMR', 'USB', 'LSB', 'CW'] %}
+                      <option value="{{ m }}" {% if ch.mode == m %}selected{% endif %}>{{ m }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <select name="ch_power" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                      {% for p in ['High', 'Mid', 'Low'] %}
+                      <option value="{{ p }}" {% if ch.power == p %}selected{% endif %}>{{ p }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <select name="ch_tone_mode" onchange="onToneModeChange(this)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+                      {% for tm in ['None', 'Tone', 'TSQL', 'DCS'] %}
+                      <option value="{{ tm }}" {% if ch.toneMode == tm %}selected{% endif %}>{{ tm }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td class="py-1.5 px-2">
+                    <input type="text" name="ch_tone_val" value="{{ eff_tone_val }}" list="standard-tones-list"
+                           {% if ch.toneMode == 'None' %}readonly{% endif %}
+                           class="w-full rounded px-2 py-1 {{ 'bg-slate-900/50 border border-slate-800 text-slate-500' if ch.toneMode == 'None' else 'bg-slate-900 border border-slate-700 text-amber-200' }}" />
+                  </td>
+                  <td class="py-1.5 px-2 font-sans">
+                    <input type="text" name="ch_comment" value="{{ ch.comment }}"
+                           class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+                  </td>
+                  <td class="py-1.5 px-2 text-center">
+                    <button type="button" onclick="deleteTemplateRow(this)"
+                            class="px-2 py-1 rounded bg-slate-800 hover:bg-rose-500/20 text-rose-400 transition" title="Remove Channel Row">✕</button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Editor Footer Controls -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="addTemplateRow('tbody-{{ item.tpl.id }}')"
+                      class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-semibold transition">
+                ＋ Add Channel Row
+              </button>
+              <span class="text-[11px] text-slate-500">Tip: Drag <code class="text-slate-300">☰</code> or click <code class="text-slate-300">▲/▼</code> to reorder rows.</span>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition">
+              💾 Save Core Template ({{ item.tpl.id }}.yaml)
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  function toggleNewTemplateCard() {
+    const el = document.getElementById('new-template-card');
+    if (el) el.classList.toggle('hidden');
+  }
+
+  function toggleImportCard() {
+    const el = document.getElementById('import-template-card');
+    if (el) el.classList.toggle('hidden');
+  }
+
+  function toggleTemplateEditor(editorId, btn) {
+    const el = document.getElementById(editorId);
+    if (!el) return;
+    const isHidden = el.classList.toggle('hidden');
+    if (btn) btn.textContent = isHidden ? '▸' : '▾';
+  }
+
+  function toggleTemplateEditorById(editorId) {
+    const el = document.getElementById(editorId);
+    if (!el) return;
+    const isHidden = el.classList.toggle('hidden');
+    const card = el.closest('.bg-slate-900');
+    if (card) {
+      const arrowBtn = card.querySelector('.tpl-arrow-btn');
+      if (arrowBtn) arrowBtn.textContent = isHidden ? '▸' : '▾';
+      const editBtn = card.querySelector('.tpl-edit-btn');
+      if (editBtn) editBtn.textContent = isHidden ? '✏️ Edit Channels' : '▾ Hide Editor';
+    }
+  }
+
+  function renumberTemplateRows(tbody) {
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr.tpl-channel-row');
+    rows.forEach((row, idx) => {
+      const numCell = row.querySelector('.tpl-row-num');
+      if (numCell) numCell.textContent = String(idx + 1);
+    });
+    const tplId = tbody.id.replace('tbody-', '');
+    const badge = document.getElementById('count-badge-' + tplId);
+    if (badge) badge.textContent = String(rows.length);
+  }
+
+  function onDuplexChange(selectEl) {
+    const row = selectEl.closest('tr');
+    if (!row) return;
+    const offsetInput = row.querySelector('input[name="ch_offset"]');
+    if (!offsetInput) return;
+    if (selectEl.value === 'off') {
+      offsetInput.value = '0.000';
+      offsetInput.readOnly = true;
+      offsetInput.className = 'w-full rounded px-2 py-1 bg-slate-900/50 border border-slate-800 text-slate-500';
+    } else {
+      offsetInput.readOnly = false;
+      if ( parseFloat(offsetInput.value || '0') === 0 ) {
+        const rxInput = row.querySelector('input[name="ch_rx_freq"]');
+        const rx = parseFloat(rxInput ? rxInput.value : '146.52');
+        offsetInput.value = (rx >= 420 && rx <= 470) ? '5.000' : '0.600';
+      }
+      offsetInput.className = 'w-full rounded px-2 py-1 bg-slate-900 border border-slate-700 text-slate-200';
+    }
+  }
+
+  function onToneModeChange(selectEl) {
+    const row = selectEl.closest('tr');
+    if (!row) return;
+    const toneInput = row.querySelector('input[name="ch_tone_val"]');
+    if (!toneInput) return;
+    if (selectEl.value === 'None') {
+      toneInput.value = 'None';
+      toneInput.readOnly = true;
+      toneInput.className = 'w-full rounded px-2 py-1 bg-slate-900/50 border border-slate-800 text-slate-500';
+    } else {
+      toneInput.readOnly = false;
+      if (!toneInput.value || toneInput.value === 'None') {
+        toneInput.value = selectEl.value === 'DCS' ? '023' : '100.0';
+      }
+      toneInput.className = 'w-full rounded px-2 py-1 bg-slate-900 border border-slate-700 text-amber-200';
+    }
+  }
+
+  function addTemplateRow(tbodyId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const nextIdx = tbody.querySelectorAll('tr.tpl-channel-row').length + 1;
+    const tr = document.createElement('tr');
+    tr.className = 'tpl-channel-row hover:bg-slate-900/50 transition';
+    tr.setAttribute('draggable', 'true');
+    tr.innerHTML = `
+      <td class="py-1.5 px-2 whitespace-nowrap">
+        <div class="flex items-center gap-1">
+          <span class="cursor-grab text-slate-500 hover:text-cyan-400 px-1" title="Drag row to reorder">☰</span>
+          <button type="button" onclick="moveTemplateRow(this, -1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Up">▲</button>
+          <button type="button" onclick="moveTemplateRow(this, 1)" class="text-slate-400 hover:text-cyan-300 px-1" title="Move Down">▼</button>
+        </div>
+      </td>
+      <td class="py-1.5 px-2 text-cyan-400 font-bold tpl-row-num">${nextIdx}</td>
+      <td class="py-1.5 px-2">
+        <input type="text" name="ch_name" value="CH ${nextIdx}" required
+               class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 font-bold" />
+      </td>
+      <td class="py-1.5 px-2">
+        <input type="number" step="0.00001" name="ch_rx_freq" value="146.52000" required
+               class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-400" />
+      </td>
+      <td class="py-1.5 px-2">
+        <select name="ch_offset_dir" onchange="onDuplexChange(this)"
+                class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+          <option value="off" selected>Simplex</option>
+          <option value="+">+ Offset</option>
+          <option value="-">- Offset</option>
+        </select>
+      </td>
+      <td class="py-1.5 px-2">
+        <input type="number" step="0.005" name="ch_offset" value="0.000" readonly
+               class="w-full rounded px-2 py-1 bg-slate-900/50 border border-slate-800 text-slate-500" />
+      </td>
+      <td class="py-1.5 px-2">
+        <select name="ch_mode" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+          <option value="FM" selected>FM</option>
+          <option value="NFM">NFM</option>
+          <option value="AM">AM</option>
+          <option value="DMR">DMR</option>
+          <option value="USB">USB</option>
+          <option value="LSB">LSB</option>
+          <option value="CW">CW</option>
+        </select>
+      </td>
+      <td class="py-1.5 px-2">
+        <select name="ch_power" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+          <option value="High" selected>High</option>
+          <option value="Mid">Mid</option>
+          <option value="Low">Low</option>
+        </select>
+      </td>
+      <td class="py-1.5 px-2">
+        <select name="ch_tone_mode" onchange="onToneModeChange(this)"
+                class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-slate-200">
+          <option value="None" selected>None</option>
+          <option value="Tone">Tone</option>
+          <option value="TSQL">TSQL</option>
+          <option value="DCS">DCS</option>
+        </select>
+      </td>
+      <td class="py-1.5 px-2">
+        <input type="text" name="ch_tone_val" value="None" list="standard-tones-list" readonly
+               class="w-full rounded px-2 py-1 bg-slate-900/50 border border-slate-800 text-slate-500" />
+      </td>
+      <td class="py-1.5 px-2 font-sans">
+        <input type="text" name="ch_comment" value="" placeholder="Channel description or notes"
+               class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+      </td>
+      <td class="py-1.5 px-2 text-center">
+        <button type="button" onclick="deleteTemplateRow(this)"
+                class="px-2 py-1 rounded bg-slate-800 hover:bg-rose-500/20 text-rose-400 transition" title="Remove Channel Row">✕</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    bindDragRowEvents(tr);
+    renumberTemplateRows(tbody);
+    const nameInput = tr.querySelector('input[name="ch_name"]');
+    if (nameInput) {
+      nameInput.focus();
+      nameInput.select();
+    }
+  }
+
+  function deleteTemplateRow(btn) {
+    const tr = btn.closest('tr.tpl-channel-row');
+    if (!tr) return;
+    const tbody = tr.closest('tbody');
+    tr.remove();
+    renumberTemplateRows(tbody);
+  }
+
+  function moveTemplateRow(btn, direction) {
+    const tr = btn.closest('tr.tpl-channel-row');
+    if (!tr) return;
+    const tbody = tr.closest('tbody');
+    if (!tbody) return;
+    if (direction < 0 && tr.previousElementSibling) {
+      tbody.insertBefore(tr, tr.previousElementSibling);
+    } else if (direction > 0 && tr.nextElementSibling) {
+      tbody.insertBefore(tr.nextElementSibling, tr);
+    }
+    renumberTemplateRows(tbody);
+  }
+
+  let draggedTplRow = null;
+  function bindDragRowEvents(tr) {
+    tr.addEventListener('dragstart', function(e) {
+      draggedTplRow = tr;
+      tr.classList.add('opacity-50');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tr.addEventListener('dragend', function() {
+      tr.classList.remove('opacity-50');
+      draggedTplRow = null;
+      const tbody = tr.closest('tbody');
+      renumberTemplateRows(tbody);
+    });
+    tr.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      if (!draggedTplRow || draggedTplRow === tr) return;
+      const tbody = tr.closest('tbody');
+      if (draggedTplRow.closest('tbody') !== tbody) return;
+      const rect = tr.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > (rect.height / 2);
+      tbody.insertBefore(draggedTplRow, after ? tr.nextSibling : tr);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('tr.tpl-channel-row').forEach(bindDragRowEvents);
+  });
+</script>
+{% endblock %}

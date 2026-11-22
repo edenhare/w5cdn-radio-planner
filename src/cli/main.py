@@ -9,7 +9,6 @@ from pathlib import Path
 from rich.console import Console
 
 from cli.ui.renderers import render_header, render_review_table, render_yaml_error
-from cli.wizard.interactive import InteractiveWizard
 from core.config.recipe import RadioPlannerRecipe
 from core.config.yaml_loader import YamlDiagnosticError
 from core.managers.radio_manager import RadioManager
@@ -39,6 +38,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-radios",
         action="store_true",
         help="List all available target radio hardware models",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host address for the FastAPI web server (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=None,
+        help="Port for the FastAPI web server (defaults to saved preference webPort or 8000)",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not automatically open the web browser on startup",
     )
     parser.add_argument(
         "--version",
@@ -122,9 +139,52 @@ def main() -> int:
                 console.print(f"[bold red]Execution error: {exc}[/bold red]")
                 return 1
 
-        # 4. Interactive Wizard (Default)
-        wizard = InteractiveWizard(console=console)
-        wizard.start()
+        # 4. Launch FastAPI + HTMX Web Studio (Default)
+        import os
+        import socket
+        import threading
+        import webbrowser
+
+        import uvicorn
+
+        from core.managers.preferences_manager import PreferencesManager
+
+        prefs_mgr = PreferencesManager()
+        env_port = os.environ.get("RADIOPLANNER_PORT")
+        port = (
+            args.port
+            if args.port is not None
+            else (int(env_port) if env_port and env_port.isdigit() else getattr(prefs_mgr.preferences, "webPort", 8000))
+        )
+
+        url = f"http://{args.host}:{port}"
+        render_header(console, title="RadioPlanner", subtitle=f"FastAPI Web Studio — {url}")
+
+        # Smart single-instance check: if server is already listening on host:port, open browser and exit cleanly
+        check_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+        already_running = False
+        try:
+            with socket.create_connection((check_host, port), timeout=0.6):
+                already_running = True
+        except OSError:
+            already_running = False
+
+        if already_running:
+            console.print(
+                f"\n[bold green]✔ RadioPlanner Web Studio is already running at:[/bold green] [bold cyan]{url}[/bold cyan]"
+            )
+            if not args.no_browser:
+                console.print("[dim]Opening browser tab to active RadioPlanner session...[/dim]\n")
+                webbrowser.open(url)
+            return 0
+
+        console.print(f"\n[bold green]✔ Starting RadioPlanner Web Studio at:[/bold green] [bold cyan]{url}[/bold cyan]")
+        console.print("[dim]Press Ctrl+C to stop the server.[/dim]\n")
+
+        if not args.no_browser:
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+        uvicorn.run("web.app:app", host=args.host, port=port, log_level="info")
         return 0
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user. Goodbye![/yellow]")

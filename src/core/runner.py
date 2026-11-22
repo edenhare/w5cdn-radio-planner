@@ -12,6 +12,7 @@ from core.engines.route_corridor import RouteCorridorEngine
 from core.engines.sequence import SequenceOrganizer
 from core.exporters import export_codeplug
 from core.managers.radio_manager import RadioManager
+from core.managers.template_manager import TemplateManager
 from core.models.codeplug import Codeplug
 from core.providers.airports import AirportsProvider
 from core.providers.geocoding import GeocodingProvider
@@ -45,7 +46,7 @@ class RecipeRunner:
             raise ValueError("Recipe validation failed:\n" + "\n".join(f"- {e}" for e in errors))
 
         # 1. Retrieve target radio spec
-        radio_spec = self.radio_manager.get_radio(recipe.radio_target.radio_id)
+        radio_spec = self.radio_manager.get_radio(recipe.radio_target.radio_id or "baofeng_5rm")
 
         # Apply recipe band/mode overrides if specified
         if recipe.radio_target.bands:
@@ -74,6 +75,8 @@ class RecipeRunner:
                 states=route_states,
                 allowed_use=recipe.radio_target.repeater_access,
             )
+            if not any(c.band == "GMRS" for c in all_repeaters):
+                all_repeaters = list(all_repeaters) + self.repeater_provider.get_gmrs_repeaters_for_states(route_states)
 
             result = engine.plan_route(
                 waypoint_names=corridor.waypoints,
@@ -102,6 +105,8 @@ class RecipeRunner:
                 states=prox_states,
                 allowed_use=recipe.radio_target.repeater_access,
             )
+            if not any(c.band == "GMRS" for c in all_repeaters):
+                all_repeaters = list(all_repeaters) + self.repeater_provider.get_gmrs_repeaters_for_states(prox_states)
 
             result = engine.search_proximity(
                 center_location=proximity.center_location,
@@ -135,6 +140,8 @@ class RecipeRunner:
             sequence_keys=recipe.sequence_order,
             primary_channels=primary_channels,
             target_spec=radio_spec,
+            template_manager=TemplateManager(),
+            naming_format=recipe.radio_target.naming_format or "CITY_FREQ",
         )
 
         # 4. Determine output file path
@@ -146,6 +153,6 @@ class RecipeRunner:
             codeplug,
             radio_spec,
             dest_file,
-            programmer_type=recipe.radio_target.programmer_format or "RT_SYSTEMS",
+            programmer_type=recipe.radio_target.programmer_format or radio_spec.programmerType or "RT_SYSTEMS",
         )
         return codeplug, dest_file

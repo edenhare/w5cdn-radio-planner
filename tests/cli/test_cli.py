@@ -55,7 +55,24 @@ def test_cli_run_config(tmp_path: Path):
 
 def test_cli_keyboard_interrupt_graceful_exit():
     """Verify Ctrl+C (KeyboardInterrupt) exits gracefully with return code 0."""
-    with patch("cli.main.InteractiveWizard.start", side_effect=KeyboardInterrupt):
-        with patch.object(sys, "argv", ["radioplanner"]):
-            ret = main()
-            assert ret == 0
+    with patch("socket.create_connection", side_effect=OSError("not running")):
+        with patch("uvicorn.run", side_effect=KeyboardInterrupt):
+            with patch.object(sys, "argv", ["radioplanner", "--no-browser"]):
+                ret = main()
+                assert ret == 0
+
+
+def test_cli_single_instance_already_running_opens_browser():
+    """Verify launching radioplanner when the server is already running opens the browser instead of failing."""
+    from unittest.mock import MagicMock
+
+    mock_conn = MagicMock()
+    mock_conn.__enter__.return_value = mock_conn
+    with patch("socket.create_connection", return_value=mock_conn):
+        with patch("webbrowser.open") as mock_open:
+            with patch("uvicorn.run") as mock_uvicorn:
+                with patch.object(sys, "argv", ["radioplanner", "--port", "8000"]):
+                    ret = main()
+                    assert ret == 0
+                    mock_open.assert_called_once_with("http://127.0.0.1:8000")
+                    mock_uvicorn.assert_not_called()

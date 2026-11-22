@@ -83,6 +83,22 @@ CALLING_CHANNELS: list[RadioChannel] = [
         specialType="GMRS",
         comment="GMRS Channel 20 / Emergency & Traveler Calling",
     ),
+    RadioChannel(
+        number=7,
+        name="GMRS TRVL",
+        callsign="GMRS20R",
+        rxFreq=462.67500,
+        txFreq=467.67500,
+        offset=5.0,
+        offsetDir="+",
+        mode="FM",
+        power="High",
+        toneMode="TSQL",
+        ctcss="141.3",
+        rxCtcss="141.3",
+        specialType="GMRS",
+        comment="National GMRS Travel Tone Repeater Pair (Ch 20R +5 MHz 141.3 Hz)",
+    ),
 ]
 
 

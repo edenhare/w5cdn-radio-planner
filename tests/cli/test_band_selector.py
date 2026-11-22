@@ -6,7 +6,11 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from cli.wizard.band_selector import select_bands_for_radio, select_repeater_access
+from cli.wizard.band_selector import (
+    select_bands_for_radio,
+    select_channel_naming_format,
+    select_repeater_access,
+)
 from core.models.radio_spec import TargetRadioSpec
 
 
@@ -113,4 +117,29 @@ def test_select_repeater_access_all_and_open_only():
     with patch("rich.prompt.Prompt.ask", side_effect=["A", "O", "C"]):
         access_open = select_repeater_access(console)
     assert access_open == ["OPEN"]
+
+
+def test_select_channel_naming_format_select_and_confirm():
+    console = Console(record=True)
+    spec = TargetRadioSpec(
+        id="anytone_at778uv",
+        brand="AnyTone",
+        model="AT-778UV",
+        description="5-char LCD mobile",
+        maxChannels=127,
+        maxNameLength=5,
+        programmerType="CHIRP",
+        supportedBands=["2m", "70cm"],
+        supportedModes=["FM"],
+    )
+
+    # Select option 3 (CALLSIGN), then confirm with C
+    with patch("rich.prompt.Prompt.ask", side_effect=["3", "C"]):
+        fmt = select_channel_naming_format(console, spec, default_format="CITY_FREQ")
+
+    assert fmt == "CALLSIGN"
+    rendered = console.export_text()
+    assert "W5ETX" in rendered
+    assert "AT-778UV" in rendered
+
 

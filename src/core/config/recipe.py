@@ -35,12 +35,13 @@ class AviationConfig(BaseModel):
 class RadioTargetConfig(BaseModel):
     """Target radio selection and filtering configuration."""
 
-    radio_id: str = Field(default="baofeng_5rm")
+    radio_id: str | None = Field(default=None)
     programmer_format: str | None = Field(default=None)
     include_simplex: bool = Field(default=True)
     bands: list[str] = Field(default_factory=lambda: ["2m", "70cm", "WX"])
     modes: list[str] = Field(default_factory=lambda: ["FM", "AM"])
     repeater_access: list[str] = Field(default_factory=lambda: ["OPEN"])
+    naming_format: str = Field(default="CITY_FREQ")
 
 
 class ExportConfig(BaseModel):
@@ -58,6 +59,7 @@ class RadioPlannerRecipe(BaseModel):
     version: str = Field(default="1.0")
     mode: Literal["ROUTE_CORRIDOR", "PROXIMITY_SEARCH", "AVIATION_PLANNER", "PRESET_TEMPLATES"]
     name: str = Field(default="RadioPlanner-Run")
+    description: str = Field(default="")
     corridor: CorridorConfig | None = None
     proximity: ProximityConfig | None = None
     aviation: AviationConfig | None = None
@@ -118,10 +120,13 @@ class RadioPlannerRecipe(BaseModel):
             ) from err
 
     def to_yaml_file(self, path: Path | str) -> Path:
-        """Serialize recipe to YAML file."""
+        """Serialize recipe to YAML file without binding to a specific target radio."""
         dest = Path(path).resolve()
         dest.parent.mkdir(parents=True, exist_ok=True)
         dump_data = self.model_dump(exclude_none=True)
+        if "radio_target" in dump_data and isinstance(dump_data["radio_target"], dict):
+            dump_data["radio_target"].pop("radio_id", None)
+            dump_data["radio_target"].pop("programmer_format", None)
         with open(dest, "w", encoding="utf-8") as f:
             yaml.dump(dump_data, f, sort_keys=False, default_flow_style=False)
         return dest

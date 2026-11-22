@@ -17,9 +17,17 @@ class UserPreferences(BaseModel):
     language: str = Field(default="ENGLISH", description="ENGLISH, SPANISH, FRENCH, GERMAN")
     defaultRadioId: str | None = Field(default=None, description="Default target radio spec ID (or None)")
     colorTheme: str = Field(default="DARK", description="UI color theme: DARK, LIGHT, HIGH_CONTRAST")
+    fontFamily: str = Field(
+        default="SANS",
+        description="UI font family: SANS, MONO, SERIF, SYSTEM",
+    )
+    fontSize: str = Field(
+        default="MEDIUM",
+        description="UI base font size: SMALL, MEDIUM, LARGE, XLARGE",
+    )
     channelNamingFormat: str = Field(
         default="CITY_FREQ",
-        description="Channel naming format: CITY_FREQ (e.g. 'Tyler 7.20'), CALLSIGN_FREQ, CALLSIGN, STANDARD",
+        description="Channel naming format: CITY_FREQ (e.g. 'Tyler 7.20'), CALLSIGN_FREQ, CALLSIGN, CITY, STANDARD",
     )
     repeaterAccess: list[str] = Field(
         default_factory=lambda: ["OPEN"],
@@ -29,6 +37,12 @@ class UserPreferences(BaseModel):
         default=30,
         ge=1,
         description="Maximum age in days for downloaded RepeaterBook state files before refreshing",
+    )
+    webPort: int = Field(
+        default=8000,
+        ge=1,
+        le=65535,
+        description="Default TCP port for the FastAPI Web Studio interface",
     )
 
     @field_validator("callsign", mode="before")
@@ -92,24 +106,44 @@ class UserPreferences(BaseModel):
             return val_upper
         return "DARK"
 
+    @field_validator("fontFamily", mode="before")
+    @classmethod
+    def normalize_font_family(cls, v: str) -> str:
+        """Normalize fontFamily to SANS, MONO, SERIF, or SYSTEM."""
+        val_upper = str(v).strip().upper()
+        if val_upper in {"SANS", "MONO", "SERIF", "SYSTEM"}:
+            return val_upper
+        return "SANS"
+
+    @field_validator("fontSize", mode="before")
+    @classmethod
+    def normalize_font_size(cls, v: str) -> str:
+        """Normalize fontSize to SMALL, MEDIUM, LARGE, or XLARGE."""
+        val_upper = str(v).strip().upper()
+        if val_upper in {"SMALL", "MEDIUM", "LARGE", "XLARGE"}:
+            return val_upper
+        return "MEDIUM"
+
     @field_validator("channelNamingFormat", mode="before")
     @classmethod
     def normalize_channel_naming_format(cls, v: str | int) -> str:
-        """Allow number selection 1-4 or uppercase format names."""
+        """Allow number selection 1-5 or uppercase format names."""
         mapping = {
             "1": "CITY_FREQ",
             "2": "CALLSIGN_FREQ",
             "3": "CALLSIGN",
-            "4": "STANDARD",
+            "4": "CITY",
+            "5": "STANDARD",
             1: "CITY_FREQ",
             2: "CALLSIGN_FREQ",
             3: "CALLSIGN",
-            4: "STANDARD",
+            4: "CITY",
+            5: "STANDARD",
         }
         if str(v).strip() in mapping:
             return mapping[str(v).strip()]
         val_upper = str(v).strip().upper()
-        if val_upper in {"CITY_FREQ", "CALLSIGN_FREQ", "CALLSIGN", "STANDARD"}:
+        if val_upper in {"CITY_FREQ", "CALLSIGN_FREQ", "CALLSIGN", "CITY", "STANDARD"}:
             return val_upper
         return "CITY_FREQ"
 

@@ -123,6 +123,7 @@ def render_config_panel(
     if recipe.mode in {"ROUTE_CORRIDOR", "PROXIMITY_SEARCH"}:
         access_str = ", ".join(recipe.radio_target.repeater_access or ["OPEN"])
         table.add_row("Repeater Access:", access_str)
+    table.add_row("Channel Naming:", getattr(recipe.radio_target, "naming_format", "CITY_FREQ"))
     table.add_row("Include Simplex:", "Yes" if recipe.radio_target.include_simplex else "No")
     table.add_row("Sequence Layout:", " -> ".join(recipe.sequence_order))
 
