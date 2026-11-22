@@ -124,3 +124,36 @@ def test_sanitizers_url_control_chars_and_csv_cells() -> None:
     assert csv_safe_cell("-0.600") == "-0.600"
     assert csv_safe_cell("-95.3011") == "-95.3011"
     assert csv_safe_cell("-CMD()") == "'-CMD()"
+
+
+def test_xxe_qrz_password_crlf_and_backup_zip_slip_defenses() -> None:
+    """Verify XML DOCTYPE/ENTITY rejection, QRZ CR/LF rejection, and backup restore Zip-Slip blocking."""
+    import io
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    from core.providers.callsign_lookup import parse_xml_safely
+    from core.updater import UpdateError, validate_download_url
+
+    with pytest.raises(ET.ParseError):
+        parse_xml_safely('<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><QRZDatabase>&xxe;</QRZDatabase>')
+
+    # CR/LF/NUL in QRZ password must be rejected with 422
+    for bad_pw in ("abc\r\ndef", "abc\ndef", "abc\x00def"):
+        res = client.put("/api/preferences", json={"qrzPassword": bad_pw})
+        assert res.status_code == 422
+
+    # Zip-Slip archive uploaded to /api/backup/restore must be rejected with 400
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("../../evil.yaml", "callsign: HACK\n")
+    r_slip = client.post("/api/backup/restore", content=buf.getvalue(), headers={"Content-Type": "application/zip"})
+    assert r_slip.status_code == 400
+
+    # Non-zip payload rejected with 400
+    r_bad = client.post("/api/backup/restore", content=b"not a zip", headers={"Content-Type": "application/zip"})
+    assert r_bad.status_code == 400
+
+    # Untrusted update download URL rejected
+    with pytest.raises(UpdateError):
+        validate_download_url("https://attacker.example/release.zip")

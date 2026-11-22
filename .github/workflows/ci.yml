@@ -1,8 +1,9 @@
-name: CI & Quality Gate
+name: CI & Standalone Releases
 
 on:
   push:
     branches: ["main", "master"]
+    tags: ["v*"]
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
@@ -41,13 +42,13 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }} --group dev
 
       - name: Syntax check Python entrypoints & web modules
-        run: uv run --python ${{ matrix.python-version }} python -m py_compile src/cli/main.py src/web/app.py src/web/security.py src/web/state.py src/core/models/preferences.py
+        run: uv run --python ${{ matrix.python-version }} python -m py_compile src/cli/main.py src/web/app.py src/web/desktop.py src/web/security.py src/web/state.py src/core/updater.py src/core/providers/callsign_lookup.py src/core/providers/nws.py scripts/build_standalone.py scripts/generate_changelog.py
 
-      - name: Run full pytest suite (core, CLI, web API, security, UI integrity & coverage)
+      - name: Run full pytest suite (core, CLI, web API, desktop, updater, security, UI integrity & coverage)
         shell: bash
         run: |
           set -o pipefail
-          uv run --python ${{ matrix.python-version }} pytest -v -ra --cov=core --cov=cli --cov=web --cov-fail-under=75 --junitxml=pytest-results.xml --cov-report=json:coverage.json 2>&1 | tee pytest-output.log
+          uv run --python ${{ matrix.python-version }} pytest -v -ra -m "not ui" --cov=core --cov=cli --cov=web --cov-fail-under=75 --junitxml=pytest-results.xml --cov-report=json:coverage.json 2>&1 | tee pytest-output.log
 
       - name: Publish pytest & coverage output to Job Summary
         if: always()
@@ -171,7 +172,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uvx ruff check --output-format=full src tests 2>&1 | tee ruff.log
+          uvx ruff check --output-format=full src scripts tests 2>&1 | tee ruff.log
 
       - name: Static security scan with Bandit (Medium/High severity)
         id: bandit
@@ -179,7 +180,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uvx bandit -r src -ll 2>&1 | tee bandit.log
+          uvx bandit -r src scripts -ll 2>&1 | tee bandit.log
 
       - name: Dependency vulnerability audit (pip-audit)
         id: pip_audit
@@ -269,9 +270,93 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
+  ui-e2e:
+    name: Playwright UI & WCAG (ubuntu-latest / Python 3.12)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install UI E2E dependencies
+        run: uv sync --python 3.12 --group dev --group ui
+
+      - name: Install Playwright Chromium browser
+        run: uv run --python 3.12 playwright install --with-deps chromium
+
+      - name: Run Playwright E2E & axe-core WCAG accessibility suite
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run --python 3.12 pytest tests/web/test_ui_e2e.py --no-cov -v -ra --junitxml=ui-e2e-results.xml 2>&1 | tee ui-e2e-output.log
+
+      - name: Publish Playwright E2E & WCAG output to Job Summary
+        if: always()
+        shell: bash
+        run: |
+          uv run --python 3.12 python - <<'PY'
+          import json, os, pathlib, xml.etree.ElementTree as ET
+
+          metrics = {"tests": 0, "passed": 0, "failures": 0, "errors": 0, "skipped": 0}
+          junit = pathlib.Path("ui-e2e-results.xml")
+          if junit.is_file():
+              root = ET.parse(junit).getroot()
+              suite = root.find("testsuite") if root.tag == "testsuites" else root
+              if suite is not None:
+                  t = int(suite.attrib.get("tests", 0))
+                  f = int(suite.attrib.get("failures", 0))
+                  e = int(suite.attrib.get("errors", 0))
+                  s = int(suite.attrib.get("skipped", 0))
+                  metrics.update({"tests": t, "failures": f, "errors": e, "skipped": s, "passed": max(0, t - f - e - s)})
+          pathlib.Path("ui-e2e-metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          if not summary_path:
+              raise SystemExit(0)
+
+          lines = [
+              "## Playwright UI E2E & axe-core WCAG Suite",
+              "",
+              f"**Results:** {metrics['passed']} passed, {metrics['failures']} failed, {metrics['errors']} errors, {metrics['skipped']} skipped (total: {metrics['tests']})",
+              "",
+          ]
+          log = pathlib.Path("ui-e2e-output.log")
+          if log.is_file():
+              body = log.read_text(encoding="utf-8", errors="replace").strip()
+              lines.extend([
+                  "<details open>",
+                  "<summary>Full Playwright E2E & WCAG console output</summary>",
+                  "",
+                  "```text",
+                  body[:80000],
+                  "```",
+                  "</details>",
+                  "",
+              ])
+          with open(summary_path, "a", encoding="utf-8") as fh:
+              fh.write("\n".join(lines))
+          PY
+
+      - name: Upload Playwright UI metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-e2e-metrics
+          path: ui-e2e-metrics.json
+          retention-days: 1
+          if-no-files-found: ignore
+
   all-checks-passed:
     name: Required PR Merge Gate
-    needs: [test, security]
+    needs: [test, security, ui-e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -291,6 +376,14 @@ jobs:
           name: security-metrics
           path: metrics
 
+      - name: Download Playwright UI metrics
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-e2e-metrics
+          path: metrics
+
       - name: Post PR check summary & handle opt-in auto-merge
         if: always() && github.event_name == 'pull_request'
         continue-on-error: true
@@ -298,6 +391,7 @@ jobs:
         env:
           TEST_RESULT: ${{ needs.test.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
+          UI_E2E_RESULT: ${{ needs.ui-e2e.result }}
         with:
           script: |
             const fs = require('fs');
@@ -318,9 +412,11 @@ jobs:
 
             const testRes = process.env.TEST_RESULT;
             const secRes = process.env.SECURITY_RESULT;
-            const allPassed = testRes === 'success' && secRes === 'success';
+            const uiRes = process.env.UI_E2E_RESULT;
+            const allPassed = testRes === 'success' && secRes === 'success' && uiRes === 'success';
             const ciMetrics = readJson('ci-metrics.json');
             const secMetrics = readJson('security-metrics.json');
+            const uiMetrics = readJson('ui-e2e-metrics.json');
 
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
@@ -347,7 +443,7 @@ jobs:
                     repo,
                     pull_number: prNumber,
                     event: 'APPROVE',
-                    body: 'Automated CI approval: all cross-platform pytest tests, coverage (>=75%), Ruff, Bandit, and pip-audit checks passed.',
+                    body: 'Automated CI approval: all cross-platform pytest tests, coverage (>=75%), Playwright UI & WCAG, Ruff, Bandit, and pip-audit checks passed.',
                   });
                   autoApproveNote = '✅ Approved by `github-actions[bot]`';
                 } catch {
@@ -377,13 +473,17 @@ jobs:
               testDetail = `**${ciMetrics.passed} passed**, ${ciMetrics.failures} failed, ${ciMetrics.errors} errors, ${ciMetrics.skipped} skipped (Ubuntu & Windows × Py 3.11/3.12)`;
               if (ciMetrics.coverage_total !== null) {
                 const f = ciMetrics.files || {};
-                const parts = ['app.py', 'security.py', 'state.py']
+                const parts = ['app.py', 'desktop.py', 'updater.py']
                   .filter((k) => f[k] !== undefined)
                   .map((k) => `\`${k}\`: ${f[k]}%`);
                 const fileCov = parts.length ? ` (${parts.join(', ')})` : '';
                 covDetail = `**${ciMetrics.coverage_total}%**${fileCov} — gate: >= 75%`;
               }
             }
+
+            const uiDetail = (uiMetrics && uiMetrics.tests > 0)
+              ? `**${uiMetrics.passed} passed**, ${uiMetrics.failures} failed, ${uiMetrics.skipped} skipped (Chromium + axe-core WCAG 2.1 AA)`
+              : 'Chromium headless E2E + axe-core WCAG 2.1 AA';
 
             const ruffLine = secMetrics ? icon(secMetrics.ruff) : icon(secRes);
             const banditLine = secMetrics ? icon(secMetrics.bandit) : icon(secRes);
@@ -404,6 +504,7 @@ jobs:
               '| :--- | :--- | :--- |',
               `| **Pytest Suite** | ${icon(testRes)} | ${testDetail} |`,
               `| **Test Coverage** | ${icon(testRes)} | ${covDetail} |`,
+              `| **Playwright UI & WCAG** | ${icon(uiRes)} | ${uiDetail} |`,
               `| **Ruff Lint** | ${ruffLine} | Static lint & bug checks |`,
               `| **Bandit SAST** | ${banditLine} | Python security scan (Medium/High) |`,
               `| **pip-audit** | ${auditLine} | Dependency CVE audit |`,
@@ -452,4 +553,151 @@ jobs:
             echo "Security & lint checks failed (${{ needs.security.result }}). Blocking merge."
             exit 1
           fi
-          echo "All cross-platform pytest tests, security scans, and coverage gates passed."
+          if [ "${{ needs.ui-e2e.result }}" != "success" ]; then
+            echo "Playwright UI & WCAG suite failed (${{ needs.ui-e2e.result }}). Blocking merge."
+            exit 1
+          fi
+          echo "All cross-platform pytest tests, Playwright UI & WCAG tests, security scans, and coverage gates passed."
+
+  build-standalone:
+    name: Build Standalone (${{ matrix.os }})
+    needs: [all-checks-passed]
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install runtime and packaging dependencies
+        run: uv sync --python 3.12 --group packaging
+
+      - name: Build standalone portable bundle
+        run: uv run --python 3.12 --group packaging python scripts/build_standalone.py
+
+      - name: Smoke-test built standalone executable
+        shell: bash
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+        run: |
+          uv run --python 3.12 python - <<'PY'
+          import json, os, pathlib, subprocess, sys, tempfile, zipfile
+
+          zips = sorted(pathlib.Path("release").glob("W5CDN-RadioPlanner-*.zip"))
+          assert zips, "No standalone release zip found!"
+          zip_path = zips[0]
+
+          with tempfile.TemporaryDirectory() as tmp:
+              tmp_dir = pathlib.Path(tmp)
+              with zipfile.ZipFile(zip_path, "r") as zf:
+                  zf.extractall(tmp_dir)
+
+              app_dir = tmp_dir / "W5CDN-RadioPlanner"
+              exe = app_dir / ("W5CDN-RadioPlanner.exe" if sys.platform == "win32" else "W5CDN-RadioPlanner")
+              assert exe.is_file(), f"Built executable missing: {exe}"
+              if sys.platform != "win32":
+                  os.chmod(exe, 0o755)
+
+              smoke_out = tmp_dir / "smoke-result.json"
+              env = os.environ.copy()
+              env["RADIOPLANNER_HOME"] = str(tmp_dir / "rp_smoke_home")
+              proc = subprocess.run(
+                  [str(exe), "--smoke-test", "--smoke-test-out", str(smoke_out), "--port", "0"],
+                  cwd=str(app_dir),
+                  env=env,
+                  capture_output=True,
+                  text=True,
+                  timeout=45.0,
+                  check=False,
+              )
+              assert proc.returncode == 0, f"Standalone smoke test failed (rc={proc.returncode}): {proc.stdout} {proc.stderr}"
+              assert smoke_out.is_file(), "Smoke test did not write verification JSON"
+              data = json.loads(smoke_out.read_text(encoding="utf-8"))
+              assert data.get("ok") is True, f"Smoke test reported failure: {data}"
+              assert data.get("install_mode") == "standalone", f"Expected standalone install_mode: {data}"
+              assert data.get("index_status") == 200 and data.get("config_status") == 200
+
+              size_mb = round(zip_path.stat().st_size / (1024 * 1024), 2)
+              print(f"Standalone smoke test PASSED for {zip_path.name} ({size_mb} MiB): {json.dumps(data)}")
+              summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+              if summary_path:
+                  with open(summary_path, "a", encoding="utf-8") as fh:
+                      fh.write(
+                          f"## Standalone Bundle Smoke Test ({os.environ.get('MATRIX_OS', '')})\n\n"
+                          f"- **Artifact:** `{zip_path.name}` ({size_mb} MiB)\n"
+                          f"- **Executable launch:** ✅ Passed (`--smoke-test`)\n"
+                          f"- **HTTP `/`:** `{data['index_status']}` • **HTTP `/api/config`:** `{data['config_status']}`\n"
+                          f"- **Detected Mode:** `{data['install_mode']}` • **Version:** `{data['version']}`\n\n"
+                      )
+          PY
+
+      - name: Upload standalone artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: standalone-${{ matrix.os }}
+          path: release/W5CDN-RadioPlanner-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-standalone]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout full Git history for automatic changelog generation
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download standalone artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Generate categorized Conventional Commits changelog
+        run: |
+          python3 scripts/generate_changelog.py \
+            --version "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --output release-artifacts/CHANGELOG.md
+          cat release-artifacts/CHANGELOG.md
+
+      - name: Generate SHA256SUMS.txt for release integrity verification
+        run: |
+          cd release-artifacts
+          sha256sum W5CDN-RadioPlanner-*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          {
+            echo "## Release ${GITHUB_REF_NAME}"
+            echo ""
+            cat CHANGELOG.md
+            echo ""
+            echo "### SHA-256 Checksums"
+            echo '```text'
+            cat SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-artifacts/CHANGELOG.md
+          generate_release_notes: true
+          files: |
+            release-artifacts/W5CDN-RadioPlanner-*.zip
+            release-artifacts/SHA256SUMS.txt
+            release-artifacts/CHANGELOG.md

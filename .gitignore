@@ -5,10 +5,16 @@
 tokens
 *ApiToken*.txt
 docs/RepeaterBookPythonClientApiToken.txt
+session.json
 *.db
 *.db-wal
 *.db-shm
 *.bak
+*.key
+*.pem
+*.p12
+*.log
+*.tmp
 exports/
 scratch/
 
@@ -31,12 +37,10 @@ __pycache__/
 coverage.xml
 coverage.json
 pytest-results.xml
-pytest-output.log
+ui-e2e-results.xml
 ci-metrics.json
 security-metrics.json
-ruff.log
-bandit.log
-pip-audit.log
+ui-e2e-metrics.json
 htmlcov/
 nosetests.xml
 
@@ -59,8 +63,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# IDE & OS files
-.vscode/
+# IDE & OS files (keep workspace extension recommendations tracked)
+.vscode/*
+!.vscode/extensions.json
 .idea/
 .DS_Store
 Thumbs.db

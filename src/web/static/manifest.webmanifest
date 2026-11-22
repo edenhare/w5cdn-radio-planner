@@ -1,0 +1,22 @@
+{
+  "name": "W5CDN RadioPlanner",
+  "short_name": "RadioPlanner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090e18",
+  "theme_color": "#0c121e",
+  "icons": [
+    {
+      "src": "/static/icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -314,3 +314,5 @@ class ApiTokens(BaseModel):
     repeaterBookApiKey: str | None = Field(default=None, description="RepeaterBook REST API Key")
     radioIdUsername: str | None = Field(default=None, description="RadioID.net Callsign/Username")
     radioIdApiKey: str | None = Field(default=None, description="RadioID.net API Key/Token")
+    qrzUsername: str | None = Field(default=None, description="QRZ.com XML API Username/Callsign")
+    qrzPassword: str | None = Field(default=None, description="QRZ.com XML API Password")

@@ -2340,6 +2340,137 @@ table.tpl-sheet-table td {
 .toast.error { border-color: var(--accent-rose); color: var(--accent-rose-text); }
 .toast.success { border-color: var(--accent-emerald); color: var(--accent-emerald-text); }
 
+/* System, Backup, Updates, QRZ & NWS Weather Components */
+.system-card {
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-notes-box {
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.qrz-test-banner {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  font-size: 0.84em;
+  font-weight: 600;
+}
+
+.qrz-test-banner.ok {
+  border-color: var(--accent-emerald);
+  background: var(--accent-emerald-bg);
+  color: var(--accent-emerald-text);
+}
+
+.qrz-test-banner.err {
+  border-color: var(--accent-rose);
+  background: var(--accent-rose-bg);
+  color: var(--accent-rose-text);
+}
+
+.nws-all-clear {
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-emerald);
+  background: var(--accent-emerald-bg);
+  color: var(--accent-emerald-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.nws-alert-card {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent-blue);
+  background: var(--bg-input);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nws-alert-card.nws-sev-extreme,
+.nws-alert-card.nws-sev-severe {
+  border-left-color: var(--accent-rose);
+}
+
+.nws-alert-card.nws-sev-moderate {
+  border-left-color: var(--accent-amber);
+}
+
+.nws-alert-card.nws-sev-minor {
+  border-left-color: var(--accent-cyan);
+}
+
+.nws-alert-title {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.nws-alert-meta {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.nws-alert-body {
+  font-size: 0.84em;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+/* Theme-harmonized, WCAG 2.1 AA compliant Leaflet map controls (zero external image 404s) */
+.leaflet-container .leaflet-control-attribution {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}
+
+.leaflet-control-layers {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.leaflet-control-layers-toggle,
+.leaflet-retina .leaflet-control-layers-toggle {
+  background-image: none;
+  background-color: var(--bg-panel);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.leaflet-control-layers-toggle::after {
+  content: "⊞";
+}
+
 .hidden { display: none !important; }
 
 /* Printable Pocket Reference Card Area */

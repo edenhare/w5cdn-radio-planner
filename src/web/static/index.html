@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RadioPlanner — Cockpit Studio</title>
+  <title>W5CDN RadioPlanner — Cockpit Studio</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <link rel="icon" type="image/png" href="/static/icon.png" />
   <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
@@ -33,6 +35,9 @@
       </div>
 
       <div class="topbar-right">
+        <button type="button" class="btn btn-amber btn-sm hidden" id="btnUpdateBanner" title="A newer version of W5CDN RadioPlanner is available">
+          ↑ Update Available
+        </button>
         <button type="button" class="btn btn-primary btn-sm" id="btnTopAssemble" title="Assemble plan &amp; map (Ctrl+Enter)">
           ⚡ Assemble <span class="kbd kbd-solid">Ctrl+↵</span>
         </button>
@@ -286,6 +291,7 @@
                     <span class="pill pill-blue" id="planModePill">ROUTE_CORRIDOR</span>
                   </div>
                   <div class="plan-actions">
+                    <button type="button" class="btn btn-sm" id="btnPlanWeather" title="Fetch active National Weather Service alerts for this plan's states">⛅ Area Weather</button>
                     <button type="button" class="btn btn-violet btn-sm" id="btnPlanExpandDmr" title="Expand DMR channels across standard talkgroups">Expand DMR</button>
                     <button type="button" class="btn btn-sm" id="btnPlanSaveRecipe" title="Save radio-agnostic YAML recipe">Save Recipe</button>
                     <button type="button" class="btn btn-amber btn-sm" id="btnPlanReport" title="View &amp; print codeplug pocket reference card">Pocket Card / Report</button>
@@ -616,6 +622,7 @@
         <button type="button" role="tab" class="tab-btn active" data-pref-tab="appearance">Appearance &amp; Fonts</button>
         <button type="button" role="tab" class="tab-btn" data-pref-tab="operator">Operator &amp; Defaults</button>
         <button type="button" role="tab" class="tab-btn" data-pref-tab="api">API Keys &amp; State Cache</button>
+        <button type="button" role="tab" class="tab-btn" data-pref-tab="system">Backup &amp; Updates</button>
       </div>
       <form id="prefsForm">
         <div class="modal-body">
@@ -792,7 +799,10 @@
           <div id="prefTabOperator" class="builder-list hidden">
             <div class="form-grid-3">
               <div class="field">
-                <label for="prefCallsign">Amateur Callsign</label>
+                <label for="prefCallsign">
+                  <span>Amateur Callsign</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btnPrefLookupCall" title="Look up callsign via QRZ or Callook">🔍 Lookup</button>
+                </label>
                 <input type="text" id="prefCallsign" class="input callsign-input" placeholder="W5CDN" />
               </div>
               <div class="field">
@@ -877,8 +887,69 @@
               <input type="checkbox" id="prefClearRadioIdKey" /> Clear saved RadioID.net API Key
             </label>
 
+            <div class="section-label">QRZ.com XML Callsign Lookup (Optional — Callook.info fallback built-in)</div>
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefQrzUser">QRZ.com Username / Callsign</label>
+                <input type="text" id="prefQrzUser" class="input mono" autocomplete="off" placeholder="Optional" />
+              </div>
+              <div class="field">
+                <label for="prefQrzPass">
+                  <span>QRZ.com XML Password</span>
+                  <span class="mono" id="prefQrzStatus">Not Set</span>
+                </label>
+                <div class="secret-input-wrap">
+                  <input type="password" id="prefQrzPass" class="input mono" autocomplete="new-password" placeholder="Enter password to save" />
+                  <button type="button" class="btn btn-sm secret-toggle-btn" data-toggle-secret="prefQrzPass" aria-pressed="false">Show</button>
+                </div>
+              </div>
+            </div>
+            <div class="plan-header-row">
+              <label class="panel-toggle-switch" style="font-size:0.82em;">
+                <input type="checkbox" id="prefClearQrzPass" /> Clear saved QRZ password
+              </label>
+              <button type="button" class="btn btn-xs" id="btnTestQrz">Test QRZ Login</button>
+            </div>
+            <div id="qrzTestBanner" class="qrz-test-banner hidden"></div>
+
             <div class="section-label">Cached State RepeaterBook Datasets (<span id="cachedStatesCount">0</span>)</div>
-            <div id="cachedStatesList" class="builder-list" style="max-height:210px; overflow:auto;"></div>
+            <div id="cachedStatesList" class="builder-list" style="max-height:170px; overflow:auto;"></div>
+          </div>
+
+          <!-- Tab 4: Backup, Restore & Application Updates -->
+          <div id="prefTabSystem" class="builder-list hidden">
+            <div class="section-label">Configuration Backup &amp; Restore Archive (.zip)</div>
+            <div class="system-card">
+              <p class="mgr-card-sub">
+                Export your preferences, saved YAML recipes, custom radio specs, and preset templates into a single portable archive.
+                Restoring automatically creates a pre-restore snapshot first.
+              </p>
+              <label class="panel-toggle-switch" style="font-size:0.85em;">
+                <input type="checkbox" id="chkBackupIncludeTokens" /> Include API keys &amp; QRZ credentials in backup (sensitive!)
+              </label>
+              <div class="plan-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btnDownloadBackup">⬇ Download Backup (.zip)</button>
+                <button type="button" class="btn btn-amber btn-sm" id="btnRestoreBackup">⬆ Restore Backup (.zip)</button>
+                <input type="file" id="restoreBackupFile" accept=".zip" class="hidden" />
+              </div>
+            </div>
+
+            <div class="section-label">Application Updates</div>
+            <div class="system-card">
+              <div class="plan-header-row">
+                <div class="plan-actions">
+                  <span class="pill pill-blue mono" id="updateVersionPill">v0.2.0</span>
+                  <span class="pill mono" id="updateModePill">source</span>
+                </div>
+                <div class="plan-actions">
+                  <button type="button" class="btn btn-sm" id="btnCheckUpdate">Check for Updates</button>
+                  <button type="button" class="btn btn-success btn-sm hidden" id="btnApplyUpdate">Install Update</button>
+                  <a id="updateReleaseLink" class="btn btn-ghost btn-sm hidden" href="#" target="_blank" rel="noopener noreferrer">View Release ↗</a>
+                </div>
+              </div>
+              <div id="updateStatusText" class="mgr-card-sub">Click "Check for Updates" to query GitHub Releases (offline-safe).</div>
+              <pre id="updateReleaseNotes" class="update-notes-box hidden"></pre>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -908,7 +979,10 @@
               <input type="text" id="editChName" class="input callsign-input" required />
             </div>
             <div class="field">
-              <label for="editChCallsign">Callsign / Ident</label>
+              <label for="editChCallsign">
+                <span>Callsign / Ident</span>
+                <button type="button" class="btn btn-ghost btn-xs" id="btnEditLookupCall" title="Look up trustee callsign via QRZ or Callook">🔍 Lookup</button>
+              </label>
               <input type="text" id="editChCallsign" class="input mono" style="text-transform:uppercase;" />
             </div>
           </div>
@@ -1110,8 +1184,8 @@
             <input type="text" id="tplImpName" class="input" required placeholder="e.g. County Skywarn Channels" />
           </div>
           <div class="field">
-            <label for="tplImpFile">CSV or YAML File *</label>
-            <input type="file" id="tplImpFile" class="input" accept=".csv,.yaml,.yml" required />
+            <label for="tplImpFile">CSV, YAML, or W5CDN Net Logger JSON File *</label>
+            <input type="file" id="tplImpFile" class="input" accept=".csv,.yaml,.yml,.json" required />
           </div>
         </div>
         <div class="modal-footer">
@@ -1219,6 +1293,32 @@
           <button type="submit" class="btn btn-primary">Save Recipe YAML</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: NWS Area Weather Alerts -->
+  <div class="modal-backdrop hidden" id="nwsAlertsBackdrop">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="nwsAlertsTitle">
+      <div class="modal-header">
+        <div class="plan-title-block">
+          <h2 id="nwsAlertsTitle">National Weather Service — Area Alerts</h2>
+          <span class="pill pill-cyan mono" id="nwsStatesPill">--</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="nwsAlertsBackdrop">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="plan-header-row">
+          <span class="mgr-card-sub mono" id="nwsMetaLine">Fetching active alerts...</span>
+          <div class="plan-actions">
+            <button type="button" class="btn btn-xs" id="btnNwsRefresh">↻ Refresh</button>
+            <button type="button" class="btn btn-primary btn-xs" id="btnNwsCopy">Copy Briefing</button>
+          </div>
+        </div>
+        <div id="nwsAlertsList" class="builder-list" style="max-height:58vh; overflow:auto;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="nwsAlertsBackdrop">Close</button>
+      </div>
     </div>
   </div>
 

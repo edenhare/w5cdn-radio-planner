@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from core.config.paths import get_radios_dir
 from core.config.yaml_loader import load_yaml_file
 from core.models.radio_spec import TargetRadioSpec
 
-BUILTIN_RADIOS_DIR = Path(__file__).resolve().parent.parent / "resources" / "radios"
+
+def _resolve_builtin_radios_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", str(Path(sys.executable).resolve().parent)))
+        frozen_dir = meipass / "core" / "resources" / "radios"
+        if frozen_dir.is_dir():
+            return frozen_dir
+    return Path(__file__).resolve().parent.parent / "resources" / "radios"
+
+
+BUILTIN_RADIOS_DIR = _resolve_builtin_radios_dir()
 
 
 class RadioManager:

@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import io
+import json
 import logging
+import os
+import re
+import sys
+import threading
+import zipfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,13 +18,20 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from cli.wizard.band_selector import (
     AVIATION_NAMING_FORMAT_OPTIONS,
     NAMING_FORMAT_OPTIONS,
 )
-from core.config.paths import get_recipes_dir
+from core.config.paths import (
+    get_preferences_file,
+    get_radioplanner_home,
+    get_radios_dir,
+    get_recipes_dir,
+    get_templates_dir,
+    get_tokens_file,
+)
 from core.config.recipe import (
     AviationConfig,
     CorridorConfig,
@@ -41,14 +56,99 @@ from core.providers.repeaterbook import (
 )
 from core.sanitizers.condenser import NameCondenser
 from core.sanitizers.sanitizer import DataSanitizer
+from core.updater import (
+    UpdateError,
+    apply_git_update,
+    apply_standalone_update,
+    check_for_update,
+    detect_install_mode,
+    safe_error_message,
+)
 from web.security import clean_single_line, safe_child_path, security_middleware
 from web.state import workspace
 
 logger = logging.getLogger("radioplanner.web")
 
 APP_VERSION = "0.2.0"
-APP_TITLE = "RadioPlanner"
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+APP_TITLE = "W5CDN RadioPlanner"
+
+
+def _resolve_dirs() -> tuple[Path, Path]:
+    """Return (data_dir, bundle_dir) for both source and frozen PyInstaller builds."""
+    if getattr(sys, "frozen", False):
+        data_dir = Path(sys.executable).resolve().parent
+        bundle_dir = Path(getattr(sys, "_MEIPASS", str(data_dir)))
+        return data_dir, bundle_dir
+    pkg_dir = Path(__file__).resolve().parent
+    data_dir = pkg_dir.parent.parent if pkg_dir.parent.name == "src" else pkg_dir
+    return data_dir, pkg_dir
+
+
+BASE_DIR, BUNDLE_DIR = _resolve_dirs()
+STATIC_DIR = BUNDLE_DIR / "static"
+
+MAX_BACKUP_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_BACKUP_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_BACKUP_FILES = 5000
+WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]|^\\\\")
+
+
+def parse_port(raw: str | None, default: int = 8000) -> int:
+    """Parse a TCP port string safely, falling back to default if invalid."""
+    try:
+        val = int((raw or "").strip())
+        if 0 <= val <= 65535:
+            return val
+    except ValueError:
+        pass
+    return default
+
+
+class WindowShutdownManager:
+    """Coordinate clean local server exit when browser tab unloads or self-update restarts."""
+
+    def __init__(self, delay_seconds: float = 2.0) -> None:
+        self._delay = delay_seconds
+        self._lock = threading.Lock()
+        self._callback: Callable[[], None] | None = None
+        self._timer: threading.Timer | None = None
+
+    def register(self, callback: Callable[[], None] | None) -> None:
+        with self._lock:
+            self._callback = callback
+            if callback is None and self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def cancel(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def schedule(self, delay_seconds: float | None = None) -> bool:
+        with self._lock:
+            if self._callback is None:
+                return False
+            if self._timer is not None:
+                self._timer.cancel()
+            cb = self._callback
+            wait = self._delay if delay_seconds is None else delay_seconds
+            self._timer = threading.Timer(wait, cb)
+            self._timer.daemon = True
+            self._timer.start()
+            return True
+
+
+shutdown_manager = WindowShutdownManager()
+
+
+def register_shutdown_callback(callback: Callable[[], None] | None) -> None:
+    shutdown_manager.register(callback)
+
+
+def cancel_pending_shutdown() -> None:
+    shutdown_manager.cancel()
 
 BAND_COLORS: dict[str, str] = {
     "10m": "#f97316",
@@ -203,6 +303,31 @@ class PreferencesUpdateRequest(BaseModel):
     radioIdUsername: str | None = None
     radioIdApiKey: str | None = None
     clearRadioIdApiKey: bool = False
+    qrzUsername: str | None = Field(default=None, max_length=120)
+    qrzPassword: str | None = Field(default=None, max_length=200)
+    clearQrzPassword: bool = False
+
+    @field_validator("qrzPassword")
+    @classmethod
+    def validate_qrz_password(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if any(ch in v for ch in ("\x00", "\r", "\n")):
+            raise ValueError("Password cannot contain newline or NUL characters")
+        return v
+
+
+class QrzTestRequest(BaseModel):
+    qrzUsername: str | None = Field(default=None, max_length=120)
+    qrzPassword: str | None = Field(default=None, max_length=200)
+
+
+class NetLoggerImportRequest(BaseModel):
+    id: str = "net_logger_presets"
+    name: str = "W5CDN Net Logger Presets"
+    tagText: str = "NETLOG"
+    description: str = "Imported from W5CDN Net Logger net_type_defaults JSON"
+    json_text: str
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +473,8 @@ def _serialize_preferences() -> dict[str, Any]:
         "repeaterBookApiKeySet": bool(tokens.repeaterBookApiKey),
         "radioIdUsername": tokens.radioIdUsername or "",
         "radioIdApiKeySet": bool(tokens.radioIdApiKey),
+        "qrzUsername": tokens.qrzUsername or "",
+        "qrzConfigured": bool(tokens.qrzUsername and tokens.qrzPassword),
         "has_api_key": workspace.repeater_provider.has_api_key(),
     }
 
@@ -509,6 +636,228 @@ def _build_pocket_report_text(
     return "\n".join(lines) + "\n"
 
 
+def _parse_net_logger_json_to_template(
+    *,
+    clean_id: str,
+    name: str,
+    description: str,
+    tag_text: str,
+    raw_json: str,
+) -> PresetTemplateFile:
+    """Parse W5CDN Net Logger net_type_defaults or repeater preset JSON into a PresetTemplateFile."""
+    parsed = json.loads(raw_json)
+    records: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("net_type_defaults"), dict):
+            for label, cfg in parsed["net_type_defaults"].items():
+                if isinstance(cfg, dict):
+                    records.append((str(label), cfg))
+        elif "frequency" in parsed:
+            records.append((str(parsed.get("name") or parsed.get("callsign") or "Net Preset"), parsed))
+        else:
+            for label, cfg in parsed.items():
+                if isinstance(cfg, dict) and ("frequency" in cfg or "rxFreq" in cfg):
+                    records.append((str(cfg.get("name") or label), cfg))
+    elif isinstance(parsed, list):
+        for idx, cfg in enumerate(parsed, start=1):
+            if isinstance(cfg, dict):
+                records.append((str(cfg.get("name") or cfg.get("callsign") or f"Net {idx}"), cfg))
+
+    channels: list[TemplateChannelItem] = []
+    freq_re = re.compile(r"(\d+(?:\.\d+)?)")
+    off_re = re.compile(r"([+-])\s*(\d+(?:\.\d+)?)")
+    pl_re = re.compile(r"(?:PL|CTCSS|TONE)\s*[:=]?\s*(\d{2,3}\.\d)", re.IGNORECASE)
+    dcs_re = re.compile(r"(?:DCS|DTCS|D)\s*[:=]?\s*(\d{3})", re.IGNORECASE)
+
+    for label, cfg in records:
+        freq_raw = str(cfg.get("frequency") or cfg.get("rxFreq") or "").strip()
+        fm = freq_re.search(freq_raw)
+        if not fm:
+            continue
+        rx = round(float(fm.group(1)), 5)
+        if rx <= 0.0 or rx >= 3000.0:
+            continue
+
+        tone_off = str(cfg.get("tone_offset") or "").strip()
+        off_dir = "off"
+        off_val = 0.0
+        om = off_re.search(tone_off)
+        if om:
+            off_dir = om.group(1)
+            raw_off = float(om.group(2))
+            off_val = round(raw_off / 1000.0 if raw_off > 50.0 else raw_off, 5)
+        elif "simplex" not in tone_off.lower() and off_dir == "off":
+            pass
+
+        tx = round(rx + off_val, 5) if off_dir == "+" else (round(rx - off_val, 5) if off_dir == "-" else rx)
+
+        tone_mode = "None"
+        ctcss = "None"
+        dcs = "None"
+        pm = pl_re.search(tone_off)
+        dm = dcs_re.search(tone_off)
+        if pm:
+            tone_mode = "Tone"
+            ctcss = pm.group(1)
+        elif dm:
+            tone_mode = "DCS"
+            dcs = dm.group(1)
+
+        mode_val = clean_single_line(cfg.get("mode") or "FM", max_len=12).upper() or "FM"
+        comment_bits = [
+            clean_single_line(cfg.get("callsign") or "", max_len=16),
+            clean_single_line(cfg.get("location") or "", max_len=80),
+            clean_single_line(tone_off, max_len=60),
+        ]
+        channels.append(
+            TemplateChannelItem(
+                name=clean_single_line(label, max_len=64) or f"Net {len(channels) + 1}",
+                rxFreq=rx,
+                txFreq=tx,
+                offset=off_val if off_dir != "off" else None,
+                offsetDir=off_dir,
+                mode=mode_val,
+                power="High",
+                toneMode=tone_mode,
+                ctcss=ctcss,
+                rxCtcss="None",
+                dcs=dcs,
+                rxDcs=dcs if tone_mode == "DCS" else "None",
+                comment=" | ".join(b for b in comment_bits if b)[:240],
+            )
+        )
+
+    if not channels:
+        raise ValueError("No valid frequency entries found in Net Logger JSON.")
+
+    return PresetTemplateFile(
+        id=clean_id,
+        name=clean_single_line(name, max_len=100) or clean_id,
+        description=clean_single_line(description, max_len=240),
+        tagText=clean_single_line(tag_text, max_len=24).upper() or "NETLOG",
+        tagColorHex="#38bdf8",
+        channels=channels,
+    )
+
+
+def _create_config_backup_zip_bytes(*, include_tokens: bool = False) -> bytes:
+    """Create a ZIP archive of RadioPlanner user preferences, recipes, radios, and templates."""
+    home = get_radioplanner_home()
+    buf = io.BytesIO()
+    manifest = {
+        "app": APP_TITLE,
+        "version": APP_VERSION,
+        "exported_at": _utc_now_iso(),
+        "include_tokens": include_tokens,
+    }
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
+        prefs_file = get_preferences_file()
+        if prefs_file.is_file():
+            zf.write(prefs_file, arcname="preferences.yaml")
+        if include_tokens:
+            tokens_file = get_tokens_file()
+            if tokens_file.is_file():
+                zf.write(tokens_file, arcname="tokens")
+        for folder, folder_path in (
+            ("recipes", get_recipes_dir()),
+            ("radios", get_radios_dir()),
+            ("templates", get_templates_dir()),
+        ):
+            if folder_path.is_dir():
+                for fp in sorted(folder_path.glob("*.yaml")):
+                    if fp.is_file():
+                        zf.write(fp, arcname=f"{folder}/{fp.name}")
+    logger.debug("Created backup archive for %s (%d bytes)", home, buf.tell())
+    return buf.getvalue()
+
+
+def _restore_config_backup_zip_bytes(raw_bytes: bytes) -> dict[str, Any]:
+    """Validate and restore a RadioPlanner backup ZIP archive with Zip-Slip & size hardening."""
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Empty backup upload.")
+    if len(raw_bytes) > MAX_BACKUP_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Backup archive exceeds 50 MB upload limit.")
+
+    try:
+        zf_ctx = zipfile.ZipFile(io.BytesIO(raw_bytes), "r")
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid ZIP archive.") from exc
+
+    allowed_subdirs = {"recipes", "radios", "templates"}
+    validated_files: list[tuple[str, bytes]] = []
+    with zf_ctx as zf:
+        infos = zf.infolist()
+        if len(infos) > MAX_BACKUP_FILES:
+            raise HTTPException(status_code=400, detail="Backup archive contains too many files.")
+        total_uncompressed = 0
+        for info in infos:
+            name = info.filename
+            if (
+                name.startswith(("/", "\\"))
+                or ".." in re.split(r"[\\/]+", name)
+                or WINDOWS_ABS_RE.match(name)
+            ):
+                raise HTTPException(status_code=400, detail="Backup archive contains an unsafe path.")
+            total_uncompressed += max(0, info.file_size)
+            if total_uncompressed > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                raise HTTPException(status_code=400, detail="Backup archive exceeds 100 MB uncompressed limit.")
+
+            if info.is_dir():
+                continue
+            norm = name.replace("\\", "/")
+            parts = norm.split("/")
+            if norm in {"manifest.json"}:
+                continue
+            if norm in {"preferences.yaml", "tokens"}:
+                content = zf.read(info)
+                try:
+                    parse_yaml_text(content.decode("utf-8"))
+                except (UnicodeDecodeError, YamlDiagnosticError, ValueError) as exc:
+                    raise HTTPException(status_code=400, detail=f"Invalid YAML in {norm}: {exc}") from exc
+                validated_files.append((norm, content))
+            elif len(parts) == 2 and parts[0] in allowed_subdirs and parts[1].lower().endswith((".yaml", ".yml")):
+                content = zf.read(info)
+                try:
+                    parse_yaml_text(content.decode("utf-8"))
+                except (UnicodeDecodeError, YamlDiagnosticError, ValueError) as exc:
+                    raise HTTPException(status_code=400, detail=f"Invalid YAML in {norm}: {exc}") from exc
+                validated_files.append((norm, content))
+
+    if not validated_files:
+        raise HTTPException(status_code=400, detail="Backup archive contained no restorable RadioPlanner files.")
+
+    home = get_radioplanner_home()
+    home.mkdir(parents=True, exist_ok=True)
+    pre_restore_bak = home / "radioplanner.pre_restore.bak"
+    pre_restore_bak.write_bytes(_create_config_backup_zip_bytes(include_tokens=False))
+
+    home_abs = os.path.abspath(str(home))
+    restored_names: list[str] = []
+    for rel_norm, content in validated_files:
+        dest_abs = os.path.normpath(os.path.join(home_abs, rel_norm))
+        if not dest_abs.startswith(home_abs + os.sep):
+            raise HTTPException(status_code=400, detail="Backup archive entry escapes configuration directory.")
+        dest_path = Path(dest_abs)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(content)
+        if rel_norm == "tokens" and hasattr(os, "chmod") and os.name != "nt":
+            try:
+                os.chmod(dest_path, 0o600)
+            except OSError:
+                pass
+        restored_names.append(rel_norm)
+
+    workspace.reload_all()
+    return {
+        "restored": True,
+        "count": len(restored_names),
+        "files": restored_names,
+        "backup_saved": pre_restore_bak.name,
+        "message": f"Restored {len(restored_names)} configuration file(s). Pre-restore snapshot saved to {pre_restore_bak.name}.",
+    }
+
+
 def _parse_template_channel_payloads(items: list[TemplateChannelPayload]) -> list[TemplateChannelItem]:
     channel_items: list[TemplateChannelItem] = []
     for idx, item in enumerate(items, start=1):
@@ -593,6 +942,7 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     async def serve_index() -> FileResponse:
+        cancel_pending_shutdown()
         index_path = STATIC_DIR / "index.html"
         if not index_path.is_file():
             raise HTTPException(status_code=404, detail="UI file static/index.html not found")
@@ -600,19 +950,29 @@ def create_app() -> FastAPI:
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def serve_favicon() -> FileResponse:
+        ico_path = STATIC_DIR / "icon.ico"
+        if ico_path.is_file():
+            return FileResponse(ico_path, media_type="image/x-icon")
         svg_path = STATIC_DIR / "icon.svg"
         if not svg_path.is_file():
             raise HTTPException(status_code=404, detail="Icon file static/icon.svg not found")
         return FileResponse(svg_path, media_type="image/svg+xml")
 
+    @app.post("/api/client/unload")
+    async def api_client_unload() -> dict[str, bool]:
+        scheduled = shutdown_manager.schedule()
+        return {"ok": True, "shutdown_scheduled": scheduled}
+
     # ─── Bootstrap Config & Preferences ──────────────────────────────────────
 
     @app.get("/api/config")
     async def api_config() -> dict[str, Any]:
+        cancel_pending_shutdown()
         recipes = _serialize_recipes()
         return {
             "app_title": APP_TITLE,
             "version": APP_VERSION,
+            "install_mode": detect_install_mode(BASE_DIR),
             "utc_now": _utc_now_iso(),
             "preferences": _serialize_preferences(),
             "radios": _serialize_radios(),
@@ -689,16 +1049,64 @@ def create_app() -> FastAPI:
         elif payload.radioIdApiKey is not None and payload.radioIdApiKey.strip():
             token_updates["radioIdApiKey"] = clean_single_line(payload.radioIdApiKey, max_len=256)
 
+        if payload.qrzUsername is not None:
+            cleaned_qrz = clean_single_line(payload.qrzUsername, max_len=120)
+            token_updates["qrzUsername"] = cleaned_qrz or None
+
+        if payload.clearQrzPassword:
+            token_updates["qrzPassword"] = None
+        elif payload.qrzPassword is not None and payload.qrzPassword.strip():
+            token_updates["qrzPassword"] = payload.qrzPassword.strip()[:200]
+
         if token_updates:
             new_tokens = workspace.prefs_mgr.tokens.model_copy(update=token_updates)
             workspace.prefs_mgr.save_tokens(new_tokens)
             workspace.repeater_provider.api_key = new_tokens.repeaterBookApiKey
             workspace.repeater_provider.last_status = "CONFIGURED" if new_tokens.repeaterBookApiKey else "NO_KEY"
+            if any(k in token_updates for k in ("qrzUsername", "qrzPassword")):
+                workspace.lookup_service.reset_qrz_session()
 
         return {
             "preferences": _serialize_preferences(),
             "cached_states": workspace.repeater_provider.list_cached_state_files(),
         }
+
+    # ─── Callsign Lookup & QRZ Test ──────────────────────────────────────────
+
+    @app.get("/api/lookup/{callsign:path}")
+    async def api_lookup_callsign(callsign: str) -> dict[str, Any]:
+        cleaned = clean_single_line(callsign, max_len=24).upper()
+        tokens = workspace.prefs_mgr.tokens
+        return await workspace.lookup_service.lookup(
+            cleaned,
+            qrz_user=tokens.qrzUsername,
+            qrz_pass=tokens.qrzPassword,
+        )
+
+    @app.post("/api/preferences/test-qrz")
+    async def api_test_qrz(payload: QrzTestRequest | None = None) -> dict[str, Any]:
+        tokens = workspace.prefs_mgr.tokens
+        user = (
+            clean_single_line(payload.qrzUsername, max_len=120)
+            if payload and payload.qrzUsername
+            else (tokens.qrzUsername or "")
+        )
+        pwd = (
+            payload.qrzPassword.strip()
+            if payload and payload.qrzPassword
+            else (tokens.qrzPassword or "")
+        )
+        return await workspace.lookup_service.test_qrz_login(user, pwd)
+
+    # ─── NWS Route / Area Weather Alerts ─────────────────────────────────────
+
+    @app.get("/api/nws/plan-alerts")
+    async def api_nws_plan_alerts(states: str = "") -> dict[str, Any]:
+        if states.strip():
+            target_states = [s.strip().upper() for s in states.split(",") if s.strip()]
+        else:
+            target_states = list((workspace.session.summary_data or {}).get("states") or [])
+        return await workspace.nws_service.get_alerts_for_states(target_states)
 
     # ─── Geolocation ─────────────────────────────────────────────────────────
 
@@ -1049,6 +1457,7 @@ def create_app() -> FastAPI:
         workspace.session.map_data = map_data
         workspace.session.summary_data = summary
         workspace.session.notices = notices
+        workspace.save_session()
 
         return _serialize_active_plan(
             message=f"Assembled {codeplug.total_channels} channels for {radio_spec.brand} {radio_spec.model}."
@@ -1176,6 +1585,7 @@ def create_app() -> FastAPI:
         band_counts, map_channels = _compute_band_counts_and_map_channels(updated_codeplug, active_bands)
         workspace.session.summary_data["band_counts"] = band_counts
         workspace.session.map_data["channels"] = map_channels
+        workspace.save_session()
 
         end_slot = spec.startChannel + updated_codeplug.total_channels - 1 if updated_codeplug.total_channels else spec.startChannel
         return _serialize_active_plan(
@@ -1226,6 +1636,7 @@ def create_app() -> FastAPI:
         band_counts, map_channels = _compute_band_counts_and_map_channels(updated, recipe.radio_target.bands)
         workspace.session.summary_data["band_counts"] = band_counts
         workspace.session.map_data["channels"] = map_channels
+        workspace.save_session()
 
         return _serialize_active_plan(
             message=f"Deleted {len(deleted_channels)} channel(s). Renumbered {updated.total_channels} remaining channel(s)."
@@ -1252,6 +1663,7 @@ def create_app() -> FastAPI:
         band_counts, map_channels = _compute_band_counts_and_map_channels(restored, recipe.radio_target.bands)
         workspace.session.summary_data["band_counts"] = band_counts
         workspace.session.map_data["channels"] = map_channels
+        workspace.save_session()
 
         return _serialize_active_plan(message=f"Undid: {snap.label} ({restored.total_channels} channels).")
 
@@ -1391,8 +1803,41 @@ def create_app() -> FastAPI:
         band_counts, map_channels = _compute_band_counts_and_map_channels(updated_cp, recipe.radio_target.bands)
         workspace.session.summary_data["band_counts"] = band_counts
         workspace.session.map_data["channels"] = map_channels
+        workspace.save_session()
 
         return _serialize_active_plan(message=f"Updated channel slot #{slot} ({edited.name}).")
+
+    @app.get("/api/codeplug/channels/{slot}/net-logger-preset")
+    async def api_channel_net_logger_preset(slot: int) -> dict[str, Any]:
+        """Export a single codeplug channel as a W5CDN Net Logger repeater preset JSON object."""
+        codeplug = workspace.session.codeplug
+        if not codeplug:
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
+        ch = next((c for c in codeplug.channels if c.number == slot), None)
+        if ch is None:
+            raise HTTPException(status_code=404, detail=f"Channel slot {slot} not found.")
+
+        tone_parts: list[str] = []
+        if not ch.is_simplex and ch.offsetDir in {"+", "-"} and ch.offset > 0:
+            tone_parts.append(f"{ch.offsetDir}{ch.offset:.3f} MHz")
+        if ch.toneMode in {"Tone", "TSQL"} and ch.ctcss and ch.ctcss != "None":
+            tone_parts.append(f"PL {ch.ctcss}")
+        elif ch.toneMode in {"DCS", "DTCS"} and ch.dcs and ch.dcs != "None":
+            tone_parts.append(f"DCS {ch.dcs}")
+        elif ch.is_simplex:
+            tone_parts.append("Simplex")
+
+        location = f"{ch.city}, {ch.state}".strip(", ") if (ch.city or ch.state) else ""
+        preset = {
+            "name": ch.name,
+            "frequency": f"{ch.rxFreq:.4f} MHz",
+            "band": ch.band,
+            "mode": ch.mode,
+            "tone_offset": " / ".join(tone_parts) or "CSQ",
+            "callsign": ch.callsign or "",
+            "location": location,
+        }
+        return {"slot": slot, "preset": preset}
 
     @app.post("/api/codeplug/expand-dmr")
     async def api_expand_dmr() -> dict[str, Any]:
@@ -1418,6 +1863,7 @@ def create_app() -> FastAPI:
             band_counts, map_channels = _compute_band_counts_and_map_channels(updated, recipe.radio_target.bands)
             workspace.session.summary_data["band_counts"] = band_counts
             workspace.session.map_data["channels"] = map_channels
+            workspace.save_session()
             msg = f"Expanded {dmr_count} DMR channel(s) across standard Talkgroups ({updated.total_channels} total)."
         else:
             msg = "No DMR channels present in current codeplug."
@@ -1614,6 +2060,14 @@ def create_app() -> FastAPI:
             if fname.endswith((".yaml", ".yml")):
                 data = parse_yaml_text(payload.content)
                 new_tpl = PresetTemplateFile.model_validate(data)
+            elif fname.endswith(".json") or payload.content.lstrip().startswith(("{", "[")):
+                new_tpl = _parse_net_logger_json_to_template(
+                    clean_id=clean_id,
+                    name=payload.name,
+                    description=payload.description,
+                    tag_text=payload.tagText or "NETLOG",
+                    raw_json=payload.content,
+                )
             else:
                 new_tpl = PresetTemplateFile(
                     id=clean_id,
@@ -1630,6 +2084,29 @@ def create_app() -> FastAPI:
             "imported": True,
             "id": new_tpl.id,
             "message": f"Imported template '{new_tpl.name}' ({len(new_tpl.channels)} channels).",
+            "templates": _serialize_templates(),
+        }
+
+    @app.post("/api/templates/import-net-logger")
+    async def api_import_net_logger_template(payload: NetLoggerImportRequest) -> dict[str, Any]:
+        clean_id = DataSanitizer.sanitize_filename(payload.id.strip().lower()).replace("-", "_")
+        if not clean_id:
+            raise HTTPException(status_code=400, detail="Template ID slug is required.")
+        try:
+            new_tpl = _parse_net_logger_json_to_template(
+                clean_id=clean_id,
+                name=payload.name,
+                description=payload.description,
+                tag_text=payload.tagText,
+                raw_json=payload.json_text,
+            )
+        except (ValueError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to parse Net Logger JSON: {exc}") from exc
+        workspace.template_mgr.save_core_template(new_tpl)
+        return {
+            "imported": True,
+            "id": new_tpl.id,
+            "message": f"Imported {len(new_tpl.channels)} Net Logger preset(s) into template '{new_tpl.name}'.",
             "templates": _serialize_templates(),
         }
 
@@ -1703,6 +2180,80 @@ def create_app() -> FastAPI:
         if not deleted:
             raise HTTPException(status_code=404, detail=f"Custom user radio '{clean_id}' not found.")
         return {"deleted": True, "id": clean_id, "radios": _serialize_radios()}
+
+    # ─── Backup & Restore Archive API ────────────────────────────────────────
+
+    @app.get("/api/backup/export")
+    async def api_backup_export(include_tokens: bool = False) -> Response:
+        archive = _create_config_backup_zip_bytes(include_tokens=include_tokens)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+        fname = f"radioplanner_backup_{stamp}.zip"
+        return Response(
+            content=archive,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
+    @app.post("/api/backup/restore")
+    async def api_backup_restore(request: Request) -> dict[str, Any]:
+        raw = await request.body()
+        res = _restore_config_backup_zip_bytes(raw)
+        res["preferences"] = _serialize_preferences()
+        res["radios"] = _serialize_radios()
+        res["templates"] = _serialize_templates()
+        res["recipes"] = _serialize_recipes()
+        return res
+
+    # ─── Self-Update API ─────────────────────────────────────────────────────
+
+    @app.get("/api/update/check")
+    async def api_update_check() -> dict[str, Any]:
+        return await check_for_update(current_version=APP_VERSION, data_dir=BASE_DIR)
+
+    @app.post("/api/update/apply")
+    async def api_update_apply() -> dict[str, Any]:
+        mode = detect_install_mode(BASE_DIR)
+        config_home = get_radioplanner_home()
+        if mode == "git":
+            try:
+                res = apply_git_update(BASE_DIR, config_home)
+            except UpdateError as exc:
+                raise HTTPException(status_code=400, detail=safe_error_message(exc)) from exc
+            shutdown_manager.schedule(delay_seconds=1.5)
+            return res
+
+        if mode == "standalone":
+            info = await check_for_update(current_version=APP_VERSION, data_dir=BASE_DIR)
+            if not info.get("update_available"):
+                return {
+                    "ok": True,
+                    "mode": "standalone",
+                    "restart_required": False,
+                    "message": info.get("message") or "Already up to date.",
+                }
+            if not info.get("asset_url") or not info.get("checksum_url"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="No matching standalone bundle or SHA256SUMS.txt found on the latest GitHub release.",
+                )
+            try:
+                res = await apply_standalone_update(
+                    data_dir=BASE_DIR,
+                    config_home=config_home,
+                    asset_name=str(info["asset_name"]),
+                    asset_url=str(info["asset_url"]),
+                    checksum_url=str(info["checksum_url"]),
+                    current_version=APP_VERSION,
+                )
+            except UpdateError as exc:
+                raise HTTPException(status_code=400, detail=safe_error_message(exc)) from exc
+            shutdown_manager.schedule(delay_seconds=1.2)
+            return res
+
+        raise HTTPException(
+            status_code=400,
+            detail="Automatic self-update is only available for Git checkouts or Standalone bundles.",
+        )
 
     return app
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -12,7 +13,17 @@ from core.config.yaml_loader import load_yaml_file
 from core.models.channel import RadioChannel
 from core.models.template import PresetTemplateFile
 
-APP_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "resources" / "templates"
+
+def _resolve_app_templates_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", str(Path(sys.executable).resolve().parent)))
+        frozen_dir = meipass / "core" / "resources" / "templates"
+        if frozen_dir.is_dir():
+            return frozen_dir
+    return Path(__file__).resolve().parent.parent / "resources" / "templates"
+
+
+APP_TEMPLATES_DIR = _resolve_app_templates_dir()
 
 
 class TemplateManager:

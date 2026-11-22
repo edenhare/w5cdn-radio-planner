@@ -8,8 +8,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_SOURCE_FILES = [
     PROJECT_ROOT / "src" / "web" / "app.py",
+    PROJECT_ROOT / "src" / "web" / "desktop.py",
     PROJECT_ROOT / "src" / "web" / "security.py",
     PROJECT_ROOT / "src" / "web" / "state.py",
+    PROJECT_ROOT / "src" / "core" / "updater.py",
+    PROJECT_ROOT / "src" / "core" / "providers" / "callsign_lookup.py",
+    PROJECT_ROOT / "src" / "core" / "providers" / "nws.py",
+    PROJECT_ROOT / "scripts" / "build_standalone.py",
+    PROJECT_ROOT / "scripts" / "generate_changelog.py",
 ]
 
 

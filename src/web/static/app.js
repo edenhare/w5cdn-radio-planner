@@ -144,8 +144,14 @@
       repeaterBookApiKeySet: false,
       radioIdUsername: "",
       radioIdApiKeySet: false,
+      qrzUsername: "",
+      qrzConfigured: false,
       has_api_key: false,
     },
+    appVersion: "0.2.0",
+    installMode: "source",
+    updateInfo: null,
+    nwsBriefingText: "",
     draftTheme: "shack-dark",
     radios: [],
     templates: [],
@@ -228,7 +234,17 @@
     $("clockLocal").textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   }
 
-  function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
+  async function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
+    const ext = (filename.split(".").pop() || "txt").toLowerCase();
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_text_file === "function") {
+      try {
+        const res = await window.pywebview.api.save_text_file(filename, content, ext);
+        if (res && res.saved) return true;
+        if (res && res.cancelled) return false;
+      } catch {
+        // fallback to browser download below
+      }
+    }
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -238,6 +254,7 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -913,6 +930,7 @@
           <td class="col-act">
             <div class="row-actions">
               <button type="button" class="btn btn-ghost btn-xs" data-row-action="edit" title="Edit channel (E)">Edit</button>
+              <button type="button" class="btn btn-ghost btn-xs" data-row-action="net-logger" title="Copy W5CDN Net Logger repeater preset JSON">NetLog</button>
               ${hasCoords ? `<button type="button" class="btn btn-ghost btn-xs" data-row-action="locate" title="Locate on map (L)">📍</button>` : ""}
               <button type="button" class="btn btn-ghost btn-xs" data-row-action="delete" title="Delete channel (Del)">✕</button>
             </div>
@@ -1595,6 +1613,7 @@
     $("prefTabAppearance").classList.toggle("hidden", tabName !== "appearance");
     $("prefTabOperator").classList.toggle("hidden", tabName !== "operator");
     $("prefTabApi").classList.toggle("hidden", tabName !== "api");
+    $("prefTabSystem").classList.toggle("hidden", tabName !== "system");
   }
 
   function updateSliderTip(sliderEl, tipEl, valEl) {
@@ -1652,6 +1671,13 @@
     $("prefRadioIdKey").value = "";
     $("prefRadioIdKeyStatus").textContent = state.prefs.radioIdApiKeySet ? "Configured" : "Not Set";
     $("prefClearRadioIdKey").checked = false;
+    $("prefQrzUser").value = state.prefs.qrzUsername || "";
+    $("prefQrzPass").value = "";
+    $("prefQrzStatus").textContent = state.prefs.qrzConfigured ? "Configured" : "Not Set";
+    $("prefClearQrzPass").checked = false;
+    $("qrzTestBanner").classList.add("hidden");
+    $("updateVersionPill").textContent = `v${state.appVersion}`;
+    $("updateModePill").textContent = state.installMode || "source";
 
     $("cachedStatesCount").textContent = String(state.cachedStates.length);
     $("cachedStatesList").innerHTML = state.cachedStates.length
@@ -1676,6 +1702,222 @@
   }
 
   // -------------------------------------------------------------------------
+  // Ham-Suite Extensions: Callsign Lookup, NWS Weather, Net Logger, Backup & Updates
+  // -------------------------------------------------------------------------
+  async function lookupCallsign(callsign) {
+    const clean = String(callsign || "").trim().toUpperCase();
+    if (!clean) {
+      toast("Enter a callsign first", "error");
+      return null;
+    }
+    try {
+      return await api(`/api/lookup/${encodeURIComponent(clean)}`);
+    } catch (err) {
+      toast(`Lookup failed: ${err.message}`, "error");
+      return null;
+    }
+  }
+
+  async function copyChannelNetLoggerPreset(slot) {
+    try {
+      const data = await api(`/api/codeplug/channels/${slot}/net-logger-preset`);
+      const jsonText = JSON.stringify(data.preset, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonText);
+        toast(`Copied Net Logger preset JSON for #${slot} (${data.preset.name})`, "success");
+      } else {
+        await downloadTextFile(`net_logger_preset_ch${slot}.json`, jsonText, "application/json;charset=utf-8");
+        toast(`Saved Net Logger preset JSON for #${slot}`, "success");
+      }
+    } catch (err) {
+      toast(`Net Logger preset export failed: ${err.message}`, "error");
+    }
+  }
+
+  async function fetchNwsPlanAlerts() {
+    const listEl = $("nwsAlertsList");
+    $("nwsMetaLine").textContent = "Querying api.weather.gov...";
+    listEl.innerHTML = `<div class="table-empty">Loading active National Weather Service alerts...</div>`;
+    try {
+      const data = await api("/api/nws/plan-alerts");
+      state.nwsBriefingText = data.briefing_text || "";
+      const states = data.states || [];
+      $("nwsStatesPill").textContent = states.length ? states.join(", ") : "NONE";
+      if (!data.online) {
+        $("nwsMetaLine").textContent = data.error || "Offline / NWS unreachable";
+        listEl.innerHTML = `<div class="notice-banner warning">${escHtml(data.error || "Could not reach api.weather.gov.")}</div>`;
+        return;
+      }
+      $("nwsMetaLine").textContent = `${data.count || 0} active alert(s) • Updated ${data.fetched_at || ""}`;
+      if (!data.alerts || !data.alerts.length) {
+        listEl.innerHTML = `<div class="nws-all-clear">✔ ALL CLEAR — No active NWS watches, warnings, or advisories for ${escHtml(states.join(", ") || "this area")}.</div>`;
+        return;
+      }
+      listEl.innerHTML = data.alerts
+        .map((a) => {
+          const sevCls = `nws-sev-${String(a.severity || "unknown").toLowerCase()}`;
+          return `
+            <article class="nws-alert-card ${escHtml(sevCls)}">
+              <div class="plan-header-row">
+                <span class="nws-alert-title">${escHtml(a.event)}</span>
+                <span class="pill mono">${escHtml(a.severity)}</span>
+              </div>
+              ${a.headline ? `<div class="nws-alert-meta">${escHtml(a.headline)}</div>` : ""}
+              ${a.area ? `<div class="nws-alert-meta"><strong>Areas:</strong> ${escHtml(a.area)}</div>` : ""}
+              ${a.expires ? `<div class="nws-alert-meta mono">Expires: ${escHtml(a.expires)}</div>` : ""}
+              ${a.description ? `<div class="nws-alert-body">${escHtml(a.description)}</div>` : ""}
+            </article>`;
+        })
+        .join("");
+    } catch (err) {
+      $("nwsMetaLine").textContent = `Error: ${err.message}`;
+      listEl.innerHTML = `<div class="notice-banner warning">${escHtml(err.message)}</div>`;
+    }
+  }
+
+  function openNwsWeatherModal() {
+    $("nwsAlertsBackdrop").classList.remove("hidden");
+    fetchNwsPlanAlerts();
+  }
+
+  async function testQrzCredentials() {
+    const banner = $("qrzTestBanner");
+    banner.className = "qrz-test-banner";
+    banner.textContent = "Testing QRZ XML login...";
+    banner.classList.remove("hidden");
+    try {
+      const res = await api("/api/preferences/test-qrz", {
+        method: "POST",
+        body: JSON.stringify({
+          qrzUsername: $("prefQrzUser").value.trim() || null,
+          qrzPassword: $("prefQrzPass").value.trim() || null,
+        }),
+      });
+      banner.className = `qrz-test-banner ${res.ok ? "ok" : "err"}`;
+      banner.textContent = res.message || (res.ok ? "QRZ login OK" : "QRZ login failed");
+    } catch (err) {
+      banner.className = "qrz-test-banner err";
+      banner.textContent = `QRZ test failed: ${err.message}`;
+    }
+  }
+
+  async function downloadConfigBackup() {
+    const includeTokens = $("chkBackupIncludeTokens").checked;
+    try {
+      const resp = await fetch(`/api/backup/export?include_tokens=${includeTokens ? "true" : "false"}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const cd = resp.headers.get("content-disposition") || "";
+      const match = cd.match(/filename="([^"]+)"/);
+      const fname = match ? match[1] : "radioplanner_backup.zip";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`Downloaded backup archive ${fname}`, "success");
+    } catch (err) {
+      toast(`Backup export failed: ${err.message}`, "error");
+    }
+  }
+
+  async function restoreConfigBackup(file) {
+    if (!file) return;
+    if (!window.confirm(`Restore RadioPlanner configuration from "${file.name}"? A pre-restore snapshot will be saved automatically.`)) {
+      return;
+    }
+    try {
+      const buf = await file.arrayBuffer();
+      const resp = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/zip" },
+        body: buf,
+      });
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.detail || `HTTP ${resp.status}`);
+      if (body.preferences) applySavedPrefs(body.preferences);
+      if (body.radios) state.radios = body.radios;
+      if (body.templates) state.templates = body.templates;
+      if (body.recipes) state.recipes = body.recipes;
+      renderTemplatesPanel();
+      renderRadiosPanel();
+      renderRecipesList();
+      toast(body.message || "Configuration restored", "success");
+    } catch (err) {
+      toast(`Backup restore failed: ${err.message}`, "error");
+    }
+  }
+
+  function renderUpdateState(info) {
+    state.updateInfo = info;
+    if (!info) return;
+    $("updateVersionPill").textContent = `v${info.current_version || state.appVersion}`;
+    $("updateModePill").textContent = info.install_mode || state.installMode;
+    $("updateStatusText").textContent = info.message || "Update status checked.";
+
+    const link = $("updateReleaseLink");
+    if (info.release_url) {
+      link.href = info.release_url;
+      link.classList.remove("hidden");
+    } else {
+      link.classList.add("hidden");
+    }
+
+    const notes = $("updateReleaseNotes");
+    if (info.release_notes) {
+      notes.textContent = info.release_notes;
+      notes.classList.remove("hidden");
+    } else {
+      notes.classList.add("hidden");
+    }
+
+    const canInstall = Boolean(info.update_available && info.can_self_update);
+    $("btnApplyUpdate").classList.toggle("hidden", !canInstall);
+    const banner = $("btnUpdateBanner");
+    if (info.update_available) {
+      banner.textContent = `↑ v${info.latest_version} Available`;
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
+  }
+
+  async function checkAppUpdates(quiet = false) {
+    if (!quiet) $("updateStatusText").textContent = "Checking GitHub Releases...";
+    try {
+      const info = await api("/api/update/check");
+      renderUpdateState(info);
+      if (!quiet) toast(info.message || "Update check complete", info.update_available ? "success" : "info");
+    } catch (err) {
+      if (!quiet) {
+        $("updateStatusText").textContent = `Update check failed: ${err.message}`;
+        toast(`Update check failed: ${err.message}`, "error");
+      }
+    }
+  }
+
+  async function applyAppUpdate() {
+    if (!window.confirm("Install the latest W5CDN RadioPlanner update now? A pre-update configuration backup will be saved first.")) {
+      return;
+    }
+    $("btnApplyUpdate").disabled = true;
+    $("updateStatusText").textContent = "Applying update & verifying integrity...";
+    try {
+      const res = await api("/api/update/apply", { method: "POST" });
+      $("updateStatusText").textContent = res.message || "Update applied. Restarting...";
+      toast(res.message || "Update applied", "success");
+    } catch (err) {
+      $("updateStatusText").textContent = `Update failed: ${err.message}`;
+      toast(`Update failed: ${err.message}`, "error");
+    } finally {
+      $("btnApplyUpdate").disabled = false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Modal Management & Keyboard Navigation Helpers
   // -------------------------------------------------------------------------
   const ALL_OVERLAY_IDS = [
@@ -1687,6 +1929,7 @@
     "templateImportBackdrop",
     "radioEditorBackdrop",
     "saveRecipeBackdrop",
+    "nwsAlertsBackdrop",
     "shortcutsBackdrop",
     "recipesDrawerBackdrop",
   ];
@@ -1772,6 +2015,7 @@
     // Topbar
     $("operatorCallBadge").addEventListener("click", () => openPreferencesModal("operator"));
     $("apiStatusPill").addEventListener("click", () => openPreferencesModal("api"));
+    $("btnUpdateBanner").addEventListener("click", () => openPreferencesModal("system"));
     $("vfoCluster").addEventListener("click", () => $("targetRadioSelect").focus());
     $("btnTopAssemble").addEventListener("click", assemblePlan);
     $("btnOpenPanels").addEventListener("click", () => $("panelsModalBackdrop").classList.remove("hidden"));
@@ -1913,6 +2157,7 @@
     $("targetBandsRow").addEventListener("change", () => updateCodeplugTarget(false));
 
     // Active Plan Actions
+    $("btnPlanWeather").addEventListener("click", openNwsWeatherModal);
     $("btnPlanExpandDmr").addEventListener("click", expandDmrTalkgroups);
     $("btnPlanReport").addEventListener("click", openPlanReportModal);
     $("btnPlanExportCsv").addEventListener("click", exportActiveCsv);
@@ -2007,6 +2252,7 @@
       if (act) {
         const action = act.dataset.rowAction;
         if (action === "edit") openEditChannelModal(slot);
+        else if (action === "net-logger") copyChannelNetLoggerPreset(slot);
         else if (action === "locate") locateSlotOnMap(slot);
         else if (action === "delete") deleteSlots([slot]);
         return;
@@ -2025,6 +2271,18 @@
     $("editChName").addEventListener("input", updateEditChannelNameCounter);
     $("editChOffsetDir").addEventListener("change", syncEditChannelControls);
     $("editChToneMode").addEventListener("change", syncEditChannelControls);
+    $("btnEditLookupCall").addEventListener("click", async () => {
+      const res = await lookupCallsign($("editChCallsign").value);
+      if (res && res.found) {
+        if (res.city && !$("editChCity").value.trim()) $("editChCity").value = res.city;
+        if (res.state && !$("editChState").value.trim()) $("editChState").value = res.state;
+        const note = `${res.name}${res.grid ? ` [${res.grid}]` : ""}`.trim();
+        if (note && !$("editChComment").value.trim()) $("editChComment").value = note;
+        toast(`Found ${res.callsign}: ${res.name} (${res.qth || res.source})`, "success");
+      } else if (res) {
+        toast(res.error || `Callsign ${res.callsign || ""} not found`, "error");
+      }
+    });
     $("editChannelForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const slot = Number($("editChSlot").value);
@@ -2373,6 +2631,9 @@
             radioIdUsername: $("prefRadioIdUser").value.trim(),
             radioIdApiKey: $("prefRadioIdKey").value.trim() || null,
             clearRadioIdApiKey: $("prefClearRadioIdKey").checked,
+            qrzUsername: $("prefQrzUser").value.trim(),
+            qrzPassword: $("prefQrzPass").value.trim() || null,
+            clearQrzPassword: $("prefClearQrzPass").checked,
           }),
         });
         applySavedPrefs(res.preferences);
@@ -2384,8 +2645,46 @@
       }
     });
 
+    // Callsign Lookup, QRZ Test, NWS Weather, Backup & Updates Buttons
+    $("btnPrefLookupCall").addEventListener("click", async () => {
+      const res = await lookupCallsign($("prefCallsign").value);
+      if (res && res.found) {
+        if (res.callsign) $("prefCallsign").value = res.callsign;
+        if (res.name) $("prefOperatorName").value = res.name;
+        toast(`Found ${res.callsign}: ${res.name} (${res.source.toUpperCase()})`, "success");
+      } else if (res) {
+        toast(res.error || `Callsign not found`, "error");
+      }
+    });
+    $("btnTestQrz").addEventListener("click", testQrzCredentials);
+    $("btnDownloadBackup").addEventListener("click", downloadConfigBackup);
+    $("btnRestoreBackup").addEventListener("click", () => $("restoreBackupFile").click());
+    $("restoreBackupFile").addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) await restoreConfigBackup(file);
+    });
+    $("btnCheckUpdate").addEventListener("click", () => checkAppUpdates(false));
+    $("btnApplyUpdate").addEventListener("click", applyAppUpdate);
+    $("btnNwsRefresh").addEventListener("click", fetchNwsPlanAlerts);
+    $("btnNwsCopy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(state.nwsBriefingText || "");
+        toast("NWS weather briefing copied to clipboard", "success");
+      } catch {
+        toast("Could not access clipboard", "error");
+      }
+    });
+
+    // Notify local desktop/browser server when tab closes
+    window.addEventListener("pagehide", () => {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/client/unload");
+      }
+    });
+
     // Backdrop click-to-close on non-form info modals
-    ["panelsModalBackdrop", "planReportBackdrop", "shortcutsBackdrop"].forEach((id) => {
+    ["panelsModalBackdrop", "planReportBackdrop", "nwsAlertsBackdrop", "shortcutsBackdrop"].forEach((id) => {
       $(id).addEventListener("click", (e) => {
         if (e.target === $(id)) $(id).classList.add("hidden");
       });
@@ -2475,6 +2774,8 @@
 
     try {
       const cfg = await api("/api/config");
+      state.appVersion = cfg.version || "0.2.0";
+      state.installMode = cfg.install_mode || "source";
       state.radios = cfg.radios || [];
       state.templates = cfg.templates || [];
       state.cachedStates = cfg.cached_states || [];
@@ -2488,6 +2789,7 @@
       } else {
         ensureLeafletMap();
       }
+      checkAppUpdates(true);
     } catch (err) {
       toast(`Startup error: ${err.message}`, "error");
     }

@@ -188,3 +188,17 @@ def test_no_hardcoded_colors_outside_theme_definitions_and_all_9_themes_present(
     rgba_colors = re.findall(r"rgba?\([^)]+\)", non_theme_css)
     assert not hex_colors, f"Hardcoded hex colors outside theme blocks: {hex_colors}"
     assert not rgba_colors, f"Hardcoded rgb/rgba colors outside theme blocks: {rgba_colors}"
+
+
+def test_desktop_icons_manifest_and_linux_shell_script_line_endings() -> None:
+    """Verify PWA manifest, icon assets, and strict LF endings on Linux shell scripts."""
+    for rel in ("manifest.webmanifest", "icon.svg", "icon.png", "icon.ico"):
+        asset = STATIC_DIR / rel
+        assert asset.is_file() and asset.stat().st_size > 0, f"Missing or empty static asset: {asset}"
+
+    for script_rel in ("start.sh", "scripts/install_linux_desktop.sh"):
+        script_path = PROJECT_ROOT / script_rel
+        assert script_path.is_file(), f"Missing Linux script: {script_path}"
+        raw = script_path.read_bytes()
+        assert b"\r\n" not in raw, f"Linux script {script_rel} must use LF line endings, found CRLF"
+        assert raw.startswith(b"#!/usr/bin/env bash\n"), f"Linux script {script_rel} missing bash shebang"

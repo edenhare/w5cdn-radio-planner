@@ -35,7 +35,8 @@ def test_cockpit_shell_and_bootstrap_config():
     res_cfg = client.get("/api/config")
     assert res_cfg.status_code == 200
     cfg = res_cfg.json()
-    assert cfg["app_title"] == "RadioPlanner"
+    assert cfg["app_title"] == "W5CDN RadioPlanner"
+    assert cfg["install_mode"] in {"git", "source", "standalone"}
     assert len(cfg["radios"]) >= 5
     assert len(cfg["templates"]) >= 3
 
@@ -366,3 +367,172 @@ def test_bad_and_missing_api_requests():
     assert client.post("/api/plan/generate", json={"mode": "ROUTE_CORRIDOR", "waypoints": ["OnlyOne, TX"]}).status_code == 400
     assert client.get("/api/recipes/does_not_exist.yaml").status_code == 404
     assert client.patch("/api/codeplug/channels/99999", json={"name": "NOPE"}).status_code == 404
+
+
+def test_backup_restore_session_persistence_lookup_nws_and_net_logger_interop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify Backup/Restore zip, session persistence, Callsign lookup, NWS alerts, Net Logger interop & update API."""
+    import json
+    import zipfile
+
+    import httpx
+
+    from core.providers.callsign_lookup import CallsignLookupService
+    from core.providers.nws import NwsAlertsService
+    from web import app as web_app
+
+    rp_home = tmp_path / "rp_home"
+    monkeypatch.setenv("RADIOPLANNER_HOME", str(rp_home))
+    workspace.reload_all()
+
+    # 1. Persistent session save + reload roundtrip
+    gen = client.post(
+        "/api/plan/generate",
+        json={
+            "mode": "PROXIMITY_SEARCH",
+            "center_location": "Dallas, TX",
+            "radius_miles": 25.0,
+            "radio_id": "anytone_at778uv",
+        },
+    )
+    assert gen.status_code == 200
+    assert (rp_home / "session.json").is_file()
+    saved_count = gen.json()["codeplug"]["total_channels"]
+    workspace.session = workspace.session.__class__()
+    assert workspace.load_session() is True
+    assert workspace.session.codeplug is not None
+    assert workspace.session.codeplug.total_channels == saved_count
+
+    # 2. Net Logger repeater preset export from slot 0
+    nl_exp = client.get("/api/codeplug/channels/0/net-logger-preset")
+    assert nl_exp.status_code == 200
+    preset = nl_exp.json()["preset"]
+    assert "frequency" in preset and "MHz" in preset["frequency"]
+    assert "tone_offset" in preset
+
+    # 3. Import W5CDN Net Logger net_type_defaults JSON into a Preset Template
+    temp_app_dir = tmp_path / "core_tpl"
+    temp_user_dir = tmp_path / "user_tpl"
+    shutil.copytree(APP_TEMPLATES_DIR, temp_app_dir)
+    monkeypatch.setattr(
+        workspace,
+        "template_mgr",
+        TemplateManager(custom_templates_dir=temp_user_dir, app_templates_dir=temp_app_dir),
+    )
+    nl_json = json.dumps(
+        {
+            "net_type_defaults": {
+                "Skywarn": {"frequency": "146.940 MHz", "mode": "FM", "tone_offset": "-0.600 / PL 136.5"},
+                "Simplex": {"frequency": "146.520 MHz", "mode": "FM", "tone_offset": "Simplex"},
+            }
+        }
+    )
+    res_nl = client.post(
+        "/api/templates/import-net-logger",
+        json={"id": "w5cdn_nets", "name": "W5CDN Nets", "json_text": nl_json},
+    )
+    assert res_nl.status_code == 200
+    assert res_nl.json()["imported"] is True
+    assert any(t["id"] == "w5cdn_nets" and t["channelCount"] == 2 for t in res_nl.json()["templates"])
+
+    # 4. Callsign Lookup (QRZ XML + Callook fallback mocked)
+    def lookup_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "xmldata.qrz.com":
+            if "username" in request.url.params:
+                return httpx.Response(200, text="<QRZDatabase><Session><Key>abc123</Key></Session></QRZDatabase>")
+            return httpx.Response(
+                200,
+                text=(
+                    "<QRZDatabase><Callsign><call>W5CDN</call><fname>Eden</fname><name>Hare</name>"
+                    "<addr2>Tyler</addr2><state>TX</state><grid>EM22</grid><class>E</class></Callsign></QRZDatabase>"
+                ),
+            )
+        return httpx.Response(
+            200,
+            json={
+                "status": "VALID",
+                "name": "DOE, JANE",
+                "current": {"callsign": "K5TST", "operClass": "GENERAL"},
+                "address": {"line2": "DALLAS, TX 75201"},
+                "location": {"gridsquare": "EM12"},
+            },
+        )
+
+    monkeypatch.setattr(
+        workspace,
+        "lookup_service",
+        CallsignLookupService(client=httpx.AsyncClient(transport=httpx.MockTransport(lookup_handler))),
+    )
+    r_callook = client.get("/api/lookup/K5TST")
+    assert r_callook.status_code == 200
+    assert r_callook.json()["found"] is True
+    assert r_callook.json()["source"] == "callook"
+
+    r_qrz_test = client.post(
+        "/api/preferences/test-qrz",
+        json={"qrzUsername": "W5CDN", "qrzPassword": "secret"},
+    )
+    assert r_qrz_test.status_code == 200
+    assert r_qrz_test.json()["ok"] is True
+
+    # 5. NWS Route/Area Weather Alerts (mocked)
+    def nws_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "properties": {
+                            "id": "wx-1",
+                            "event": "Flood Watch",
+                            "severity": "Moderate",
+                            "headline": "Flood Watch in effect",
+                            "areaDesc": "Smith, TX",
+                            "description": "Heavy rainfall expected.",
+                            "expires": "2026-11-23T00:00:00Z",
+                        }
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr(
+        workspace,
+        "nws_service",
+        NwsAlertsService(client=httpx.AsyncClient(transport=httpx.MockTransport(nws_handler))),
+    )
+    r_nws = client.get("/api/nws/plan-alerts?states=TX,LA")
+    assert r_nws.status_code == 200
+    assert r_nws.json()["online"] is True
+    assert r_nws.json()["count"] == 1
+    assert "Flood Watch" in r_nws.json()["briefing_text"]
+
+    # 6. Backup export & restore roundtrip
+    client.put("/api/preferences", json={"callsign": "W5CDN", "colorTheme": "forest-eoc"})
+    r_bak = client.get("/api/backup/export?include_tokens=false")
+    assert r_bak.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(r_bak.content), "r") as zf:
+        names = set(zf.namelist())
+        assert "manifest.json" in names
+        assert "preferences.yaml" in names
+        assert "tokens" not in names
+
+    client.put("/api/preferences", json={"callsign": "K0TMP", "colorTheme": "daylight"})
+    r_res = client.post("/api/backup/restore", content=r_bak.content, headers={"Content-Type": "application/zip"})
+    assert r_res.status_code == 200
+    assert r_res.json()["restored"] is True
+    assert r_res.json()["preferences"]["callsign"] == "W5CDN"
+    assert r_res.json()["preferences"]["theme"] == "forest-eoc"
+
+    # 7. Unload & Update check endpoints
+    assert client.post("/api/client/unload").status_code == 200
+
+    async def _fake_update(**kwargs):
+        return {"online": True, "update_available": False, "current_version": web_app.APP_VERSION, "install_mode": "git"}
+
+    monkeypatch.setattr(web_app, "check_for_update", _fake_update)
+    r_upd = client.get("/api/update/check")
+    assert r_upd.status_code == 200
+    assert r_upd.json()["online"] is True

@@ -14,14 +14,14 @@ from core.config.yaml_loader import YamlDiagnosticError
 from core.managers.radio_manager import RadioManager
 from core.runner import RecipeRunner
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build command line argument parser."""
     parser = argparse.ArgumentParser(
         prog="radioplanner",
-        description="RadioPlanner - Travel Corridor and Proximity Radio Codeplug Generator",
+        description="W5CDN RadioPlanner - Travel Corridor and Proximity Radio Codeplug Generator",
     )
     parser.add_argument(
         "--config",
@@ -58,6 +58,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not automatically open the web browser on startup",
     )
     parser.add_argument(
+        "--app-window",
+        action="store_true",
+        help="Launch in a standalone chromeless Chrome/Edge window (no tabs or address bar)",
+    )
+    parser.add_argument(
+        "--chrome",
+        action="store_true",
+        help="Launch in a standalone chromeless Google Chrome window",
+    )
+    parser.add_argument(
+        "--app-browser",
+        default="",
+        help="Browser for chromeless app window: chrome, edge, auto, or path to executable",
+    )
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="Open in the default tabbed web browser instead of a standalone desktop window",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable WebView2 developer tools when running desktop wrapper",
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Start local server, verify / and /api/config respond 200, and exit",
+    )
+    parser.add_argument(
+        "--smoke-test-out",
+        default="",
+        help="Optional JSON file path for --smoke-test results",
+    )
+    parser.add_argument(
         "--version",
         "-v",
         action="version",
@@ -74,7 +109,7 @@ def main() -> int:
                 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
             if hasattr(sys.stderr, "reconfigure"):
                 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
+        except (OSError, ValueError):
             pass
 
     console = Console()
@@ -114,7 +149,7 @@ def main() -> int:
             except YamlDiagnosticError as err:
                 render_yaml_error(console, err)
                 return 1
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 console.print(f"[bold red]Error: {exc}[/bold red]")
                 return 1
 
@@ -135,11 +170,34 @@ def main() -> int:
             except YamlDiagnosticError as err:
                 render_yaml_error(console, err)
                 return 1
-            except Exception as exc:
+            except (OSError, ValueError, KeyError, RuntimeError) as exc:
                 console.print(f"[bold red]Execution error: {exc}[/bold red]")
                 return 1
 
-        # 4. Launch FastAPI + HTMX Web Studio (Default)
+        # 4. Delegate desktop/smoke-test flags directly to web.desktop
+        if args.smoke_test or args.app_window or args.chrome or args.app_browser:
+            from web.desktop import main as desktop_main
+
+            desktop_argv: list[str] = []
+            if args.app_window:
+                desktop_argv.append("--app-window")
+            if args.chrome:
+                desktop_argv.append("--chrome")
+            if args.app_browser:
+                desktop_argv.extend(["--app-browser", args.app_browser])
+            if args.browser:
+                desktop_argv.append("--browser")
+            if args.debug:
+                desktop_argv.append("--debug")
+            if args.port is not None:
+                desktop_argv.extend(["--port", str(args.port)])
+            if args.smoke_test:
+                desktop_argv.append("--smoke-test")
+            if args.smoke_test_out:
+                desktop_argv.extend(["--smoke-test-out", args.smoke_test_out])
+            return desktop_main(desktop_argv)
+
+        # 5. Launch FastAPI Cockpit Studio
         import os
         import socket
         import threading
@@ -158,7 +216,7 @@ def main() -> int:
         )
 
         url = f"http://{args.host}:{port}"
-        render_header(console, title="RadioPlanner", subtitle=f"FastAPI Web Studio — {url}")
+        render_header(console, title="RadioPlanner", subtitle=f"Cockpit Studio — {url}")
 
         # Smart single-instance check: if server is already listening on host:port, open browser and exit cleanly
         check_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host  # nosec B104
@@ -171,14 +229,22 @@ def main() -> int:
 
         if already_running:
             console.print(
-                f"\n[bold green]✔ RadioPlanner Web Studio is already running at:[/bold green] [bold cyan]{url}[/bold cyan]"
+                f"\n[bold green]✔ RadioPlanner Cockpit Studio is already running at:[/bold green] [bold cyan]{url}[/bold cyan]"
             )
             if not args.no_browser:
                 console.print("[dim]Opening browser tab to active RadioPlanner session...[/dim]\n")
                 webbrowser.open(url)
             return 0
 
-        console.print(f"\n[bold green]✔ Starting RadioPlanner Web Studio at:[/bold green] [bold cyan]{url}[/bold cyan]")
+        if not args.no_browser and not args.browser:
+            from web.desktop import main as desktop_main
+
+            desktop_argv = ["--port", str(port)]
+            if args.debug:
+                desktop_argv.append("--debug")
+            return desktop_main(desktop_argv)
+
+        console.print(f"\n[bold green]✔ Starting RadioPlanner Cockpit Studio at:[/bold green] [bold cyan]{url}[/bold cyan]")
         console.print("[dim]Press Ctrl+C to stop the server.[/dim]\n")
 
         if not args.no_browser:
