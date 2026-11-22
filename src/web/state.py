@@ -1,4 +1,4 @@
-"""Active workspace state manager for the FastAPI + HTMX web interface."""
+"""Active workspace state manager for the RadioPlanner Web Cockpit."""
 
 from __future__ import annotations
 
@@ -18,10 +18,23 @@ from core.providers.geocoding import GeocodingProvider
 from core.providers.radio_id import RadioIdProvider
 from core.providers.repeaterbook import RepeaterBookProvider
 
+MAX_UNDO_HISTORY = 20
+
+
+@dataclass
+class UndoSnapshot:
+    """Point-in-time snapshot of channel state for Undo Delete / Undo Edit operations."""
+
+    channels: list[RadioChannel]
+    raw_channels: list[RadioChannel]
+    primary_channels: list[RadioChannel]
+    deleted_keys: set[tuple[float, str, str]]
+    label: str = "Channel change"
+
 
 @dataclass
 class ActivePlanSession:
-    """Stores the most recently assembled plan and raw channels for instant HTMX updates and CSV export."""
+    """Stores the most recently assembled plan, undo stack, and map/summary telemetry."""
 
     recipe: RadioPlannerRecipe | None = None
     codeplug: Codeplug | None = None
@@ -31,6 +44,29 @@ class ActivePlanSession:
     deleted_keys: set[tuple[float, str, str]] = field(default_factory=set)
     map_data: dict[str, Any] = field(default_factory=dict)
     summary_data: dict[str, Any] = field(default_factory=dict)
+    notices: list[dict[str, str]] = field(default_factory=list)
+    undo_stack: list[UndoSnapshot] = field(default_factory=list)
+
+    def push_undo(self, label: str = "Channel deletion") -> None:
+        """Save current channel state onto the bounded undo stack."""
+        if not self.codeplug:
+            return
+        snap = UndoSnapshot(
+            channels=list(self.codeplug.channels),
+            raw_channels=list(self.raw_channels),
+            primary_channels=list(self.primary_channels),
+            deleted_keys=set(self.deleted_keys),
+            label=label,
+        )
+        self.undo_stack.append(snap)
+        if len(self.undo_stack) > MAX_UNDO_HISTORY:
+            self.undo_stack = self.undo_stack[-MAX_UNDO_HISTORY:]
+
+    def pop_undo(self) -> UndoSnapshot | None:
+        """Pop and return the most recent undo snapshot, if any."""
+        if not self.undo_stack:
+            return None
+        return self.undo_stack.pop()
 
 
 class WebWorkspace:

@@ -1,16 +1,16 @@
-"""FastAPI + HTMX Web Application for RadioPlanner."""
+"""FastAPI Pure JSON REST API + Offline Cockpit SPA for RadioPlanner."""
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field, ValidationError
 
 from cli.wizard.band_selector import (
     AVIATION_NAMING_FORMAT_OPTIONS,
@@ -24,7 +24,7 @@ from core.config.recipe import (
     RadioPlannerRecipe,
     RadioTargetConfig,
 )
-from core.config.yaml_loader import parse_yaml_text
+from core.config.yaml_loader import YamlDiagnosticError, parse_yaml_text
 from core.engines.aviation import AviationEngine
 from core.engines.proximity import ProximityEngine
 from core.engines.route_corridor import RouteCorridorEngine
@@ -32,6 +32,7 @@ from core.engines.sequence import SequenceOrganizer
 from core.exporters import export_codeplug, get_exporter
 from core.models.channel import RadioChannel
 from core.models.codeplug import Codeplug
+from core.models.preferences import sanitize_panel_layout
 from core.models.radio_spec import TargetRadioSpec
 from core.models.template import PresetTemplateFile, TemplateChannelItem
 from core.providers.repeaterbook import (
@@ -40,11 +41,14 @@ from core.providers.repeaterbook import (
 )
 from core.sanitizers.condenser import NameCondenser
 from core.sanitizers.sanitizer import DataSanitizer
+from web.security import clean_single_line, safe_child_path, security_middleware
 from web.state import workspace
 
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+logger = logging.getLogger("radioplanner.web")
+
+APP_VERSION = "0.2.0"
+APP_TITLE = "RadioPlanner"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 BAND_COLORS: dict[str, str] = {
     "10m": "#f97316",
@@ -59,15 +63,155 @@ BAND_COLORS: dict[str, str] = {
 }
 
 RING_COLORS: list[str] = [
-    "#10b981",  # Ring 1: Emerald
-    "#06b6d4",  # Ring 2: Cyan
-    "#3b82f6",  # Ring 3: Blue
-    "#a855f7",  # Ring 4: Purple
-    "#f59e0b",  # Ring 5: Amber
-    "#f43f5e",  # Ring 6: Rose
-    "#ec4899",  # Ring 7: Pink
-    "#84cc16",  # Ring 8: Lime
+    "#10b981",
+    "#06b6d4",
+    "#3b82f6",
+    "#a855f7",
+    "#f59e0b",
+    "#f43f5e",
+    "#ec4899",
+    "#84cc16",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Request Schemas
+# ---------------------------------------------------------------------------
+
+
+class PlanGenerateRequest(BaseModel):
+    mode: str = "ROUTE_CORRIDOR"
+    plan_name: str = ""
+    plan_description: str = ""
+    waypoints: list[str] = Field(default_factory=lambda: ["Tyler, TX", "Shreveport, LA", "Jackson, MS"])
+    corridor_width: float = Field(default=25.0, ge=1.0, le=200.0)
+    center_location: str = "Dallas, TX"
+    radius_miles: float = Field(default=50.0, ge=1.0, le=300.0)
+    include_simplex: bool = True
+    repeater_access: list[str] = Field(default_factory=lambda: ["OPEN"])
+    sequence_order: list[str] = Field(default_factory=list)
+    radio_id: str | None = None
+    bands: list[str] = Field(default_factory=list)
+    naming_format: str = ""
+
+
+class CodeplugUpdateRequest(BaseModel):
+    radio_id: str
+    naming_format: str = ""
+    bands: list[str] = Field(default_factory=list)
+    include_gmrs_std: bool = False
+    radio_changed: bool = False
+
+
+class DeleteChannelsRequest(BaseModel):
+    slots: list[int] = Field(default_factory=list)
+
+
+class ChannelEditRequest(BaseModel):
+    name: str | None = None
+    callsign: str | None = None
+    rxFreq: float | None = Field(default=None, gt=0.0, lt=3000.0)
+    offsetDir: str | None = None
+    offset: float | None = Field(default=None, ge=0.0, lt=100.0)
+    mode: str | None = None
+    power: str | None = None
+    toneMode: str | None = None
+    ctcss: str | None = None
+    dcs: str | None = None
+    city: str | None = None
+    state: str | None = None
+    comment: str | None = None
+
+
+class ExportCsvRequest(BaseModel):
+    programmer_type: str = "CHIRP"
+    filename: str = "codeplug.csv"
+
+
+class RecipeSaveRequest(BaseModel):
+    name: str = "Saved_Plan"
+    description: str = ""
+
+
+class RecipeUploadRequest(BaseModel):
+    filename: str = "uploaded_recipe.yaml"
+    yaml_text: str
+
+
+class TemplateChannelPayload(BaseModel):
+    name: str
+    rxFreq: float = Field(gt=0.0, lt=3000.0)
+    offsetDir: str = "off"
+    offset: float = Field(default=0.0, ge=0.0, lt=100.0)
+    mode: str = "FM"
+    power: str = "High"
+    toneMode: str = "None"
+    toneVal: str = "None"
+    comment: str = ""
+
+
+class TemplateSaveRequest(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    tagText: str = "PRESET"
+    tagColorHex: str = "#00BCD4"
+    channels: list[TemplateChannelPayload] = Field(default_factory=list)
+
+
+class TemplateImportRequest(BaseModel):
+    id: str
+    name: str
+    tagText: str = "CUSTOM"
+    description: str = ""
+    filename: str = "imported.csv"
+    content: str
+
+
+class RadioSaveRequest(BaseModel):
+    id: str
+    brand: str
+    model: str
+    description: str = ""
+    startChannel: int = Field(default=1, ge=0, le=1)
+    maxChannels: int = Field(default=128, ge=1, le=10000)
+    maxNameLength: int = Field(default=8, ge=1, le=32)
+    programmerType: str = "RT_SYSTEMS"
+    supportedBands: list[str] = Field(default_factory=lambda: ["2m", "70cm", "WX"])
+    supportedModes: list[str] = Field(default_factory=lambda: ["FM", "AM"])
+    allowDots: bool = True
+    allowSpaces: bool = True
+
+
+class PreferencesUpdateRequest(BaseModel):
+    callsign: str | None = None
+    operatorName: str | None = None
+    primaryDmrId: str | None = None
+    defaultRadioId: str | None = None
+    channelNamingFormat: str | None = None
+    distanceUnit: str | None = None
+    repeaterMaxAgeDays: int | None = Field(default=None, ge=1, le=365)
+    webPort: int | None = Field(default=None, ge=1, le=65535)
+    colorTheme: str | None = None
+    fontFamily: str | None = None
+    monoFont: str | None = None
+    uiFontSize: int | None = Field(default=None, ge=11, le=22)
+    lcdFontSize: int | None = Field(default=None, ge=12, le=26)
+    panelLayout: dict[str, Any] | None = None
+    repeaterBookApiKey: str | None = None
+    clearRepeaterBookApiKey: bool = False
+    radioIdUsername: str | None = None
+    radioIdApiKey: str | None = None
+    clearRadioIdApiKey: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Serialization & Domain Helpers
+# ---------------------------------------------------------------------------
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _compute_band_counts_and_map_channels(
@@ -101,18 +245,6 @@ def _compute_band_counts_and_map_channels(
                 }
             )
     return counts, map_channels
-
-
-def _base_context(request: Request, active_nav: str = "ROUTE_CORRIDOR") -> dict[str, Any]:
-    """Build standard template context shared across all views."""
-    return {
-        "request": request,
-        "active_nav": active_nav,
-        "prefs": workspace.prefs_mgr.preferences,
-        "tokens": workspace.prefs_mgr.tokens,
-        "has_api_key": workspace.repeater_provider.has_api_key(),
-        "all_radios": workspace.radio_mgr.list_radios(),
-    }
 
 
 def _build_naming_previews(spec: TargetRadioSpec, mode: str = "ROUTE_CORRIDOR") -> list[dict[str, str]]:
@@ -159,53 +291,6 @@ def _build_naming_previews(spec: TargetRadioSpec, mode: str = "ROUTE_CORRIDOR") 
     ]
 
 
-def _build_sequence_blocks(
-    sequence_keys: list[str],
-    mode: str = "ROUTE_CORRIDOR",
-) -> list[dict[str, Any]]:
-    """Hydrate sequence keys into displayable block descriptors."""
-    primary_map = {
-        "ROUTE_CORRIDOR": ("ROUTE_PLAN", "Highway Route Corridor Repeaters", "Primary Route"),
-        "PROXIMITY_SEARCH": ("PROXIMITY_PLAN", "Radial Proximity Ring Repeaters", "Primary Rings"),
-        "AVIATION_PLANNER": ("AVIATION_BLOCK", "Local Airport Aviation Channels", "Primary Aviation"),
-    }
-    prim_key, prim_title, prim_badge = primary_map.get(mode, primary_map["ROUTE_CORRIDOR"])
-
-    blocks: list[dict[str, Any]] = []
-    for key in sequence_keys:
-        if key in {"ROUTE_PLAN", "PROXIMITY_PLAN", "AVIATION_BLOCK"}:
-            blocks.append(
-                {
-                    "key": prim_key,
-                    "title": prim_title,
-                    "badge": prim_badge,
-                    "is_primary": True,
-                }
-            )
-        elif key.startswith("TEMPLATE:"):
-            tpl_id = key.split(":", 1)[1]
-            if workspace.template_mgr.has_template(tpl_id):
-                tpl = workspace.template_mgr.get_template(tpl_id)
-                blocks.append(
-                    {
-                        "key": key,
-                        "title": tpl.name,
-                        "badge": tpl.tagText,
-                        "is_primary": False,
-                    }
-                )
-            else:
-                blocks.append(
-                    {
-                        "key": key,
-                        "title": f"Template ({tpl_id})",
-                        "badge": "TEMPLATE",
-                        "is_primary": False,
-                    }
-                )
-    return blocks
-
-
 def _default_export_filename(recipe: RadioPlannerRecipe, spec: TargetRadioSpec) -> str:
     date_str = datetime.now().strftime("%m%d%y")
     prog = (recipe.radio_target.programmer_format or spec.programmerType or "RT_SYSTEMS").lower()
@@ -221,7 +306,11 @@ def _smart_default_naming(spec: TargetRadioSpec, mode: str) -> str:
     return getattr(workspace.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ") or "CITY_FREQ"
 
 
-def _default_bands_for_radio(spec: TargetRadioSpec, mode: str, sequence_order: list[str] | None = None) -> list[str]:
+def _default_bands_for_radio(
+    spec: TargetRadioSpec,
+    mode: str,
+    sequence_order: list[str] | None = None,
+) -> list[str]:
     """Return default active frequency bands for a target radio and operating mode."""
     if mode.upper() == "AVIATION_PLANNER":
         has_templates = any(k.startswith("TEMPLATE:") for k in (sequence_order or []))
@@ -230,181 +319,390 @@ def _default_bands_for_radio(spec: TargetRadioSpec, mode: str, sequence_order: l
     return non_air if non_air else list(spec.supportedBands)
 
 
+def _serialize_channel(ch: RadioChannel) -> dict[str, Any]:
+    data = ch.model_dump()
+    data["band"] = ch.band
+    data["is_simplex"] = ch.is_simplex
+    return data
+
+
+def _serialize_preferences() -> dict[str, Any]:
+    prefs = workspace.prefs_mgr.preferences
+    tokens = workspace.prefs_mgr.tokens
+    return {
+        "callsign": prefs.callsign,
+        "operatorName": prefs.operatorName,
+        "primaryDmrId": prefs.primaryDmrId or "",
+        "distanceUnit": prefs.distanceUnit,
+        "defaultRadioId": prefs.defaultRadioId or "",
+        "channelNamingFormat": prefs.channelNamingFormat,
+        "repeaterAccess": list(prefs.repeaterAccess),
+        "repeaterMaxAgeDays": prefs.repeaterMaxAgeDays,
+        "webPort": prefs.webPort,
+        "theme": prefs.resolved_cockpit_theme,
+        "ui_font": prefs.resolved_ui_font,
+        "mono_font": prefs.monoFont,
+        "font_size": prefs.uiFontSize,
+        "lcd_font_size": prefs.lcdFontSize,
+        "panel_layout": sanitize_panel_layout(prefs.panelLayout),
+        "repeaterBookApiKeySet": bool(tokens.repeaterBookApiKey),
+        "radioIdUsername": tokens.radioIdUsername or "",
+        "radioIdApiKeySet": bool(tokens.radioIdApiKey),
+        "has_api_key": workspace.repeater_provider.has_api_key(),
+    }
+
+
+def _serialize_radios() -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for spec in workspace.radio_mgr.list_radios():
+        item = spec.model_dump()
+        item["is_user"] = workspace.radio_mgr.is_user_radio(spec.id)
+        items.append(item)
+    return items
+
+
+def _serialize_templates() -> list[dict[str, Any]]:
+    workspace.template_mgr.reload()
+    items: list[dict[str, Any]] = []
+    for tpl in workspace.template_mgr.list_templates():
+        channels_out: list[dict[str, Any]] = []
+        for ch in tpl.channels:
+            tx_f = ch.txFreq if ch.txFreq is not None else ch.rxFreq
+            calc_off = ch.offset if ch.offset is not None else abs(tx_f - ch.rxFreq)
+            if ch.offsetDir in {"+", "-"}:
+                eff_dir = ch.offsetDir
+            elif (tx_f - ch.rxFreq) > 0.0001:
+                eff_dir = "+"
+            elif (ch.rxFreq - tx_f) > 0.0001:
+                eff_dir = "-"
+            else:
+                eff_dir = "off"
+            eff_tone = ch.dcs if ch.toneMode == "DCS" else (ch.ctcss if ch.toneMode in {"Tone", "TSQL"} else "None")
+            channels_out.append(
+                {
+                    "name": ch.name,
+                    "rxFreq": ch.rxFreq,
+                    "txFreq": tx_f,
+                    "offsetDir": eff_dir,
+                    "offset": round(calc_off if eff_dir != "off" else 0.0, 5),
+                    "mode": ch.mode,
+                    "power": ch.power,
+                    "toneMode": ch.toneMode,
+                    "toneVal": eff_tone,
+                    "comment": ch.comment,
+                }
+            )
+        items.append(
+            {
+                "id": tpl.id,
+                "name": tpl.name,
+                "description": tpl.description,
+                "tagText": tpl.tagText,
+                "tagColorHex": tpl.tagColorHex,
+                "channelCount": len(channels_out),
+                "channels": channels_out,
+                "is_user": workspace.template_mgr.is_user_template(tpl.id),
+                "is_builtin": tpl.id in {"calling_channels", "noaa_wx_channels", "gmrs_channels"},
+            }
+        )
+    return items
+
+
+def _serialize_recipes() -> list[dict[str, Any]]:
+    recipes_dir = get_recipes_dir()
+    recipes_dir.mkdir(parents=True, exist_ok=True)
+    items: list[dict[str, Any]] = []
+    for path in sorted(recipes_dir.glob("*.yaml")):
+        try:
+            rec = RadioPlannerRecipe.from_yaml_file(path)
+        except (OSError, ValueError, YamlDiagnosticError, ValidationError) as exc:
+            logger.debug("Skipping invalid recipe %s: %s", path.name, exc)
+            continue
+        items.append(
+            {
+                "filename": path.name,
+                "name": rec.name,
+                "description": rec.description,
+                "mode": rec.mode,
+                "corridor": rec.corridor.model_dump() if rec.corridor else None,
+                "proximity": rec.proximity.model_dump() if rec.proximity else None,
+                "aviation": rec.aviation.model_dump() if rec.aviation else None,
+                "radio_target": rec.radio_target.model_dump(),
+                "sequence_order": list(rec.sequence_order),
+            }
+        )
+    return items
+
+
+def _serialize_active_plan(message: str = "") -> dict[str, Any]:
+    sess = workspace.session
+    if not sess.recipe or not sess.codeplug or not sess.radio_spec:
+        return {"active": False}
+    spec = sess.radio_spec
+    recipe = sess.recipe
+    codeplug = sess.codeplug
+    return {
+        "active": True,
+        "message": message,
+        "recipe": recipe.model_dump(),
+        "radio_spec": spec.model_dump(),
+        "naming_previews": _build_naming_previews(spec, mode=recipe.mode),
+        "codeplug": {
+            "name": codeplug.name,
+            "total_channels": codeplug.total_channels,
+            "channels": [_serialize_channel(ch) for ch in codeplug.channels],
+        },
+        "summary": sess.summary_data,
+        "map_data": sess.map_data,
+        "notices": sess.notices,
+        "band_colors": BAND_COLORS,
+        "default_export_filename": _default_export_filename(recipe, spec),
+        "can_undo": len(sess.undo_stack) > 0,
+        "undo_count": len(sess.undo_stack),
+        "undo_label": sess.undo_stack[-1].label if sess.undo_stack else "",
+    }
+
+
+def _build_pocket_report_text(
+    recipe: RadioPlannerRecipe,
+    codeplug: Codeplug,
+    spec: TargetRadioSpec,
+    summary: dict[str, Any],
+) -> str:
+    """Build a crisp, printable plain-text pocket reference card for the active codeplug."""
+    lines: list[str] = [
+        f"RADIOPLANNER CODEPLUG REFERENCE CARD — {codeplug.name}",
+        "=" * 78,
+        f"Mode:         {recipe.mode}",
+        f"Target Radio: {spec.brand} {spec.model} ({spec.id}) | Slots {spec.startChannel}..{spec.startChannel + max(codeplug.total_channels - 1, 0)} ({codeplug.total_channels}/{spec.maxChannels})",
+        f"LCD Limit:    {spec.maxNameLength} chars | Naming: {recipe.radio_target.naming_format} | Format: {recipe.radio_target.programmer_format or spec.programmerType}",
+        f"Generated:    {_utc_now_iso()} | Operator: {workspace.prefs_mgr.preferences.callsign}",
+    ]
+    if summary.get("subtitle"):
+        lines.append(f"Coverage:     {summary['subtitle']}")
+    if summary.get("states"):
+        lines.append(f"States:       {', '.join(summary['states'])}")
+    if recipe.description:
+        lines.append(f"Notes:        {recipe.description}")
+
+    lines.extend(
+        [
+            "-" * 78,
+            f"{'CH':>4}  {'LCD NAME':<16} {'CALL':<8} {'RX (MHz)':>10} {'DUP':>7} {'TONE':<11} {'MODE':<5} {'LOCATION'}",
+            "-" * 78,
+        ]
+    )
+    for ch in codeplug.channels:
+        dup = "SIMPLEX" if ch.is_simplex else f"{ch.offsetDir}{ch.offset:.3f}"
+        if ch.toneMode in {"Tone", "TSQL"} and ch.ctcss != "None":
+            tone = f"{ch.toneMode[:4]} {ch.ctcss}"
+        elif ch.toneMode in {"DCS", "DTCS"} and ch.dcs != "None":
+            tone = f"DCS {ch.dcs}"
+        else:
+            tone = "CSQ"
+        loc = f"{ch.city}, {ch.state}" if (ch.city and ch.state) else (ch.city or ch.comment[:24] or "-")
+        lines.append(
+            f"{ch.number:>4}  {ch.name[:16]:<16} {(ch.callsign or '-'):<8} {ch.rxFreq:>10.4f} {dup:>7} {tone:<11} {ch.mode:<5} {loc}"
+        )
+    lines.append("-" * 78)
+    lines.append(f"Total Channels: {codeplug.total_channels}")
+    return "\n".join(lines) + "\n"
+
+
+def _parse_template_channel_payloads(items: list[TemplateChannelPayload]) -> list[TemplateChannelItem]:
+    channel_items: list[TemplateChannelItem] = []
+    for idx, item in enumerate(items, start=1):
+        r_name = clean_single_line(item.name, max_len=64) or f"CH {idx}"
+        rx = round(float(item.rxFreq), 5)
+        off_dir = item.offsetDir.strip() if item.offsetDir.strip() in {"off", "+", "-"} else "off"
+        off_val = round(abs(float(item.offset or 0.0)), 5)
+        if off_dir == "+":
+            tx = round(rx + off_val, 5)
+        elif off_dir == "-":
+            tx = round(rx - off_val, 5)
+        else:
+            off_val = 0.0
+            tx = rx
+
+        mode_val = clean_single_line(item.mode, max_len=16).upper() or "FM"
+        pwr_raw = clean_single_line(item.power, max_len=16).capitalize()
+        power_val = pwr_raw if pwr_raw in {"High", "Mid", "Low"} else "High"
+        t_mode = item.toneMode.strip() if item.toneMode.strip() in {"None", "Tone", "TSQL", "DCS"} else "None"
+        t_val = clean_single_line(item.toneVal, max_len=16) or "None"
+
+        ctcss = "None"
+        rx_ctcss = "None"
+        dcs = "None"
+        rx_dcs = "None"
+        if t_mode in {"Tone", "TSQL"}:
+            ctcss = t_val if t_val.lower() != "none" else "88.5"
+            rx_ctcss = ctcss if t_mode == "TSQL" else "None"
+        elif t_mode == "DCS":
+            dcs = t_val.lstrip("Dd") if t_val.lower() != "none" else "023"
+            rx_dcs = dcs
+
+        channel_items.append(
+            TemplateChannelItem(
+                name=r_name,
+                rxFreq=rx,
+                txFreq=tx,
+                offset=off_val if off_dir != "off" else None,
+                offsetDir=off_dir,
+                mode=mode_val,
+                power=power_val,
+                toneMode=t_mode,
+                ctcss=ctcss,
+                rxCtcss=rx_ctcss,
+                dcs=dcs,
+                rxDcs=rx_dcs,
+                comment=clean_single_line(item.comment, max_len=240),
+            )
+        )
+    return channel_items
+
+
+# ---------------------------------------------------------------------------
+# FastAPI Application Factory
+# ---------------------------------------------------------------------------
+
+
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
-    app = FastAPI(title="RadioPlanner Web Studio", version="0.2.0")
+    """Create and configure the RadioPlanner FastAPI Cockpit application."""
+    app = FastAPI(title="RadioPlanner Cockpit Studio", version=APP_VERSION)
+    app.middleware("http")(security_middleware)
+
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    @app.get("/", response_class=HTMLResponse)
-    @app.get("/planner", response_class=HTMLResponse)
-    async def planner_page(
-        request: Request,
-        mode: str = "ROUTE_CORRIDOR",
-        recipe_file: str | None = None,
-    ) -> HTMLResponse:
-        initial_recipe: RadioPlannerRecipe | None = None
-        loaded_recipe_file: str | None = None
+    @app.exception_handler(ValueError)
+    async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
+        logger.warning("Validation error: %s", exc)
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
 
-        if recipe_file:
-            target_path = get_recipes_dir() / Path(recipe_file).name
-            if target_path.is_file():
-                try:
-                    initial_recipe = RadioPlannerRecipe.from_yaml_file(target_path)
-                    mode = initial_recipe.mode
-                    if mode == "PRESET_TEMPLATES":
-                        mode = "ROUTE_CORRIDOR"
-                    loaded_recipe_file = target_path.name
-                except Exception:
-                    initial_recipe = None
+    @app.exception_handler(KeyError)
+    async def key_error_handler(_request: Request, exc: KeyError) -> JSONResponse:
+        logger.warning("Lookup error: %s", exc)
+        return JSONResponse(status_code=404, content={"detail": str(exc).strip("'")})
 
-        mode_upper = mode.upper()
-        if mode_upper not in {"ROUTE_CORRIDOR", "PROXIMITY_SEARCH", "AVIATION_PLANNER"}:
-            mode_upper = "ROUTE_CORRIDOR"
+    @app.exception_handler(OSError)
+    async def os_error_handler(_request: Request, exc: OSError) -> JSONResponse:
+        logger.error("Filesystem I/O error: %s", exc)
+        return JSONResponse(status_code=500, content={"detail": "Local filesystem error occurred"})
 
-        # Determine initial values from recipe or preferences
-        prefs = workspace.prefs_mgr.preferences
-        all_radios = workspace.radio_mgr.list_radios()
-        radios_by_brand: dict[str, list[TargetRadioSpec]] = {}
-        for r in all_radios:
-            radios_by_brand.setdefault(r.brand, []).append(r)
+    # ─── Static SPA Shell ────────────────────────────────────────────────────
 
-        # Saved recipes are radio-agnostic; default to user preference defaultRadioId or first available radio
-        radio_id = prefs.defaultRadioId or (all_radios[0].id if all_radios else "baofeng_5rm")
-        if not workspace.radio_mgr.has_radio(radio_id):
-            radio_id = all_radios[0].id
-        selected_radio = workspace.radio_mgr.get_radio(radio_id)
+    @app.get("/", include_in_schema=False)
+    async def serve_index() -> FileResponse:
+        index_path = STATIC_DIR / "index.html"
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="UI file static/index.html not found")
+        return FileResponse(index_path)
 
-        # In Aviation mode, if default radio does not support Airband, prefer an Airband-capable radio
-        if mode_upper == "AVIATION_PLANNER" and "Airband" not in selected_radio.supportedBands:
-            for r in all_radios:
-                if "Airband" in r.supportedBands:
-                    selected_radio = r
-                    radio_id = r.id
-                    break
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def serve_favicon() -> FileResponse:
+        svg_path = STATIC_DIR / "icon.svg"
+        if not svg_path.is_file():
+            raise HTTPException(status_code=404, detail="Icon file static/icon.svg not found")
+        return FileResponse(svg_path, media_type="image/svg+xml")
 
-        if initial_recipe and initial_recipe.radio_target.bands:
-            active_bands = [b for b in selected_radio.supportedBands if b in initial_recipe.radio_target.bands]
-            if not active_bands:
-                active_bands = [b for b in selected_radio.supportedBands if b.lower() != "airband"]
-        elif mode_upper == "AVIATION_PLANNER":
-            active_bands = ["Airband"] if "Airband" in selected_radio.supportedBands else list(selected_radio.supportedBands)
-        else:
-            active_bands = [b for b in selected_radio.supportedBands if b.lower() != "airband"]
+    # ─── Bootstrap Config & Preferences ──────────────────────────────────────
 
-        raw_naming = (
-            getattr(initial_recipe.radio_target, "naming_format", None)
-            if initial_recipe
-            else None
-        )
-        if mode_upper == "AVIATION_PLANNER":
-            valid_air_codes = {c for c, _, _ in AVIATION_NAMING_FORMAT_OPTIONS}
-            active_naming = raw_naming if raw_naming in valid_air_codes else "IDENT_TYPE"
-        else:
-            active_naming = raw_naming or getattr(prefs, "channelNamingFormat", "CITY_FREQ")
-
-        active_access = (
-            initial_recipe.radio_target.repeater_access
-            if (initial_recipe and initial_recipe.radio_target.repeater_access)
-            else getattr(prefs, "repeaterAccess", ["OPEN"])
-        )
-
-        waypoints = (
-            list(initial_recipe.corridor.waypoints)
-            if (initial_recipe and initial_recipe.corridor and initial_recipe.corridor.waypoints)
-            else ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
-        )
-        corridor_width = (
-            initial_recipe.corridor.corridor_width_miles
-            if (initial_recipe and initial_recipe.corridor)
-            else 25.0
-        )
-        if mode_upper == "PROXIMITY_SEARCH":
-            center_location = (
-                initial_recipe.proximity.center_location
-                if (initial_recipe and initial_recipe.proximity)
-                else "Dallas, TX"
-            )
-            radius_miles = (
-                initial_recipe.proximity.radius_miles
-                if (initial_recipe and initial_recipe.proximity)
-                else 50.0
-            )
-        else:
-            center_location = (
-                initial_recipe.aviation.center_location
-                if (initial_recipe and initial_recipe.aviation)
-                else "Tyler, TX"
-            )
-            radius_miles = (
-                initial_recipe.aviation.radius_miles
-                if (initial_recipe and initial_recipe.aviation)
-                else 35.0
-            )
-
-        include_simplex = initial_recipe.radio_target.include_simplex if initial_recipe else True
-
-        if initial_recipe and initial_recipe.sequence_order:
-            seq_keys = list(initial_recipe.sequence_order)
-        elif mode_upper == "AVIATION_PLANNER":
-            seq_keys = ["AVIATION_BLOCK", "TEMPLATE:noaa_wx_channels"]
-        elif mode_upper == "PROXIMITY_SEARCH":
-            seq_keys = ["TEMPLATE:calling_channels", "PROXIMITY_PLAN", "TEMPLATE:noaa_wx_channels"]
-        else:
-            seq_keys = ["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"]
-
-        ctx = _base_context(request, active_nav=mode_upper)
-        ctx.update(
-            {
-                "mode": mode_upper,
-                "initial_recipe": initial_recipe,
-                "loaded_recipe_file": loaded_recipe_file,
-                "waypoints": waypoints,
-                "corridor_width": corridor_width,
-                "center_location": center_location,
-                "radius_miles": radius_miles,
-                "include_simplex": include_simplex,
-                "sequence_blocks": _build_sequence_blocks(seq_keys, mode=mode_upper),
-                "available_templates": workspace.template_mgr.list_templates(),
-                "radios_by_brand": dict(sorted(radios_by_brand.items())),
-                "selected_radio": selected_radio,
-                "active_bands": active_bands,
-                "active_naming": active_naming,
-                "active_access": active_access,
-                "naming_previews": _build_naming_previews(selected_radio, mode=mode_upper),
-                "has_active_plan": False,
-                "auto_submit": False,
-            }
-        )
-        return templates.TemplateResponse(request, "planner.html", ctx)
-
-    @app.get("/htmx/radio-options", response_class=HTMLResponse)
-    async def htmx_radio_options(
-        request: Request,
-        radio_id: str,
-        naming_format: str = "CITY_FREQ",
-        mode: str = "ROUTE_CORRIDOR",
-    ) -> HTMLResponse:
-        spec = workspace.radio_mgr.get_radio(radio_id)
-        mode_upper = mode.upper()
-        if mode_upper == "AVIATION_PLANNER":
-            active_bands = ["Airband"] if "Airband" in spec.supportedBands else list(spec.supportedBands)
-            valid_air_codes = {c for c, _, _ in AVIATION_NAMING_FORMAT_OPTIONS}
-            active_naming = naming_format if naming_format in valid_air_codes else "IDENT_TYPE"
-        else:
-            active_bands = [b for b in spec.supportedBands if b.lower() != "airband"] or list(spec.supportedBands)
-            active_naming = naming_format
-
-        ctx = {
-            "request": request,
-            "selected_radio": spec,
-            "active_bands": active_bands,
-            "active_naming": active_naming,
-            "naming_previews": _build_naming_previews(spec, mode=mode_upper),
+    @app.get("/api/config")
+    async def api_config() -> dict[str, Any]:
+        recipes = _serialize_recipes()
+        return {
+            "app_title": APP_TITLE,
+            "version": APP_VERSION,
+            "utc_now": _utc_now_iso(),
+            "preferences": _serialize_preferences(),
+            "radios": _serialize_radios(),
+            "templates": _serialize_templates(),
+            "recipes_count": len(recipes),
+            "recipes_dir": str(get_recipes_dir()),
+            "cached_states": workspace.repeater_provider.list_cached_state_files(),
+            "band_colors": BAND_COLORS,
+            "active_plan": _serialize_active_plan(),
         }
-        return templates.TemplateResponse(request, "partials/radio_options.html", ctx)
 
-    @app.get("/api/geolocate", response_class=JSONResponse)
+    @app.get("/api/preferences")
+    async def api_get_preferences() -> dict[str, Any]:
+        return {
+            "preferences": _serialize_preferences(),
+            "cached_states": workspace.repeater_provider.list_cached_state_files(),
+        }
+
+    @app.put("/api/preferences")
+    async def api_update_preferences(payload: PreferencesUpdateRequest) -> dict[str, Any]:
+        updates: dict[str, Any] = {}
+        if payload.callsign is not None:
+            updates["callsign"] = clean_single_line(payload.callsign, max_len=24)
+        if payload.operatorName is not None:
+            updates["operatorName"] = clean_single_line(payload.operatorName, max_len=80)
+        if payload.primaryDmrId is not None:
+            cleaned_dmr = clean_single_line(payload.primaryDmrId, max_len=16)
+            updates["primaryDmrId"] = cleaned_dmr or None
+        if payload.defaultRadioId is not None:
+            cleaned_radio = clean_single_line(payload.defaultRadioId, max_len=64)
+            updates["defaultRadioId"] = cleaned_radio or None
+        if payload.channelNamingFormat is not None:
+            updates["channelNamingFormat"] = clean_single_line(payload.channelNamingFormat, max_len=32)
+        if payload.distanceUnit is not None:
+            updates["distanceUnit"] = clean_single_line(payload.distanceUnit, max_len=16)
+        if payload.repeaterMaxAgeDays is not None:
+            updates["repeaterMaxAgeDays"] = payload.repeaterMaxAgeDays
+        if payload.webPort is not None:
+            updates["webPort"] = payload.webPort
+        if payload.colorTheme is not None:
+            updates["colorTheme"] = clean_single_line(payload.colorTheme, max_len=32)
+        if payload.fontFamily is not None:
+            updates["fontFamily"] = clean_single_line(payload.fontFamily, max_len=32)
+        if payload.monoFont is not None:
+            updates["monoFont"] = clean_single_line(payload.monoFont, max_len=32)
+        if payload.uiFontSize is not None:
+            updates["uiFontSize"] = payload.uiFontSize
+        if payload.lcdFontSize is not None:
+            updates["lcdFontSize"] = payload.lcdFontSize
+        if payload.panelLayout is not None:
+            current = sanitize_panel_layout(workspace.prefs_mgr.preferences.panelLayout)
+            merged = {**current}
+            for key, val in payload.panelLayout.items():
+                if key in current and isinstance(val, dict):
+                    merged[key] = {**current[key], **val}
+            updates["panelLayout"] = sanitize_panel_layout(merged)
+
+        if updates:
+            new_prefs = workspace.prefs_mgr.preferences.update_settings(**updates)
+            workspace.prefs_mgr.save_preferences(new_prefs)
+
+        token_updates: dict[str, Any] = {}
+        if payload.clearRepeaterBookApiKey:
+            token_updates["repeaterBookApiKey"] = None
+        elif payload.repeaterBookApiKey is not None and payload.repeaterBookApiKey.strip():
+            token_updates["repeaterBookApiKey"] = clean_single_line(payload.repeaterBookApiKey, max_len=256)
+
+        if payload.radioIdUsername is not None:
+            cleaned_user = clean_single_line(payload.radioIdUsername, max_len=32).upper()
+            token_updates["radioIdUsername"] = cleaned_user or None
+
+        if payload.clearRadioIdApiKey:
+            token_updates["radioIdApiKey"] = None
+        elif payload.radioIdApiKey is not None and payload.radioIdApiKey.strip():
+            token_updates["radioIdApiKey"] = clean_single_line(payload.radioIdApiKey, max_len=256)
+
+        if token_updates:
+            new_tokens = workspace.prefs_mgr.tokens.model_copy(update=token_updates)
+            workspace.prefs_mgr.save_tokens(new_tokens)
+            workspace.repeater_provider.api_key = new_tokens.repeaterBookApiKey
+            workspace.repeater_provider.last_status = "CONFIGURED" if new_tokens.repeaterBookApiKey else "NO_KEY"
+
+        return {
+            "preferences": _serialize_preferences(),
+            "cached_states": workspace.repeater_provider.list_cached_state_files(),
+        }
+
+    # ─── Geolocation ─────────────────────────────────────────────────────────
+
+    @app.get("/api/geolocate")
     async def api_geolocate(lat: float | None = None, lon: float | None = None) -> JSONResponse:
         """Resolve browser GPS coordinates (if provided) or detect current location via IP geolocation."""
         try:
@@ -413,42 +711,34 @@ def create_app() -> FastAPI:
                 return JSONResponse({"ok": True, "location": loc_str, "lat": lat, "lon": lon})
             detected = workspace.geocoder.detect_ip_location()
             return JSONResponse({"ok": True, **detected})
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=200)
 
-    @app.post("/htmx/plan/generate", response_class=HTMLResponse)
-    async def htmx_generate_plan(request: Request) -> HTMLResponse:
-        try:
-            return await _execute_htmx_generate_plan(request)
-        except Exception as exc:
-            err_html = f"""
-            <div class="p-5 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 space-y-2 text-xs">
-              <div class="font-bold text-sm text-rose-300">✖ Failed to Assemble Codeplug Plan</div>
-              <p class="font-mono bg-slate-950/80 p-3 rounded border border-rose-500/30">{exc}</p>
-              <p class="text-slate-300">Verify your location/waypoint inputs and try again.</p>
-            </div>
-            """
-            return HTMLResponse(
-                content=err_html,
-                status_code=200,
-                headers={"HX-Trigger": json.dumps({"showNotification": {"message": str(exc), "level": "error"}})},
-            )
+    # ─── Plan Assembly & Codeplug Operations ─────────────────────────────────
 
-    async def _execute_htmx_generate_plan(request: Request) -> HTMLResponse:
-        form = await request.form()
-        mode = str(form.get("mode", "ROUTE_CORRIDOR")).upper()
-        include_simplex = form.get("include_simplex") == "true"
-        repeater_access = [str(a) for a in form.getlist("repeater_access")] or ["OPEN"]
-        sequence_order = [str(s) for s in form.getlist("sequence_order")]
+    @app.get("/api/plan/current")
+    async def api_plan_current() -> dict[str, Any]:
+        return _serialize_active_plan()
 
-        # Determine initial target radio for Codeplug View (Planner itself is radio-agnostic)
-        submitted_radio_id = form.get("radio_id")
-        if submitted_radio_id and workspace.radio_mgr.has_radio(str(submitted_radio_id)):
-            radio_id = str(submitted_radio_id)
+    @app.post("/api/plan/generate")
+    async def api_plan_generate(payload: PlanGenerateRequest) -> dict[str, Any]:
+        mode = payload.mode.strip().upper()
+        if mode not in {"ROUTE_CORRIDOR", "PROXIMITY_SEARCH", "AVIATION_PLANNER"}:
+            raise HTTPException(status_code=400, detail=f"Unsupported planner mode: {payload.mode}")
+
+        include_simplex = bool(payload.include_simplex)
+        repeater_access = [a.strip().upper() for a in payload.repeater_access if a.strip()] or ["OPEN"]
+        sequence_order = [s.strip() for s in payload.sequence_order if s.strip()]
+
+        all_radios = workspace.radio_mgr.list_radios()
+        if not all_radios:
+            raise HTTPException(status_code=500, detail="No target radio hardware specs configured")
+
+        if payload.radio_id and workspace.radio_mgr.has_radio(payload.radio_id):
+            radio_id = payload.radio_id
         elif workspace.session.radio_spec and workspace.radio_mgr.has_radio(workspace.session.radio_spec.id):
             radio_id = workspace.session.radio_spec.id
         else:
-            all_radios = workspace.radio_mgr.list_radios()
             default_pref = workspace.prefs_mgr.preferences.defaultRadioId
             radio_id = default_pref if (default_pref and workspace.radio_mgr.has_radio(default_pref)) else all_radios[0].id
             if mode == "AVIATION_PLANNER" and "Airband" not in workspace.radio_mgr.get_radio(radio_id).supportedBands:
@@ -458,24 +748,32 @@ def create_app() -> FastAPI:
                         break
 
         radio_spec = workspace.radio_mgr.get_radio(radio_id)
-        submitted_bands = [str(b) for b in form.getlist("bands") if str(b)]
+        submitted_bands = [b.strip() for b in payload.bands if b.strip()]
         bands = submitted_bands or _default_bands_for_radio(radio_spec, mode, sequence_order)
-
-        submitted_naming = str(form.get("naming_format") or "").strip().upper()
+        submitted_naming = payload.naming_format.strip().upper()
         naming_format = submitted_naming or _smart_default_naming(radio_spec, mode)
+
         workspace.session.deleted_keys = set()
+        workspace.session.undo_stack = []
 
         max_age_days = getattr(workspace.prefs_mgr.preferences, "repeaterMaxAgeDays", 30)
-        plan_description = str(form.get("plan_description") or "").strip()
+        plan_description = clean_single_line(payload.plan_description, max_len=300)
         notices: list[dict[str, str]] = []
         map_data: dict[str, Any] = {"center": [32.35, -95.30], "zoom": 6, "channels": []}
-        summary: dict[str, Any] = {"title": "Plan Summary", "subtitle": "", "metric_badge": "", "rows": [], "band_counts": {}, "states": []}
+        summary: dict[str, Any] = {
+            "title": "Plan Summary",
+            "subtitle": "",
+            "metric_badge": "",
+            "rows": [],
+            "band_counts": {},
+            "states": [],
+        }
 
         if mode == "ROUTE_CORRIDOR":
-            waypoints = [str(w).strip() for w in form.getlist("waypoints") if str(w).strip()]
+            waypoints = [clean_single_line(w, max_len=120) for w in payload.waypoints if clean_single_line(w, max_len=120)]
             if len(waypoints) < 2:
-                waypoints = ["Tyler, TX", "Shreveport, LA"]
-            corridor_width = float(form.get("corridor_width") or 25.0)
+                raise HTTPException(status_code=400, detail="At least 2 waypoints are required for a route corridor")
+            corridor_width = float(payload.corridor_width)
             if not sequence_order:
                 sequence_order = ["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"]
             if "GMRS" in radio_spec.supportedBands and "2m" not in radio_spec.supportedBands:
@@ -486,7 +784,7 @@ def create_app() -> FastAPI:
             for wp in waypoints:
                 try:
                     geo_points.append(workspace.geocoder.resolve(wp))
-                except Exception:
+                except (ValueError, KeyError, OSError):
                     pass
 
             route_states = identify_states_for_route(
@@ -501,6 +799,7 @@ def create_app() -> FastAPI:
             )
             if not any(c.band == "GMRS" for c in all_repeaters):
                 all_repeaters = list(all_repeaters) + workspace.repeater_provider.get_gmrs_repeaters_for_states(route_states)
+
             engine = RouteCorridorEngine(geocoder=workspace.geocoder)
             res = engine.plan_route(
                 waypoint_names=waypoints,
@@ -512,7 +811,7 @@ def create_app() -> FastAPI:
 
             start_city = waypoints[0].split(",")[0].strip()
             end_city = waypoints[-1].split(",")[0].strip()
-            custom_name = str(form.get("plan_name") or "").strip()
+            custom_name = clean_single_line(payload.plan_name, max_len=100)
             plan_name = custom_name or f"{start_city}_to_{end_city}_Corridor"
 
             recipe = RadioPlannerRecipe(
@@ -533,28 +832,32 @@ def create_app() -> FastAPI:
             )
 
             map_data["route_coords"] = [[pt.lat, pt.lon] for pt in res.waypoints]
-            map_data["waypoints"] = [{"name": pt.name or f"Stop {i+1}", "lat": pt.lat, "lon": pt.lon} for i, pt in enumerate(res.waypoints)]
+            map_data["waypoints"] = [
+                {"name": pt.name or f"Stop {i + 1}", "lat": pt.lat, "lon": pt.lon}
+                for i, pt in enumerate(res.waypoints)
+            ]
             summary["title"] = "Route Waypoints & Distance"
             summary["subtitle"] = f"{len(res.waypoints)} stops • {res.total_distance_miles:.1f} miles"
             summary["metric_badge"] = f"{res.total_distance_miles:.1f} mi"
             summary["rows"] = [
-                {"label": pt.name or f"Stop {i+1}", "value": f"{dist:.1f} mi"}
+                {"label": pt.name or f"Stop {i + 1}", "value": f"{dist:.1f} mi"}
                 for i, (pt, dist) in enumerate(zip(res.waypoints, res.cumulative_mileages))
             ]
             summary["states"] = route_states
 
         elif mode == "PROXIMITY_SEARCH":
-            center_loc = str(form.get("center_location") or "Dallas, TX").strip()
-            radius_miles = float(form.get("radius_miles") or 50.0)
+            center_loc = clean_single_line(payload.center_location, max_len=120) or "Dallas, TX"
+            radius_miles = float(payload.radius_miles)
             if not sequence_order:
                 sequence_order = ["TEMPLATE:calling_channels", "PROXIMITY_PLAN", "TEMPLATE:noaa_wx_channels"]
             if "GMRS" in radio_spec.supportedBands and "2m" not in radio_spec.supportedBands:
                 if "TEMPLATE:gmrs_channels" not in sequence_order:
                     sequence_order = ["TEMPLATE:gmrs_channels"] + list(sequence_order)
 
+            center_pt = None
             try:
                 center_pt = workspace.geocoder.resolve(center_loc)
-            except Exception:
+            except (ValueError, KeyError, OSError):
                 center_pt = None
 
             prox_states = identify_states_for_proximity(
@@ -569,6 +872,7 @@ def create_app() -> FastAPI:
             )
             if not any(c.band == "GMRS" for c in all_repeaters):
                 all_repeaters = list(all_repeaters) + workspace.repeater_provider.get_gmrs_repeaters_for_states(prox_states)
+
             engine = ProximityEngine(geocoder=workspace.geocoder)
             res = engine.search_proximity(
                 center_location=center_loc,
@@ -579,7 +883,8 @@ def create_app() -> FastAPI:
             primary_channels = res.channels
 
             city_clean = center_loc.split(",")[0].strip()
-            plan_name = f"{city_clean}_Proximity_{int(radius_miles)}mi"
+            custom_name = clean_single_line(payload.plan_name, max_len=100)
+            plan_name = custom_name or f"{city_clean}_Proximity_{int(radius_miles)}mi"
             recipe = RadioPlannerRecipe(
                 mode="PROXIMITY_SEARCH",
                 name=plan_name,
@@ -623,8 +928,8 @@ def create_app() -> FastAPI:
             summary["states"] = prox_states
 
         else:
-            center_loc = str(form.get("center_location") or "Tyler, TX").strip()
-            radius_miles = float(form.get("radius_miles") or 35.0)
+            center_loc = clean_single_line(payload.center_location, max_len=120) or "Tyler, TX"
+            radius_miles = float(payload.radius_miles)
             if not sequence_order:
                 sequence_order = ["AVIATION_BLOCK"]
 
@@ -634,7 +939,7 @@ def create_app() -> FastAPI:
                         "level": "warning",
                         "message": (
                             f"{radio_spec.brand} {radio_spec.model} does not list 'Airband' (108–137 MHz AM) in its supported hardware bands. "
-                            "Airband channels are shown below for preview, or you can switch to an Airband-capable radio (e.g. Alinco DR-735T, Baofeng 5RM, Wouxun KG-UV980P)."
+                            "Airband channels are shown below for preview, or switch to an Airband-capable radio."
                         ),
                     }
                 )
@@ -651,12 +956,13 @@ def create_app() -> FastAPI:
                 notices.append(
                     {
                         "level": "warning",
-                        "message": f"No airfields found within {radius_miles:.0f} miles of '{center_loc}'. Try increasing the search radius or using 'Tyler, TX', 'Dallas, TX', or 'Shreveport, LA'.",
+                        "message": f"No airfields found within {radius_miles:.0f} miles of '{center_loc}'. Try increasing the search radius.",
                     }
                 )
 
             city_clean = center_loc.split(",")[0].strip()
-            plan_name = f"{city_clean}_Aviation_{int(radius_miles)}mi"
+            custom_name = clean_single_line(payload.plan_name, max_len=100)
+            plan_name = custom_name or f"{city_clean}_Aviation_{int(radius_miles)}mi"
             recipe = RadioPlannerRecipe(
                 mode="AVIATION_PLANNER",
                 name=plan_name,
@@ -686,7 +992,6 @@ def create_app() -> FastAPI:
                 for arpt, dist in zip(res.matched_airports, res.airport_distances)
             ]
 
-        # For Aviation mode, ensure radio_spec allows Airband/AM during assembly so preview isn't empty
         assembly_spec = (
             radio_spec.model_copy(
                 update={
@@ -698,7 +1003,6 @@ def create_app() -> FastAPI:
             else radio_spec
         )
 
-        # Keep a copy of assembled channels before radio-specific condensation so live re-naming is lossless
         uncondensed_spec = assembly_spec.model_copy(update={"maxNameLength": 64, "allowDots": True, "allowSpaces": True})
         raw_assembled = SequenceOrganizer.assemble(
             codeplug_name=recipe.name,
@@ -728,7 +1032,7 @@ def create_app() -> FastAPI:
                     "level": "warning",
                     "message": (
                         f"Plan contains {codeplug.total_channels} channels, which exceeds {radio_spec.brand} {radio_spec.model}'s "
-                        f"{radio_spec.maxChannels}-channel memory limit. Delete unwanted channels or export will clamp to {radio_spec.maxChannels} channels."
+                        f"{radio_spec.maxChannels}-channel memory limit."
                     ),
                 }
             )
@@ -744,165 +1048,49 @@ def create_app() -> FastAPI:
         workspace.session.raw_channels = list(raw_assembled.channels)
         workspace.session.map_data = map_data
         workspace.session.summary_data = summary
+        workspace.session.notices = notices
 
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": codeplug,
-            "radio_spec": radio_spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "summary": summary,
-            "band_colors": BAND_COLORS,
-            "notices": notices,
-            "map_data_json": json.dumps(map_data),
-            "default_export_filename": _default_export_filename(recipe, radio_spec),
-            "flash_message": None,
-            "is_standalone_view": False,
-        }
-        return templates.TemplateResponse(request, "partials/plan_results.html", ctx)
-
-    @app.get("/codeplug", response_class=HTMLResponse)
-    async def codeplug_standalone_page(request: Request) -> HTMLResponse:
-        """Render the dedicated full-page Codeplug View and Channel Editor."""
-        ctx = _base_context(request, active_nav="codeplug")
-        recipe = workspace.session.recipe
-        codeplug = workspace.session.codeplug
-        spec = workspace.session.radio_spec
-        ctx.update(
-            {
-                "recipe": recipe,
-                "codeplug": codeplug,
-                "radio_spec": spec,
-                "default_export_filename": _default_export_filename(recipe, spec) if (recipe and spec) else "codeplug.csv",
-                "flash_message": None,
-                "is_standalone_view": True,
-            }
+        return _serialize_active_plan(
+            message=f"Assembled {codeplug.total_channels} channels for {radio_spec.brand} {radio_spec.model}."
         )
-        return templates.TemplateResponse(request, "codeplug_view.html", ctx)
 
-    @app.get("/htmx/codeplug/table", response_class=HTMLResponse)
-    async def htmx_codeplug_table(request: Request) -> HTMLResponse:
-        """Return the current channel_table.html partial to sync the main window after popup edits."""
-        recipe = workspace.session.recipe
-        codeplug = workspace.session.codeplug
-        spec = workspace.session.radio_spec
-        if not codeplug or not recipe or not spec:
-            return HTMLResponse("")
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": codeplug,
-            "radio_spec": spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "default_export_filename": _default_export_filename(recipe, spec),
-            "flash_message": None,
-            "is_standalone_view": False,
-        }
-        return templates.TemplateResponse(request, "partials/channel_table.html", ctx)
-
-    @app.post("/htmx/codeplug/delete-channels", response_class=HTMLResponse)
-    async def htmx_delete_channels(
-        request: Request,
-        selected_slots: list[int] = Form(default=[]),
-        is_standalone: str = Form("false"),
-    ) -> HTMLResponse:
-        """Delete one or more selected channels by slot number and renumber remaining channels."""
-        is_standalone_flag = is_standalone.lower() == "true"
-        selected_set = set(selected_slots)
-
-        codeplug = workspace.session.codeplug
-        recipe = workspace.session.recipe
-        spec = workspace.session.radio_spec
-        if not codeplug or not recipe or not spec:
-            return HTMLResponse("<div class='text-xs text-rose-400'>No active codeplug session.</div>")
-
-        deleted_channels = [ch for ch in codeplug.channels if ch.number in selected_set]
-        remaining_channels = [ch for ch in codeplug.channels if ch.number not in selected_set]
-        deleted_count = len(codeplug.channels) - len(remaining_channels)
-
-        if workspace.session.raw_channels and len(workspace.session.raw_channels) == len(codeplug.channels):
-            workspace.session.raw_channels = [
-                raw_ch
-                for raw_ch, cur_ch in zip(workspace.session.raw_channels, codeplug.channels)
-                if cur_ch.number not in selected_set
-            ]
-
-        # Also record deleted channel keys so subsequent naming/radio updates keep deletions across all blocks
-        if deleted_channels:
-            del_keys = {(round(ch.rxFreq, 4), ch.callsign or "", ch.city or "") for ch in deleted_channels}
-            workspace.session.deleted_keys.update(del_keys)
-            if workspace.session.primary_channels:
-                workspace.session.primary_channels = [
-                    ch
-                    for ch in workspace.session.primary_channels
-                    if (round(ch.rxFreq, 4), ch.callsign or "", ch.city or "") not in del_keys
-                ]
-
-        updated_codeplug = Codeplug(name=codeplug.name, channels=remaining_channels).renumbered(
-            start_slot=spec.startChannel
-        )
-        workspace.session.codeplug = updated_codeplug
-
-        band_counts, map_channels = _compute_band_counts_and_map_channels(
-            updated_codeplug, recipe.radio_target.bands
-        )
-        if workspace.session.summary_data is not None:
-            workspace.session.summary_data["band_counts"] = band_counts
-        if workspace.session.map_data is not None:
-            workspace.session.map_data["channels"] = map_channels
-
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": updated_codeplug,
-            "radio_spec": spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "band_counts": band_counts,
-            "band_colors": BAND_COLORS,
-            "map_channels_json": json.dumps(map_channels),
-            "oob_update_summary": not is_standalone_flag,
-            "default_export_filename": _default_export_filename(recipe, spec),
-            "flash_message": f"Deleted {deleted_count} channel(s). Renumbered {updated_codeplug.total_channels} remaining channel(s) starting at slot {spec.startChannel}.",
-            "is_standalone_view": is_standalone_flag,
-        }
-        return templates.TemplateResponse(request, "partials/channel_table.html", ctx)
-
-    @app.post("/htmx/codeplug/update", response_class=HTMLResponse)
-    async def htmx_update_codeplug(
-        request: Request,
-        radio_id: str = Form(...),
-        naming_format: str = Form(""),
-        bands: list[str] = Form(default=[]),
-        include_gmrs_std: str = Form("false"),
-        radio_changed: str = Form("false"),
-        is_standalone: str = Form("false"),
-    ) -> HTMLResponse:
-        """Instantly re-target radio, toggle bands, and/or update channel naming format from the master channel pool."""
+    @app.post("/api/codeplug/update")
+    async def api_codeplug_update(payload: CodeplugUpdateRequest) -> dict[str, Any]:
         recipe = workspace.session.recipe
         codeplug = workspace.session.codeplug
         if not recipe or not codeplug:
-            return HTMLResponse("<div class='text-xs text-rose-400'>No active codeplug session.</div>")
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
 
-        spec = workspace.radio_mgr.get_radio(radio_id)
-        is_radio_switch = radio_changed.lower() == "true" or (
-            workspace.session.radio_spec is not None and workspace.session.radio_spec.id != spec.id and not bands
+        spec = workspace.radio_mgr.get_radio(payload.radio_id)
+        is_radio_switch = payload.radio_changed or (
+            workspace.session.radio_spec is not None and workspace.session.radio_spec.id != spec.id and not payload.bands
         )
         is_gmrs_only_radio = "GMRS" in spec.supportedBands and "2m" not in spec.supportedBands
 
         if is_radio_switch:
-            active_naming = _smart_default_naming(spec, recipe.mode) if not naming_format or radio_changed.lower() == "true" else naming_format
+            active_naming = (
+                _smart_default_naming(spec, recipe.mode)
+                if (not payload.naming_format or payload.radio_changed)
+                else payload.naming_format.strip().upper()
+            )
             active_bands = _default_bands_for_radio(spec, recipe.mode, recipe.sequence_order)
             if is_gmrs_only_radio and "TEMPLATE:gmrs_channels" not in recipe.sequence_order:
                 recipe.sequence_order = ["TEMPLATE:gmrs_channels"] + list(recipe.sequence_order)
         else:
-            active_naming = naming_format or recipe.radio_target.naming_format or _smart_default_naming(spec, recipe.mode)
-            active_bands = [b for b in bands if b in spec.supportedBands] if bands else [
-                b for b in recipe.radio_target.bands if b in spec.supportedBands
-            ]
+            active_naming = (
+                payload.naming_format.strip().upper()
+                or recipe.radio_target.naming_format
+                or _smart_default_naming(spec, recipe.mode)
+            )
+            active_bands = (
+                [b for b in payload.bands if b in spec.supportedBands]
+                if payload.bands
+                else [b for b in recipe.radio_target.bands if b in spec.supportedBands]
+            )
             if not active_bands:
                 active_bands = _default_bands_for_radio(spec, recipe.mode, recipe.sequence_order)
             if "GMRS" in spec.supportedBands:
-                if include_gmrs_std.lower() == "true":
+                if payload.include_gmrs_std:
                     if "TEMPLATE:gmrs_channels" not in recipe.sequence_order:
                         recipe.sequence_order = ["TEMPLATE:gmrs_channels"] + list(recipe.sequence_order)
                     if "GMRS" not in active_bands:
@@ -914,7 +1102,9 @@ def create_app() -> FastAPI:
         recipe.radio_target.programmer_format = spec.programmerType
         recipe.radio_target.naming_format = active_naming
         recipe.radio_target.bands = active_bands
-        recipe.radio_target.modes = list(set(spec.supportedModes) | ({"AM"} if recipe.mode == "AVIATION_PLANNER" else set()))
+        recipe.radio_target.modes = list(
+            set(spec.supportedModes) | ({"AM"} if recipe.mode == "AVIATION_PLANNER" else set())
+        )
 
         assembly_spec = (
             spec.model_copy(
@@ -927,7 +1117,6 @@ def create_app() -> FastAPI:
             else spec
         )
 
-        # Re-assemble from master primary_channels (which preserves manual deletions and brings back newly supported bands!)
         updated_codeplug = SequenceOrganizer.assemble(
             codeplug_name=recipe.name,
             sequence_keys=recipe.sequence_order,
@@ -947,6 +1136,7 @@ def create_app() -> FastAPI:
             updated_codeplug = Codeplug(name=updated_codeplug.name, channels=kept).renumbered(
                 start_slot=spec.startChannel
             )
+
         uncondensed_spec = assembly_spec.model_copy(update={"maxNameLength": 64, "allowDots": True, "allowSpaces": True})
         raw_assembled = SequenceOrganizer.assemble(
             codeplug_name=recipe.name,
@@ -959,44 +1149,260 @@ def create_app() -> FastAPI:
             naming_format="STANDARD",
         )
 
+        notices: list[dict[str, str]] = []
+        if recipe.mode == "AVIATION_PLANNER" and "Airband" not in spec.supportedBands:
+            notices.append(
+                {
+                    "level": "warning",
+                    "message": f"{spec.brand} {spec.model} does not list 'Airband' in its supported hardware bands.",
+                }
+            )
+        if updated_codeplug.total_channels > spec.maxChannels:
+            notices.append(
+                {
+                    "level": "warning",
+                    "message": (
+                        f"Plan contains {updated_codeplug.total_channels} channels, exceeding {spec.brand} {spec.model}'s "
+                        f"{spec.maxChannels}-channel limit."
+                    ),
+                }
+            )
+
         workspace.session.codeplug = updated_codeplug
         workspace.session.raw_channels = list(raw_assembled.channels)
         workspace.session.radio_spec = spec
+        workspace.session.notices = notices
 
         band_counts, map_channels = _compute_band_counts_and_map_channels(updated_codeplug, active_bands)
-        if workspace.session.summary_data is not None:
-            workspace.session.summary_data["band_counts"] = band_counts
-        if workspace.session.map_data is not None:
-            workspace.session.map_data["channels"] = map_channels
+        workspace.session.summary_data["band_counts"] = band_counts
+        workspace.session.map_data["channels"] = map_channels
 
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": updated_codeplug,
-            "radio_spec": spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "band_counts": band_counts,
-            "band_colors": BAND_COLORS,
-            "map_channels_json": json.dumps(map_channels),
-            "oob_update_summary": not (is_standalone.lower() == "true"),
-            "default_export_filename": _default_export_filename(recipe, spec),
-            "flash_message": (
+        end_slot = spec.startChannel + updated_codeplug.total_channels - 1 if updated_codeplug.total_channels else spec.startChannel
+        return _serialize_active_plan(
+            message=(
                 f"Targeted {spec.brand} {spec.model} • Bands: {', '.join(active_bands)} • "
-                f"Naming: {active_naming} (Slots {spec.startChannel}..{spec.startChannel + updated_codeplug.total_channels - 1 if updated_codeplug.total_channels else spec.startChannel})"
-            ),
-            "is_standalone_view": is_standalone.lower() == "true",
-        }
-        return templates.TemplateResponse(request, "partials/channel_table.html", ctx)
+                f"Naming: {active_naming} (Slots {spec.startChannel}..{end_slot})"
+            )
+        )
 
-    @app.post("/htmx/codeplug/expand-dmr", response_class=HTMLResponse)
-    async def htmx_expand_dmr(request: Request) -> HTMLResponse:
+    @app.post("/api/codeplug/delete-channels")
+    async def api_delete_channels(payload: DeleteChannelsRequest) -> dict[str, Any]:
         codeplug = workspace.session.codeplug
         recipe = workspace.session.recipe
         spec = workspace.session.radio_spec
         if not codeplug or not recipe or not spec:
-            return HTMLResponse("<div class='text-xs text-rose-400'>No active codeplug session.</div>")
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
 
-        expanded = []
+        selected_set = set(payload.slots)
+        if not selected_set:
+            raise HTTPException(status_code=400, detail="No channel slots selected for deletion.")
+
+        deleted_channels = [ch for ch in codeplug.channels if ch.number in selected_set]
+        if not deleted_channels:
+            raise HTTPException(status_code=404, detail="Selected channel slot(s) not found.")
+
+        workspace.session.push_undo(label=f"Delete {len(deleted_channels)} channel(s)")
+        remaining_channels = [ch for ch in codeplug.channels if ch.number not in selected_set]
+
+        if workspace.session.raw_channels and len(workspace.session.raw_channels) == len(codeplug.channels):
+            workspace.session.raw_channels = [
+                raw_ch
+                for raw_ch, cur_ch in zip(workspace.session.raw_channels, codeplug.channels)
+                if cur_ch.number not in selected_set
+            ]
+
+        del_keys = {(round(ch.rxFreq, 4), ch.callsign or "", ch.city or "") for ch in deleted_channels}
+        workspace.session.deleted_keys.update(del_keys)
+        if workspace.session.primary_channels:
+            workspace.session.primary_channels = [
+                ch
+                for ch in workspace.session.primary_channels
+                if (round(ch.rxFreq, 4), ch.callsign or "", ch.city or "") not in del_keys
+            ]
+
+        updated = Codeplug(name=codeplug.name, channels=remaining_channels).renumbered(start_slot=spec.startChannel)
+        workspace.session.codeplug = updated
+
+        band_counts, map_channels = _compute_band_counts_and_map_channels(updated, recipe.radio_target.bands)
+        workspace.session.summary_data["band_counts"] = band_counts
+        workspace.session.map_data["channels"] = map_channels
+
+        return _serialize_active_plan(
+            message=f"Deleted {len(deleted_channels)} channel(s). Renumbered {updated.total_channels} remaining channel(s)."
+        )
+
+    @app.post("/api/codeplug/undo-delete")
+    async def api_undo_delete() -> dict[str, Any]:
+        codeplug = workspace.session.codeplug
+        recipe = workspace.session.recipe
+        spec = workspace.session.radio_spec
+        if not codeplug or not recipe or not spec:
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
+
+        snap = workspace.session.pop_undo()
+        if not snap:
+            raise HTTPException(status_code=400, detail="Nothing to undo.")
+
+        restored = Codeplug(name=codeplug.name, channels=snap.channels).renumbered(start_slot=spec.startChannel)
+        workspace.session.codeplug = restored
+        workspace.session.raw_channels = list(snap.raw_channels)
+        workspace.session.primary_channels = list(snap.primary_channels)
+        workspace.session.deleted_keys = set(snap.deleted_keys)
+
+        band_counts, map_channels = _compute_band_counts_and_map_channels(restored, recipe.radio_target.bands)
+        workspace.session.summary_data["band_counts"] = band_counts
+        workspace.session.map_data["channels"] = map_channels
+
+        return _serialize_active_plan(message=f"Undid: {snap.label} ({restored.total_channels} channels).")
+
+    @app.patch("/api/codeplug/channels/{slot}")
+    async def api_edit_channel(slot: int, payload: ChannelEditRequest) -> dict[str, Any]:
+        """Inline channel editor: modify a single channel slot in the active codeplug."""
+        codeplug = workspace.session.codeplug
+        recipe = workspace.session.recipe
+        spec = workspace.session.radio_spec
+        if not codeplug or not recipe or not spec:
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
+
+        idx = next((i for i, ch in enumerate(codeplug.channels) if ch.number == slot), None)
+        if idx is None:
+            raise HTTPException(status_code=404, detail=f"Channel slot {slot} not found.")
+
+        cur = codeplug.channels[idx]
+        workspace.session.push_undo(label=f"Edit slot #{slot} ({cur.name})")
+
+        rx = round(float(payload.rxFreq), 5) if payload.rxFreq is not None else cur.rxFreq
+        off_dir = cur.offsetDir
+        if payload.offsetDir is not None:
+            cand_dir = payload.offsetDir.strip()
+            if cand_dir not in {"off", "+", "-"}:
+                raise HTTPException(status_code=400, detail="offsetDir must be 'off', '+', or '-'")
+            off_dir = cand_dir
+
+        off_val = round(abs(float(payload.offset)), 5) if payload.offset is not None else cur.offset
+        if off_dir == "+":
+            tx = round(rx + off_val, 5)
+        elif off_dir == "-":
+            tx = round(rx - off_val, 5)
+        else:
+            off_val = 0.0
+            tx = rx
+
+        new_name = cur.name
+        if payload.name is not None:
+            cleaned_name = clean_single_line(payload.name, max_len=64)
+            if not cleaned_name:
+                raise HTTPException(status_code=400, detail="Channel LCD name cannot be empty.")
+            if not spec.allowDots:
+                cleaned_name = cleaned_name.replace(".", "")
+            if not spec.allowSpaces:
+                cleaned_name = cleaned_name.replace(" ", "")
+            new_name = cleaned_name[: spec.maxNameLength]
+
+        tone_mode = cur.toneMode
+        if payload.toneMode is not None:
+            cand_tm = payload.toneMode.strip()
+            if cand_tm not in {"None", "Tone", "TSQL", "DCS", "DTCS"}:
+                raise HTTPException(status_code=400, detail="Invalid toneMode.")
+            tone_mode = cand_tm
+
+        ctcss = cur.ctcss
+        rx_ctcss = cur.rxCtcss
+        dcs = cur.dcs
+        rx_dcs = cur.rxDcs
+        if tone_mode == "None":
+            ctcss = "None"
+            rx_ctcss = "None"
+            dcs = "None"
+            rx_dcs = "None"
+        elif tone_mode in {"Tone", "TSQL"}:
+            if payload.ctcss is not None:
+                ctcss = clean_single_line(payload.ctcss, max_len=12) or "88.5"
+            elif ctcss == "None":
+                ctcss = "88.5"
+            rx_ctcss = ctcss if tone_mode == "TSQL" else "None"
+            dcs = "None"
+            rx_dcs = "None"
+        elif tone_mode in {"DCS", "DTCS"}:
+            if payload.dcs is not None:
+                dcs = clean_single_line(payload.dcs, max_len=12).lstrip("Dd") or "023"
+            elif dcs == "None":
+                dcs = "023"
+            rx_dcs = dcs
+            ctcss = "None"
+            rx_ctcss = "None"
+
+        mode_val = clean_single_line(payload.mode, max_len=12).upper() if payload.mode else cur.mode
+        power_val = cur.power
+        if payload.power is not None:
+            p_cand = clean_single_line(payload.power, max_len=12).capitalize()
+            if p_cand in {"High", "Mid", "Low"}:
+                power_val = p_cand
+
+        callsign_val = (
+            (clean_single_line(payload.callsign, max_len=16).upper() or None)
+            if payload.callsign is not None
+            else cur.callsign
+        )
+        city_val = (
+            (clean_single_line(payload.city, max_len=64) or None)
+            if payload.city is not None
+            else cur.city
+        )
+        state_val = (
+            (clean_single_line(payload.state, max_len=8).upper() or None)
+            if payload.state is not None
+            else cur.state
+        )
+        comment_val = (
+            clean_single_line(payload.comment, max_len=240)
+            if payload.comment is not None
+            else cur.comment
+        )
+
+        edited = cur.model_copy(
+            update={
+                "name": new_name,
+                "callsign": callsign_val,
+                "rxFreq": rx,
+                "txFreq": tx,
+                "offset": off_val,
+                "offsetDir": off_dir,
+                "mode": mode_val,
+                "power": power_val,
+                "toneMode": tone_mode,
+                "ctcss": ctcss,
+                "rxCtcss": rx_ctcss,
+                "dcs": dcs,
+                "rxDcs": rx_dcs,
+                "city": city_val,
+                "state": state_val,
+                "comment": comment_val,
+            }
+        )
+
+        updated_channels = list(codeplug.channels)
+        updated_channels[idx] = edited
+        updated_cp = Codeplug(name=codeplug.name, channels=updated_channels)
+        workspace.session.codeplug = updated_cp
+        if idx < len(workspace.session.raw_channels):
+            workspace.session.raw_channels[idx] = edited
+
+        band_counts, map_channels = _compute_band_counts_and_map_channels(updated_cp, recipe.radio_target.bands)
+        workspace.session.summary_data["band_counts"] = band_counts
+        workspace.session.map_data["channels"] = map_channels
+
+        return _serialize_active_plan(message=f"Updated channel slot #{slot} ({edited.name}).")
+
+    @app.post("/api/codeplug/expand-dmr")
+    async def api_expand_dmr() -> dict[str, Any]:
+        codeplug = workspace.session.codeplug
+        recipe = workspace.session.recipe
+        spec = workspace.session.radio_spec
+        if not codeplug or not recipe or not spec:
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
+
+        expanded: list[RadioChannel] = []
         dmr_count = 0
         for ch in codeplug.channels:
             if ch.mode.upper() == "DMR":
@@ -1006,475 +1412,297 @@ def create_app() -> FastAPI:
                 expanded.append(ch)
 
         if dmr_count > 0:
-            codeplug = Codeplug(name=codeplug.name, channels=expanded).renumbered(start_slot=spec.startChannel)
-            workspace.session.codeplug = codeplug
-            msg = f"Expanded {dmr_count} DMR channel(s) across standard Talkgroups ({codeplug.total_channels} total channels)."
+            workspace.session.push_undo(label=f"Expand {dmr_count} DMR channel(s)")
+            updated = Codeplug(name=codeplug.name, channels=expanded).renumbered(start_slot=spec.startChannel)
+            workspace.session.codeplug = updated
+            band_counts, map_channels = _compute_band_counts_and_map_channels(updated, recipe.radio_target.bands)
+            workspace.session.summary_data["band_counts"] = band_counts
+            workspace.session.map_data["channels"] = map_channels
+            msg = f"Expanded {dmr_count} DMR channel(s) across standard Talkgroups ({updated.total_channels} total)."
         else:
             msg = "No DMR channels present in current codeplug."
 
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": codeplug,
-            "radio_spec": spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "default_export_filename": _default_export_filename(recipe, spec),
-            "flash_message": msg,
-        }
-        return templates.TemplateResponse(request, "partials/channel_table.html", ctx)
+        return _serialize_active_plan(message=msg)
 
-    @app.post("/htmx/recipes/save", response_class=HTMLResponse)
-    async def htmx_save_recipe(
-        request: Request,
-        recipe_name: str = Form("Saved_Plan"),
-        recipe_description: str = Form(""),
-    ) -> HTMLResponse:
-        recipe = workspace.session.recipe
+    @app.get("/api/codeplug/report")
+    async def api_codeplug_report() -> dict[str, Any]:
+        """Generate printable pocket reference card and shareable plain-text plan report."""
         codeplug = workspace.session.codeplug
+        recipe = workspace.session.recipe
         spec = workspace.session.radio_spec
-        if not recipe or not codeplug or not spec:
-            return HTMLResponse("<div class='text-xs text-rose-400'>No active recipe to save.</div>")
+        if not codeplug or not recipe or not spec:
+            raise HTTPException(status_code=400, detail="No active codeplug session.")
 
-        recipe.name = recipe_name.strip() or recipe.name
-        recipe.description = recipe_description.strip()
-        recipes_dir = get_recipes_dir()
-        recipes_dir.mkdir(parents=True, exist_ok=True)
-        dest_yaml = recipes_dir / f"{DataSanitizer.sanitize_filename(recipe.name)}.yaml"
-        recipe.to_yaml_file(dest_yaml)
+        summary = workspace.session.summary_data or {}
+        band_counts = summary.get("band_counts", {})
+        repeater_cnt = sum(1 for c in codeplug.channels if c.specialType == "REPEATERS")
+        simplex_cnt = sum(1 for c in codeplug.channels if c.is_simplex)
+        dmr_cnt = sum(1 for c in codeplug.channels if c.mode.upper() == "DMR")
+        report_text = _build_pocket_report_text(recipe, codeplug, spec, summary)
 
-        ctx = {
-            "request": request,
-            "recipe": recipe,
-            "codeplug": codeplug,
-            "radio_spec": spec,
-            "all_radios": workspace.radio_mgr.list_radios(),
-            "default_export_filename": _default_export_filename(recipe, spec),
-            "flash_message": f"Saved radio-agnostic configuration recipe '{recipe.name}' to {dest_yaml}",
+        return {
+            "name": codeplug.name,
+            "mode": recipe.mode,
+            "description": recipe.description,
+            "generated_at": _utc_now_iso(),
+            "operator": workspace.prefs_mgr.preferences.callsign,
+            "radio": f"{spec.brand} {spec.model}",
+            "radio_id": spec.id,
+            "max_channels": spec.maxChannels,
+            "lcd_limit": spec.maxNameLength,
+            "programmer": recipe.radio_target.programmer_format or spec.programmerType,
+            "naming_format": recipe.radio_target.naming_format,
+            "coverage": summary.get("subtitle", ""),
+            "states": summary.get("states", []),
+            "kpis": {
+                "total_channels": codeplug.total_channels,
+                "capacity_pct": round((codeplug.total_channels / max(spec.maxChannels, 1)) * 100, 1),
+                "repeaters": repeater_cnt,
+                "simplex": simplex_cnt,
+                "dmr": dmr_cnt,
+                "bands_active": sum(1 for cnt in band_counts.values() if cnt > 0),
+            },
+            "channels": [_serialize_channel(ch) for ch in codeplug.channels],
+            "text": report_text,
+            "filename": f"{DataSanitizer.sanitize_filename(codeplug.name)}_pocket_card.txt",
         }
-        return templates.TemplateResponse(request, "partials/channel_table.html", ctx)
 
-    @app.post("/export/csv")
-    async def export_csv_download(
-        programmer_type: str = Form("CHIRP"),
-        filename: str = Form("codeplug.csv"),
-    ) -> Response:
-        """Export active codeplug to ./exports/ AND return as a browser file download."""
+    @app.post("/api/codeplug/export")
+    async def api_codeplug_export(payload: ExportCsvRequest) -> Response:
+        """Export active codeplug to ./exports/ AND return as a browser CSV download."""
         codeplug = workspace.session.codeplug
         spec = workspace.session.radio_spec
         if not codeplug or not spec:
-            return Response("No active codeplug to export.", status_code=400)
+            raise HTTPException(status_code=400, detail="No active codeplug to export.")
 
-        clean_name = Path(filename).name
-        if not clean_name.lower().endswith(".csv"):
-            clean_name += ".csv"
-
+        raw_name = clean_single_line(payload.filename, max_len=140) or "codeplug.csv"
+        if not raw_name.lower().endswith(".csv"):
+            raw_name += ".csv"
         out_dir = Path("./exports").resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = out_dir / clean_name
+        dest_path = safe_child_path(out_dir, raw_name)
 
-        export_codeplug(codeplug, spec, dest_path, programmer_type=programmer_type)
-        exporter = get_exporter(programmer_type)
+        programmer = clean_single_line(payload.programmer_type, max_len=32).upper() or "CHIRP"
+        export_codeplug(codeplug, spec, dest_path, programmer_type=programmer)
+        exporter = get_exporter(programmer)
         csv_content = exporter.to_csv_string(codeplug, spec)
 
         return Response(
             content=csv_content,
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{clean_name}"'},
+            headers={"Content-Disposition": f'attachment; filename="{dest_path.name}"'},
         )
 
-    # ─── Saved Recipes Manager ─────────────────────────────────────────────────
-    @app.get("/recipes", response_class=HTMLResponse)
-    async def recipes_page(request: Request, msg: str | None = None) -> HTMLResponse:
-        recipes_dir = get_recipes_dir()
-        recipes_dir.mkdir(parents=True, exist_ok=True)
-        items = []
-        for f in sorted(recipes_dir.glob("*.yaml")):
-            try:
-                rec = RadioPlannerRecipe.from_yaml_file(f)
-                items.append({"filename": f.name, "recipe": rec})
-            except Exception:
-                pass
-        ctx = _base_context(request, active_nav="recipes")
-        ctx.update({"recipes": items, "recipes_dir": recipes_dir, "flash_message": msg})
-        return templates.TemplateResponse(request, "recipes.html", ctx)
+    # ─── Saved Recipes API ───────────────────────────────────────────────────
 
-    @app.post("/recipes/upload")
-    async def upload_recipe(recipe_file: UploadFile) -> RedirectResponse:
-        content = (await recipe_file.read()).decode("utf-8")
-        recipe = RadioPlannerRecipe.from_yaml_text(content)
+    @app.get("/api/recipes")
+    async def api_list_recipes() -> dict[str, Any]:
+        return {
+            "recipes_dir": str(get_recipes_dir()),
+            "recipes": _serialize_recipes(),
+        }
+
+    @app.get("/api/recipes/{filename}")
+    async def api_get_recipe(filename: str) -> dict[str, Any]:
+        recipes_dir = get_recipes_dir()
+        target = safe_child_path(recipes_dir, filename)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="Recipe file not found")
+        try:
+            rec = RadioPlannerRecipe.from_yaml_file(target)
+        except (OSError, ValueError, YamlDiagnosticError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid recipe YAML: {exc}") from exc
+        return {
+            "filename": target.name,
+            "recipe": rec.model_dump(),
+        }
+
+    @app.post("/api/recipes/save")
+    async def api_save_recipe(payload: RecipeSaveRequest) -> dict[str, Any]:
+        recipe = workspace.session.recipe
+        codeplug = workspace.session.codeplug
+        spec = workspace.session.radio_spec
+        if not recipe or not codeplug or not spec:
+            raise HTTPException(status_code=400, detail="No active recipe to save.")
+
+        recipe.name = clean_single_line(payload.name, max_len=100) or recipe.name
+        recipe.description = clean_single_line(payload.description, max_len=300)
         recipes_dir = get_recipes_dir()
         recipes_dir.mkdir(parents=True, exist_ok=True)
-        fname = Path(recipe_file.filename or f"{recipe.name}.yaml").name
-        dest = recipes_dir / fname
+        fname = f"{DataSanitizer.sanitize_filename(recipe.name)}.yaml"
+        dest_yaml = safe_child_path(recipes_dir, fname)
+        recipe.to_yaml_file(dest_yaml)
+
+        return {
+            "saved": True,
+            "filename": dest_yaml.name,
+            "path": str(dest_yaml),
+            "message": f"Saved radio-agnostic recipe '{recipe.name}' to {dest_yaml.name}",
+            "recipes": _serialize_recipes(),
+        }
+
+    @app.post("/api/recipes/upload")
+    async def api_upload_recipe(payload: RecipeUploadRequest) -> dict[str, Any]:
+        try:
+            recipe = RadioPlannerRecipe.from_yaml_text(payload.yaml_text)
+        except (ValueError, YamlDiagnosticError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid YAML recipe: {exc}") from exc
+
+        recipes_dir = get_recipes_dir()
+        recipes_dir.mkdir(parents=True, exist_ok=True)
+        base_name = clean_single_line(payload.filename, max_len=120) or f"{DataSanitizer.sanitize_filename(recipe.name)}.yaml"
+        if not base_name.lower().endswith((".yaml", ".yml")):
+            base_name += ".yaml"
+        dest = safe_child_path(recipes_dir, base_name)
         recipe.to_yaml_file(dest)
-        return RedirectResponse(url=f"/?recipe_file={fname}", status_code=303)
+        return {
+            "uploaded": True,
+            "filename": dest.name,
+            "recipe": recipe.model_dump(),
+            "recipes": _serialize_recipes(),
+        }
 
-    @app.post("/recipes/delete")
-    async def delete_recipe(filename: str = Form(...)) -> RedirectResponse:
-        target = get_recipes_dir() / Path(filename).name
-        if target.is_file():
-            target.unlink()
-        return RedirectResponse(url="/recipes?msg=Recipe+deleted", status_code=303)
+    @app.delete("/api/recipes/{filename}")
+    async def api_delete_recipe(filename: str) -> dict[str, Any]:
+        recipes_dir = get_recipes_dir()
+        target = safe_child_path(recipes_dir, filename)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="Recipe file not found")
+        target.unlink()
+        return {"deleted": True, "filename": target.name, "recipes": _serialize_recipes()}
 
-    # ─── Preset Codeplug Templates Manager ─────────────────────────────────────
-    @app.get("/templates", response_class=HTMLResponse)
-    async def templates_page(
-        request: Request,
-        msg: str | None = None,
-        expanded: str | None = None,
-    ) -> HTMLResponse:
-        workspace.template_mgr.reload()
-        tpl_items = []
-        for tpl in workspace.template_mgr.list_templates():
-            try:
-                chans = workspace.template_mgr.get_template_channels(tpl.id)
-            except Exception:
-                chans = []
-            tpl_items.append(
-                {
-                    "tpl": tpl,
-                    "channels": chans,
-                    "is_user": workspace.template_mgr.is_user_template(tpl.id),
-                    "is_builtin": tpl.id in {"calling_channels", "noaa_wx_channels", "gmrs_channels"},
-                }
-            )
-        ctx = _base_context(request, active_nav="templates")
-        ctx.update(
-            {
-                "templates": tpl_items,
-                "core_templates_dir": workspace.template_mgr.app_dir,
-                "user_templates_dir": workspace.template_mgr.user_dir,
-                "flash_message": msg,
-                "expanded_id": expanded or "",
-            }
-        )
-        return templates.TemplateResponse(request, "templates_mgr.html", ctx)
+    # ─── Preset Templates API ────────────────────────────────────────────────
 
-    @app.post("/templates/save")
-    async def save_template_editor(
-        tpl_id: str = Form(...),
-        name: str = Form(...),
-        tag_text: str = Form("PRESET"),
-        tag_color_hex: str = Form("#00BCD4"),
-        description: str = Form(""),
-        channels_json: str = Form(""),
-        ch_name: list[str] = Form(default=[]),
-        ch_rx_freq: list[str] = Form(default=[]),
-        ch_offset_dir: list[str] = Form(default=[]),
-        ch_offset: list[str] = Form(default=[]),
-        ch_mode: list[str] = Form(default=[]),
-        ch_power: list[str] = Form(default=[]),
-        ch_tone_mode: list[str] = Form(default=[]),
-        ch_tone_val: list[str] = Form(default=[]),
-        ch_comment: list[str] = Form(default=[]),
-    ) -> RedirectResponse:
-        clean_id = DataSanitizer.sanitize_filename(tpl_id.strip().lower()).replace("-", "_")
+    @app.get("/api/templates")
+    async def api_list_templates() -> dict[str, Any]:
+        return {
+            "core_templates_dir": str(workspace.template_mgr.app_dir),
+            "user_templates_dir": str(workspace.template_mgr.user_dir),
+            "templates": _serialize_templates(),
+        }
+
+    @app.post("/api/templates")
+    async def api_save_template(payload: TemplateSaveRequest) -> dict[str, Any]:
+        clean_id = DataSanitizer.sanitize_filename(payload.id.strip().lower()).replace("-", "_")
         if not clean_id:
-            clean_id = "custom_template"
-
-        channel_items: list[TemplateChannelItem] = []
-
-        if channels_json.strip():
-            try:
-                raw_rows = json.loads(channels_json)
-            except Exception:
-                raw_rows = []
-            for idx, r in enumerate(raw_rows, start=1):
-                if not isinstance(r, dict):
-                    continue
-                r_name = str(r.get("name", "")).strip() or f"CH {idx}"
-                try:
-                    rx = round(float(r.get("rxFreq", 146.520)), 5)
-                except (ValueError, TypeError):
-                    continue
-                off_dir = str(r.get("offsetDir", "off")).strip()
-                if off_dir not in ("off", "+", "-"):
-                    off_dir = "off"
-                try:
-                    off_val = round(abs(float(r.get("offset", 0.0) or 0.0)), 5)
-                except (ValueError, TypeError):
-                    off_val = 0.0
-                if off_dir == "+":
-                    tx = round(rx + off_val, 5)
-                elif off_dir == "-":
-                    tx = round(rx - off_val, 5)
-                else:
-                    off_val = 0.0
-                    tx = rx
-
-                mode_val = str(r.get("mode", "FM")).strip().upper() or "FM"
-                pwr_raw = str(r.get("power", "High")).strip().capitalize()
-                power_val = pwr_raw if pwr_raw in ("High", "Mid", "Low") else "High"
-                t_mode = str(r.get("toneMode", "None")).strip()
-                if t_mode not in ("None", "Tone", "TSQL", "DCS"):
-                    t_mode = "None"
-                t_val = str(r.get("toneVal", "None")).strip() or "None"
-
-                ctcss = "None"
-                rx_ctcss = "None"
-                dcs = "None"
-                rx_dcs = "None"
-                if t_mode in ("Tone", "TSQL"):
-                    ctcss = t_val if t_val.lower() != "none" else "88.5"
-                    rx_ctcss = ctcss if t_mode == "TSQL" else "None"
-                elif t_mode == "DCS":
-                    dcs = t_val.lstrip("Dd") if t_val.lower() != "none" else "023"
-                    rx_dcs = dcs
-
-                channel_items.append(
-                    TemplateChannelItem(
-                        name=r_name,
-                        rxFreq=rx,
-                        txFreq=tx,
-                        offset=off_val if off_dir != "off" else None,
-                        offsetDir=off_dir,
-                        mode=mode_val,
-                        power=power_val,
-                        toneMode=t_mode,
-                        ctcss=ctcss,
-                        rxCtcss=rx_ctcss,
-                        dcs=dcs,
-                        rxDcs=rx_dcs,
-                        comment=str(r.get("comment", "")).strip(),
-                    )
-                )
-        else:
-            row_count = max(len(ch_name), len(ch_rx_freq))
-            for idx in range(row_count):
-                r_name = (ch_name[idx] if idx < len(ch_name) else "").strip()
-                r_rx_str = (ch_rx_freq[idx] if idx < len(ch_rx_freq) else "").strip()
-                if not r_name and not r_rx_str:
-                    continue
-                try:
-                    rx = round(float(r_rx_str), 5)
-                except ValueError:
-                    continue
-                r_name = r_name or f"CH {idx + 1}"
-                off_dir = (ch_offset_dir[idx] if idx < len(ch_offset_dir) else "off").strip()
-                if off_dir not in ("off", "+", "-"):
-                    off_dir = "off"
-                off_str = (ch_offset[idx] if idx < len(ch_offset) else "0").strip()
-                try:
-                    off_val = round(abs(float(off_str or 0.0)), 5)
-                except ValueError:
-                    off_val = 0.0
-
-                if off_dir == "+":
-                    tx = round(rx + off_val, 5)
-                elif off_dir == "-":
-                    tx = round(rx - off_val, 5)
-                else:
-                    off_val = 0.0
-                    tx = rx
-
-                mode_val = (ch_mode[idx] if idx < len(ch_mode) else "FM").strip().upper() or "FM"
-                pwr_raw = (ch_power[idx] if idx < len(ch_power) else "High").strip().capitalize()
-                power_val = pwr_raw if pwr_raw in ("High", "Mid", "Low") else "High"
-                t_mode = (ch_tone_mode[idx] if idx < len(ch_tone_mode) else "None").strip()
-                if t_mode not in ("None", "Tone", "TSQL", "DCS"):
-                    t_mode = "None"
-                t_val = (ch_tone_val[idx] if idx < len(ch_tone_val) else "None").strip() or "None"
-
-                ctcss = "None"
-                rx_ctcss = "None"
-                dcs = "None"
-                rx_dcs = "None"
-                if t_mode in ("Tone", "TSQL"):
-                    ctcss = t_val if t_val.lower() != "none" else "88.5"
-                    rx_ctcss = ctcss if t_mode == "TSQL" else "None"
-                elif t_mode == "DCS":
-                    dcs = t_val.lstrip("Dd") if t_val.lower() != "none" else "023"
-                    rx_dcs = dcs
-
-                comment_val = (ch_comment[idx] if idx < len(ch_comment) else "").strip()
-                channel_items.append(
-                    TemplateChannelItem(
-                        name=r_name,
-                        rxFreq=rx,
-                        txFreq=tx,
-                        offset=off_val if off_dir != "off" else None,
-                        offsetDir=off_dir,
-                        mode=mode_val,
-                        power=power_val,
-                        toneMode=t_mode,
-                        ctcss=ctcss,
-                        rxCtcss=rx_ctcss,
-                        dcs=dcs,
-                        rxDcs=rx_dcs,
-                        comment=comment_val,
-                    )
-                )
-
+            raise HTTPException(status_code=400, detail="Template ID slug is required.")
+        channel_items = _parse_template_channel_payloads(payload.channels)
         updated_tpl = PresetTemplateFile(
             id=clean_id,
-            name=name.strip() or clean_id,
-            description=description.strip(),
-            tagText=tag_text.strip().upper() or "PRESET",
-            tagColorHex=tag_color_hex.strip() or "#00BCD4",
+            name=clean_single_line(payload.name, max_len=100) or clean_id,
+            description=clean_single_line(payload.description, max_len=240),
+            tagText=clean_single_line(payload.tagText, max_len=24).upper() or "PRESET",
+            tagColorHex=clean_single_line(payload.tagColorHex, max_len=16) or "#00BCD4",
             channels=channel_items,
         )
         dest = workspace.template_mgr.save_core_template(updated_tpl)
-        return RedirectResponse(
-            url=f"/templates?msg=Saved+{len(channel_items)}+channels+to+core+template+{dest.name}&expanded={clean_id}",
-            status_code=303,
-        )
+        return {
+            "saved": True,
+            "id": clean_id,
+            "filename": dest.name,
+            "message": f"Saved {len(channel_items)} channel(s) to template {dest.name}",
+            "templates": _serialize_templates(),
+        }
 
-    @app.post("/templates/customize")
-    async def customize_template(template_id: str = Form(...)) -> RedirectResponse:
-        dest = workspace.template_mgr.copy_to_user_directory(template_id)
-        return RedirectResponse(url=f"/templates?msg=Copied+to+{dest.id}", status_code=303)
-
-    @app.post("/templates/delete")
-    async def delete_template(template_id: str = Form(...)) -> RedirectResponse:
-        workspace.template_mgr.delete_template(template_id)
-        return RedirectResponse(url="/templates?msg=Template+deleted", status_code=303)
-
-    @app.post("/templates/import")
-    async def import_template(
-        tpl_id: str = Form(...),
-        name: str = Form(...),
-        tag_text: str = Form("CUSTOM"),
-        description: str = Form(""),
-        template_file: UploadFile = ...,
-    ) -> RedirectResponse:
-        raw_text = (await template_file.read()).decode("utf-8")
-        fname = (template_file.filename or "").lower()
-        clean_id = DataSanitizer.sanitize_filename(tpl_id.strip().lower()).replace("-", "_")
-        if fname.endswith((".yaml", ".yml")):
-            data = parse_yaml_text(raw_text)
-            new_tpl = PresetTemplateFile.model_validate(data)
-        else:
-            new_tpl = PresetTemplateFile(
-                id=clean_id or "custom_template",
-                name=name.strip(),
-                description=description.strip(),
-                tagText=tag_text.strip().upper(),
-                tagColorHex="#4CAF50",
-                rawCsvContent=raw_text,
-            )
+    @app.post("/api/templates/import")
+    async def api_import_template(payload: TemplateImportRequest) -> dict[str, Any]:
+        clean_id = DataSanitizer.sanitize_filename(payload.id.strip().lower()).replace("-", "_")
+        if not clean_id:
+            raise HTTPException(status_code=400, detail="Template ID slug is required.")
+        fname = payload.filename.lower()
+        try:
+            if fname.endswith((".yaml", ".yml")):
+                data = parse_yaml_text(payload.content)
+                new_tpl = PresetTemplateFile.model_validate(data)
+            else:
+                new_tpl = PresetTemplateFile(
+                    id=clean_id,
+                    name=clean_single_line(payload.name, max_len=100) or clean_id,
+                    description=clean_single_line(payload.description, max_len=240),
+                    tagText=clean_single_line(payload.tagText, max_len=24).upper() or "CUSTOM",
+                    tagColorHex="#4CAF50",
+                    rawCsvContent=payload.content,
+                )
+        except (ValueError, YamlDiagnosticError, ValidationError) as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to parse imported template: {exc}") from exc
         workspace.template_mgr.save_core_template(new_tpl)
-        return RedirectResponse(
-            url=f"/templates?msg=Imported+core+template+{new_tpl.name}&expanded={new_tpl.id}",
-            status_code=303,
-        )
+        return {
+            "imported": True,
+            "id": new_tpl.id,
+            "message": f"Imported template '{new_tpl.name}' ({len(new_tpl.channels)} channels).",
+            "templates": _serialize_templates(),
+        }
 
-    # ─── Radios & Hardware Specs Manager ───────────────────────────────────────
-    @app.get("/radios", response_class=HTMLResponse)
-    async def radios_page(request: Request, msg: str | None = None) -> HTMLResponse:
-        items = []
-        for r in workspace.radio_mgr.list_radios():
-            items.append(
-                {
-                    "spec": r,
-                    "spec_json": json.dumps(r.model_dump()),
-                    "is_user": workspace.radio_mgr.is_user_radio(r.id),
-                }
-            )
-        ctx = _base_context(request, active_nav="radios")
-        ctx.update({"radios": items, "flash_message": msg})
-        return templates.TemplateResponse(request, "radios.html", ctx)
+    @app.delete("/api/templates/{tpl_id}")
+    async def api_delete_template(tpl_id: str) -> dict[str, Any]:
+        clean_id = clean_single_line(tpl_id, max_len=64)
+        if clean_id in {"calling_channels", "noaa_wx_channels", "gmrs_channels"}:
+            raise HTTPException(status_code=400, detail="Built-in system templates cannot be deleted.")
+        deleted = workspace.template_mgr.delete_template(clean_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Template '{clean_id}' not found.")
+        return {"deleted": True, "id": clean_id, "templates": _serialize_templates()}
 
-    @app.post("/radios/save")
-    async def save_radio(
-        brand: str = Form(...),
-        model: str = Form(...),
-        radio_id: str = Form(...),
-        description: str = Form(""),
-        start_channel: int = Form(1),
-        max_channels: int = Form(128),
-        max_name_length: int = Form(8),
-        programmer_type: str = Form("RT_SYSTEMS"),
-        supported_bands: str = Form("2m, 70cm, WX"),
-        supported_modes: str = Form("FM, AM"),
-        allow_dots: bool = Form(False),
-        allow_spaces: bool = Form(False),
-    ) -> RedirectResponse:
-        bands = [b.strip() for b in supported_bands.split(",") if b.strip()]
-        modes = [m.strip() for m in supported_modes.split(",") if m.strip()]
+    # ─── Radios & Hardware Specs API ─────────────────────────────────────────
+
+    @app.get("/api/radios")
+    async def api_list_radios() -> dict[str, Any]:
+        return {"radios": _serialize_radios()}
+
+    @app.get("/api/radios/{radio_id}/naming-previews")
+    async def api_radio_naming_previews(radio_id: str, mode: str = "ROUTE_CORRIDOR") -> dict[str, Any]:
+        spec = workspace.radio_mgr.get_radio(radio_id)
+        return {
+            "radio": spec.model_dump(),
+            "naming_previews": _build_naming_previews(spec, mode=mode),
+        }
+
+    @app.post("/api/radios")
+    async def api_save_radio(payload: RadioSaveRequest) -> dict[str, Any]:
+        clean_id = DataSanitizer.sanitize_filename(payload.id.strip().lower()).replace("-", "_")
+        if not clean_id:
+            raise HTTPException(status_code=400, detail="Unique radio ID slug is required.")
         existing_cols: list[str] = []
-        if workspace.radio_mgr.has_radio(radio_id):
-            existing_cols = workspace.radio_mgr.get_radio(radio_id).columns
+        if workspace.radio_mgr.has_radio(clean_id):
+            existing_cols = workspace.radio_mgr.get_radio(clean_id).columns
+
+        bands = [clean_single_line(b, max_len=24) for b in payload.supportedBands if clean_single_line(b, max_len=24)]
+        modes = [clean_single_line(m, max_len=16).upper() for m in payload.supportedModes if clean_single_line(m, max_len=16)]
+        if not bands:
+            bands = ["2m", "70cm", "WX"]
+        if not modes:
+            modes = ["FM"]
 
         spec = TargetRadioSpec(
-            id=radio_id.strip(),
-            brand=brand.strip(),
-            model=model.strip(),
-            description=description.strip() or f"{brand} {model}",
-            startChannel=start_channel,
-            maxChannels=max_channels,
-            maxNameLength=max_name_length,
-            programmerType=programmer_type.strip().upper(),
-            allowDots=allow_dots,
-            allowSpaces=allow_spaces,
+            id=clean_id,
+            brand=clean_single_line(payload.brand, max_len=64),
+            model=clean_single_line(payload.model, max_len=64),
+            description=clean_single_line(payload.description, max_len=200) or f"{payload.brand} {payload.model}",
+            startChannel=payload.startChannel,
+            maxChannels=payload.maxChannels,
+            maxNameLength=payload.maxNameLength,
+            programmerType=clean_single_line(payload.programmerType, max_len=32).upper() or "RT_SYSTEMS",
+            allowDots=payload.allowDots,
+            allowSpaces=payload.allowSpaces,
             supportedBands=bands,
             supportedModes=modes,
             columns=existing_cols,
         )
         workspace.radio_mgr.save_user_radio(spec)
-        return RedirectResponse(url=f"/radios?msg=Saved+radio+{spec.brand}+{spec.model}", status_code=303)
+        return {
+            "saved": True,
+            "radio": spec.model_dump(),
+            "message": f"Saved radio specification {spec.brand} {spec.model}",
+            "radios": _serialize_radios(),
+        }
 
-    @app.post("/radios/delete")
-    async def delete_radio(radio_id: str = Form(...)) -> RedirectResponse:
-        workspace.radio_mgr.delete_user_radio(radio_id)
-        return RedirectResponse(url="/radios?msg=Custom+radio+deleted", status_code=303)
-
-    # ─── User Preferences & API Keys Manager ───────────────────────────────────
-    @app.get("/preferences", response_class=HTMLResponse)
-    async def preferences_page(request: Request, msg: str | None = None) -> HTMLResponse:
-        ctx = _base_context(request, active_nav="preferences")
-        ctx.update(
-            {
-                "cached_states": workspace.repeater_provider.list_cached_state_files(),
-                "flash_message": msg,
-            }
-        )
-        return templates.TemplateResponse(request, "preferences.html", ctx)
-
-    @app.post("/preferences/save")
-    async def save_preferences(
-        callsign: str = Form("N0CALL"),
-        operator_name: str = Form("Radio Operator"),
-        primary_dmr_id: str = Form(""),
-        default_radio_id: str = Form(""),
-        channel_naming_format: str = Form("CITY_FREQ"),
-        distance_unit: str = Form("MILES"),
-        repeater_max_age_days: int = Form(30),
-        web_port: int = Form(8000),
-        color_theme: str = Form("DARK"),
-        font_family: str = Form("SANS"),
-        font_size: str = Form("MEDIUM"),
-        repeaterbook_api_key: str = Form(""),
-        radioid_username: str = Form(""),
-        radioid_api_key: str = Form(""),
-    ) -> RedirectResponse:
-        new_prefs = workspace.prefs_mgr.preferences.update_settings(
-            callsign=callsign.strip(),
-            operatorName=operator_name.strip(),
-            primaryDmrId=primary_dmr_id.strip() or None,
-            defaultRadioId=default_radio_id.strip() or None,
-            channelNamingFormat=channel_naming_format.strip(),
-            distanceUnit=distance_unit.strip(),
-            repeaterMaxAgeDays=max(1, repeater_max_age_days),
-            webPort=max(1, min(65535, web_port)),
-            colorTheme=color_theme.strip().upper(),
-            fontFamily=font_family.strip().upper(),
-            fontSize=font_size.strip().upper(),
-        )
-        workspace.prefs_mgr.save_preferences(new_prefs)
-
-        rb_key = repeaterbook_api_key.strip() or None
-        new_tokens = workspace.prefs_mgr.tokens.model_copy(
-            update={
-                "repeaterBookApiKey": rb_key,
-                "radioIdUsername": radioid_username.strip().upper() or None,
-                "radioIdApiKey": radioid_api_key.strip() or None,
-            }
-        )
-        workspace.prefs_mgr.save_tokens(new_tokens)
-        workspace.repeater_provider.api_key = rb_key
-        workspace.repeater_provider.last_status = "CONFIGURED" if rb_key else "NO_KEY"
-
-        return RedirectResponse(url="/preferences?msg=Preferences+and+API+tokens+saved", status_code=303)
+    @app.delete("/api/radios/{radio_id}")
+    async def api_delete_radio(radio_id: str) -> dict[str, Any]:
+        clean_id = clean_single_line(radio_id, max_len=64)
+        deleted = workspace.radio_mgr.delete_user_radio(clean_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Custom user radio '{clean_id}' not found.")
+        return {"deleted": True, "id": clean_id, "radios": _serialize_radios()}
 
     return app
 
