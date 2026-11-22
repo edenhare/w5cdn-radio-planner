@@ -1,16 +1,55 @@
-# Byte-compiled / optimized / DLL files
+# Local runtime data, credentials & tokens (NEVER commit secrets or exports)
+.env
+.env.*
+!.env.example
+tokens
+*ApiToken*.txt
+docs/RepeaterBookPythonClientApiToken.txt
+session.json
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.key
+*.pem
+*.p12
+*.log
+*.tmp
+exports/
+scratch/
+
+# Python virtual environments & caches
+.venv/
+venv/
+env/
+ENV/
+.Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
+.ruff_cache/
 
-# Distribution / packaging
-.Python
+# Testing, coverage & CI metrics
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+pytest-results.xml
+ui-e2e-results.xml
+ci-metrics.json
+security-metrics.json
+ui-e2e-metrics.json
+htmlcov/
+nosetests.xml
+
+# Build & packaging artifacts
 build/
-develop-eggs/
 dist/
+release/
+*.spec
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -24,26 +63,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
-.venv/
-env/
-venv/
-ENV/
-
-# Testing and coverage
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-nosetests.xml
-coverage.xml
-
-# IDE & OS files
-.vscode/
+# IDE & OS files (keep workspace extension recommendations tracked)
+.vscode/*
+!.vscode/extensions.json
 .idea/
 .DS_Store
 Thumbs.db
-
-# User data & exports
-exports/
-scratch/

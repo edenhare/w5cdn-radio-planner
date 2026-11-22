@@ -1,0 +1,22 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+        - feat
+    - title: Bug Fixes
+      labels:
+        - bug
+        - fix
+    - title: Security & QA
+      labels:
+        - security
+        - qa
+    - title: Other Changes
+      labels:
+        - "*"

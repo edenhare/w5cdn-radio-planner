@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.prompt import IntPrompt, Prompt
 from rich.table import Table
 
+from cli.ui.renderers import render_header
 from core.managers.template_manager import TemplateManager
 
 
@@ -31,6 +32,7 @@ def select_and_sequence_blocks(
             sequence.append("TEMPLATE:noaa_wx_channels")
 
     while True:
+        render_header(console, subtitle="Codeplug Sequence & Template Blocks")
         console.print("\n[bold cyan]═══ Codeplug Sequence & Template Blocks ═══[/bold cyan]")
         table = Table(border_style="cyan", show_lines=True)
         table.add_column("#", justify="right", style="cyan", width=4)

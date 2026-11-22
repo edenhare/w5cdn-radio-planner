@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="shack-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>W5CDN RadioPlanner — Cockpit Studio</title>
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <link rel="icon" type="image/png" href="/static/icon.png" />
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Telemetry & Target Radio Bar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo">
+          <span class="brand-call">RP</span>
+          <span class="brand-title">RADIOPLANNER</span>
+        </div>
+        <span class="lookup-source-pill" id="operatorCallBadge" title="Active Operator Callsign (click to edit preferences)">OP: N0CALL</span>
+        <span class="lookup-source-pill" id="apiStatusPill" title="Click to configure RepeaterBook API Key">OFFLINE CACHE</span>
+      </div>
+
+      <!-- Digital Target Radio Readout (clickable to focus target selector) -->
+      <div class="vfo-cluster hidden" id="vfoCluster" title="Active target radio &amp; channel memory utilization">
+        <span class="vfo-freq" id="vfoRadio">No Target Radio</span>
+        <div class="vfo-badges">
+          <span class="vfo-tag" id="vfoSlots">0 / 0 CH</span>
+          <span class="vfo-tag" id="vfoLcd">0c LCD</span>
+          <span class="vfo-tag" id="vfoFormat">CHIRP</span>
+        </div>
+        <span class="on-air-beacon" id="vfoBeacon">● READY</span>
+      </div>
+
+      <div class="topbar-right">
+        <button type="button" class="btn btn-amber btn-sm hidden" id="btnUpdateBanner" title="A newer version of W5CDN RadioPlanner is available">
+          ↑ Update Available
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnTopAssemble" title="Assemble plan &amp; map (Ctrl+Enter)">
+          ⚡ Assemble <span class="kbd kbd-solid">Ctrl+↵</span>
+        </button>
+        <button type="button" class="btn btn-sm" id="btnOpenPanels" title="Choose visible panels and where to dock them (Alt+L)">
+          ⊞ Panels <span class="kbd">Alt+L</span>
+        </button>
+
+        <!-- Precision Instrument Clock Cluster -->
+        <div class="clocks">
+          <div class="clock-group">
+            <span class="clock-label">UTC</span>
+            <span class="clock-utc" id="clockUtc">--:--:--Z</span>
+            <span class="clock-date" id="clockDate">----</span>
+          </div>
+          <div class="clock-group">
+            <span class="clock-label">LOC</span>
+            <span class="clock-local" id="clockLocal">--:--:--</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace: [Left Icon Rail] [5-Zone Dockable Stage] + [Left-Rail Saved Recipes Drawer] -->
+    <div class="workspace" id="workspace">
+      <!-- Slim Left Icon Rail -->
+      <nav class="nav-rail" aria-label="Primary Navigation">
+        <div class="rail-group">
+          <button type="button" class="rail-btn" id="btnToggleRecipes" title="Saved Configuration Recipes (Alt+S)">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            <span class="rail-label">Recipes</span>
+            <span class="rail-badge" id="railRecipeBadge">0</span>
+          </button>
+          <button type="button" class="rail-btn" id="btnNewPlan" title="Reset / Start New Plan (Alt+N)">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            <span class="rail-label">New</span>
+          </button>
+          <button type="button" class="rail-btn active" id="btnToggleBuilder" title="Toggle Plan Builder Panel (Alt+B)">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v4H4zM4 12h10v7H4zM17 12h3v7h-3z"/></svg>
+            <span class="rail-label">Builder</span>
+          </button>
+          <button type="button" class="rail-btn active" id="btnToggleMap" title="Toggle Coverage Map Panel (Alt+M)">
+            <svg viewBox="0 0 24 24"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>
+            <span class="rail-label">Map</span>
+          </button>
+          <button type="button" class="rail-btn active" id="btnToggleSummary" title="Toggle Plan Summary Panel (Alt+U)">
+            <svg viewBox="0 0 24 24"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4"/></svg>
+            <span class="rail-label">Summary</span>
+          </button>
+          <button type="button" class="rail-btn" id="btnToggleTemplates" title="Toggle Preset Templates Manager (Alt+T)">
+            <svg viewBox="0 0 24 24"><path d="M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+            <span class="rail-label">Templates</span>
+            <span class="rail-badge" id="railTplBadge">0</span>
+          </button>
+          <button type="button" class="rail-btn" id="btnToggleRadios" title="Toggle Radios &amp; Hardware Specs Panel (Alt+R)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="7" width="12" height="14" rx="2"/><path d="M9 7V3M10 11h4M10 15h4"/></svg>
+            <span class="rail-label">Radios</span>
+            <span class="rail-badge" id="railRadioBadge">0</span>
+          </button>
+          <button type="button" class="rail-btn" id="btnRailPanels" title="Configure Panels &amp; Dock Positions (Alt+L)">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span class="rail-label">Panels</span>
+          </button>
+        </div>
+
+        <div class="rail-group">
+          <button type="button" class="rail-btn" id="btnShortcuts" title="Keyboard Shortcuts (?)">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 5 .5c0 2-2.5 2-2.5 4"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/></svg>
+            <span class="rail-label">Help</span>
+          </button>
+          <button type="button" class="rail-btn" id="btnOpenPrefs" title="Preferences: Themes, Fonts, Operator, API Keys (Alt+,)">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="rail-label">Prefs</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Left-Rail Slide-Out Drawer: Saved Recipes -->
+      <div class="recipes-rail-backdrop hidden" id="recipesDrawerBackdrop">
+        <aside class="recipes-rail-drawer" id="panelRecipes" aria-label="Saved Configuration Recipes">
+          <div class="dock-panel-header">
+            <div class="plan-title-block">
+              <span class="sidebar-title">Saved Recipes</span>
+              <span class="mono pill" id="recipeCountLabel">0</span>
+            </div>
+            <div class="plan-actions">
+              <button type="button" class="btn btn-primary btn-xs" id="btnDrawerSaveRecipe" title="Save active plan as YAML recipe">Save</button>
+              <button type="button" class="btn btn-xs" id="btnUploadRecipe" title="Upload a YAML recipe file">Upload</button>
+              <input type="file" id="recipeUploadFile" accept=".yaml,.yml" class="hidden" />
+              <button type="button" class="btn btn-ghost btn-xs" id="btnCloseRecipesDrawer" title="Close Saved Recipes (Alt+S)">✕</button>
+            </div>
+          </div>
+          <div class="drawer-search-bar">
+            <input type="search" id="recipesSearch" class="input input-sm" placeholder="Filter saved recipes..." />
+          </div>
+          <div class="recipes-list" id="recipesList"></div>
+        </aside>
+      </div>
+
+      <!-- 5-Zone Dockable Stage -->
+      <div class="cockpit-stage" id="cockpitStage">
+        <div class="dock-zone dock-horizontal hidden" id="dockTop"></div>
+        <div class="dock-resizer dock-resizer-h hidden" id="resizerTop" data-resize-zone="top" title="Drag to resize top zone"></div>
+
+        <div class="stage-middle">
+          <!-- Left Dock Zone (Default: Plan Builder) -->
+          <div class="dock-zone dock-vertical dock-left" id="dockLeft">
+            <aside class="dock-panel" id="panelBuilder" data-panel-id="builder" aria-label="Plan Builder">
+              <div class="dock-panel-header">
+                <span class="sidebar-title">Plan Builder</span>
+                <div class="plan-actions">
+                  <div class="dock-mini-group" title="Move Plan Builder panel">
+                    <button type="button" class="dock-mini-btn active" data-panel-dock="builder:left" title="Left">◧</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="builder:right" title="Right">◨</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="builder:top" title="Top">⬒</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="builder:bottom" title="Bottom">⬓</button>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="builder" title="Hide Plan Builder (Alt+B)">✕</button>
+                </div>
+              </div>
+              <div class="dock-panel-body">
+                <div class="loaded-recipe-banner hidden" id="loadedRecipeBanner">
+                  <span id="loadedRecipeText">Loaded recipe</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btnResetBuilderDefaults">Reset</button>
+                </div>
+
+                <form id="plannerForm" autocomplete="off">
+                  <div class="dock-panel-body dock-panel-body-flush">
+                    <div class="field">
+                      <label>Operating Mode</label>
+                      <div class="segmented" role="group" aria-label="Operating Mode">
+                        <button type="button" class="seg-btn active" data-builder-mode="ROUTE_CORRIDOR">Corridor</button>
+                        <button type="button" class="seg-btn" data-builder-mode="PROXIMITY_SEARCH">Proximity</button>
+                        <button type="button" class="seg-btn" data-builder-mode="AVIATION_PLANNER">Aviation</button>
+                      </div>
+                    </div>
+
+                    <!-- Mode 1: Route Corridor Inputs -->
+                    <div id="builderCorridorSection" class="builder-list">
+                      <div class="plan-header-row">
+                        <span class="section-label">Route Waypoints</span>
+                        <div class="plan-actions">
+                          <button type="button" class="btn btn-xs" id="btnReverseWaypoints" title="Reverse stop order">⇅ Reverse</button>
+                          <button type="button" class="btn btn-primary btn-xs" id="btnAddWaypoint">+ Stop</button>
+                        </div>
+                      </div>
+                      <div id="waypointsList" class="builder-list"></div>
+                      <div class="form-grid-2">
+                        <div class="field">
+                          <label for="inCorridorWidth">Width (mi)</label>
+                          <input type="number" id="inCorridorWidth" class="input input-sm mono" step="any" min="1" max="200" value="25" />
+                        </div>
+                        <div class="field">
+                          <label>Options</label>
+                          <label class="check-card">
+                            <input type="checkbox" id="chkCorridorSimplex" checked />
+                            <span>Simplex</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Mode 2 & 3: Proximity / Aviation Center & Radius -->
+                    <div id="builderRadialSection" class="builder-list hidden">
+                      <div class="field">
+                        <label for="inCenterLocation">
+                          <span id="lblCenterLocation">Center Location / City</span>
+                          <button type="button" class="btn btn-ghost btn-xs" id="btnUseCurrentLocation" title="Detect current GPS or IP location">📍 Locate</button>
+                        </label>
+                        <input type="text" id="inCenterLocation" class="input input-sm" value="Dallas, TX" placeholder="e.g. Dallas, TX or KTYR" />
+                      </div>
+                      <div class="form-grid-2">
+                        <div class="field">
+                          <label for="inRadiusMiles">Radius (mi)</label>
+                          <input type="number" id="inRadiusMiles" class="input input-sm mono" step="any" min="1" max="300" value="50" />
+                        </div>
+                        <div class="field" id="radialSimplexWrap">
+                          <label>Options</label>
+                          <label class="check-card">
+                            <input type="checkbox" id="chkRadialSimplex" checked />
+                            <span>Simplex</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Repeater Access Filter -->
+                    <div id="builderAccessSection" class="field">
+                      <label>Repeater Access Filter</label>
+                      <div class="access-grid">
+                        <label class="check-card"><input type="checkbox" data-access-opt="OPEN" checked /> OPEN</label>
+                        <label class="check-card"><input type="checkbox" data-access-opt="CLOSED" /> CLOSED</label>
+                        <label class="check-card"><input type="checkbox" data-access-opt="PRIVATE" /> PRIVATE</label>
+                      </div>
+                    </div>
+
+                    <!-- Drag & Drop Codeplug Sequence Blocks -->
+                    <div class="field">
+                      <label>Sequence &amp; Template Blocks (Drag ☰)</label>
+                      <div id="sequenceList" class="builder-list"></div>
+                      <div class="drawer-search-bar" style="padding:4px 0 0 0; border-bottom:none;">
+                        <select id="addTemplateSelect" class="select select-sm" aria-label="Select template block to insert"></select>
+                        <button type="button" class="btn btn-xs" id="btnInsertTemplateBlock">+ Insert</button>
+                      </div>
+                    </div>
+
+                    <div class="field">
+                      <label for="inPlanName">Plan Name (Optional)</label>
+                      <input type="text" id="inPlanName" class="input input-sm" placeholder="Auto-generated from route/location" />
+                    </div>
+
+                    <div class="field">
+                      <label for="inPlanDesc">Description / Notes</label>
+                      <input type="text" id="inPlanDesc" class="input input-sm" placeholder="Saved in recipe metadata &amp; pocket card" />
+                    </div>
+
+                    <button type="submit" class="btn btn-success btn-block" id="btnAssemblePlan">
+                      ⚡ Assemble Plan &amp; Map <span class="kbd kbd-solid">Ctrl+↵</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </aside>
+          </div>
+          <div class="dock-resizer dock-resizer-v" id="resizerLeft" data-resize-zone="left" title="Drag to resize left zone"></div>
+
+          <!-- Center Main Stage: Active Codeplug Memory Table -->
+          <main class="main">
+            <!-- Empty State -->
+            <section class="empty-workspace" id="emptyWorkspace">
+              <h2>RadioPlanner Cockpit Studio</h2>
+              <p>
+                Configure your route waypoints, radial proximity ring, or local airport scan in the Plan Builder, or launch a quick-start preset below.
+                Target any radio hardware live and export CHIRP, RT Systems, or Generic CSVs.
+              </p>
+              <div class="empty-presets">
+                <button type="button" class="btn btn-primary" data-quick-mode="ROUTE_CORRIDOR">+ Highway Route Corridor</button>
+                <button type="button" class="btn btn-success" data-quick-mode="PROXIMITY_SEARCH">+ Radial Proximity Rings</button>
+                <button type="button" class="btn btn-violet" data-quick-mode="AVIATION_PLANNER">+ Local Aviation Planner</button>
+                <button type="button" class="btn" id="btnEmptyOpenRecipes">Saved Recipes</button>
+              </div>
+            </section>
+
+            <!-- Active Plan Workspace -->
+            <div id="activePlanWorkspace" class="active-plan-workspace hidden">
+              <!-- Active Plan Header -->
+              <section class="plan-header">
+                <div class="plan-header-row">
+                  <div class="plan-title-block">
+                    <span class="status-dot" id="planStatusDot"></span>
+                    <h1 class="plan-title" id="planTitle">Codeplug Plan</h1>
+                    <span class="pill pill-blue" id="planModePill">ROUTE_CORRIDOR</span>
+                  </div>
+                  <div class="plan-actions">
+                    <button type="button" class="btn btn-sm" id="btnPlanWeather" title="Fetch active National Weather Service alerts for this plan's states">⛅ Area Weather</button>
+                    <button type="button" class="btn btn-violet btn-sm" id="btnPlanExpandDmr" title="Expand DMR channels across standard talkgroups">Expand DMR</button>
+                    <button type="button" class="btn btn-sm" id="btnPlanSaveRecipe" title="Save radio-agnostic YAML recipe">Save Recipe</button>
+                    <button type="button" class="btn btn-amber btn-sm" id="btnPlanReport" title="View &amp; print codeplug pocket reference card">Pocket Card / Report</button>
+                    <div class="export-inline-group">
+                      <select id="exportProgrammerSelect" class="select select-sm" style="width:130px;" aria-label="Export CSV Format">
+                        <option value="CHIRP">CHIRP CSV</option>
+                        <option value="RT_SYSTEMS">RT Systems CSV</option>
+                        <option value="GENERIC_CSV">Generic CSV</option>
+                      </select>
+                      <input type="text" id="exportFilenameInput" class="input input-sm mono" style="width:190px;" aria-label="Export CSV filename" />
+                      <button type="button" class="btn btn-success btn-sm" id="btnPlanExportCsv" title="Download CSV &amp; save to ./exports/">⬇ Export CSV</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="plan-specs" id="planSpecsLine"></div>
+              </section>
+
+              <!-- Warnings / Notices Strip -->
+              <section class="notices-wrap hidden" id="planNoticesWrap"></section>
+
+              <!-- Live Target Radio, Naming Format & Band Controls -->
+              <section class="target-bar" id="targetBar">
+                <div class="target-bar-top">
+                  <div class="field">
+                    <label for="targetRadioSelect">Target Radio Hardware</label>
+                    <select id="targetRadioSelect" class="select select-sm"></select>
+                  </div>
+                  <div class="field">
+                    <label for="targetNamingSelect">
+                      <span>Channel Naming Format</span>
+                      <span class="mono" id="targetLcdHint">LCD 8c</span>
+                    </label>
+                    <select id="targetNamingSelect" class="select select-sm"></select>
+                  </div>
+                  <div class="field">
+                    <label>Sample LCD</label>
+                    <span class="lcd-badge" id="targetNamingSample">Tyler 7.20</span>
+                  </div>
+                </div>
+                <div class="target-bands-row" id="targetBandsRow"></div>
+              </section>
+
+              <!-- Telemetry KPI Chips, Filters, Multi-Select Delete & Undo Toolbar -->
+              <section class="log-toolbar">
+                <div class="stats-strip" id="bandKpiStrip"></div>
+                <div class="filter-controls">
+                  <button type="button" class="filter-btn active" data-ch-filter="ALL">All</button>
+                  <button type="button" class="filter-btn" data-ch-filter="REPEATERS">Repeaters</button>
+                  <button type="button" class="filter-btn" data-ch-filter="CALLING">Calling</button>
+                  <button type="button" class="filter-btn" data-ch-filter="WX">WX</button>
+                  <button type="button" class="filter-btn" data-ch-filter="AVIATION">Air</button>
+                  <button type="button" class="filter-btn" data-ch-filter="SIMPLEX">Simplex</button>
+                  <button type="button" class="filter-btn" data-ch-filter="DMR">DMR</button>
+                  <button type="button" class="btn btn-danger btn-xs" id="btnDeleteSelected" disabled title="Delete checked rows (Shift+Click selects a range)">
+                    🗑 Delete (<span id="selectedCount">0</span>)
+                  </button>
+                  <button type="button" class="btn btn-amber btn-xs" id="btnUndoDelete" disabled title="Undo last channel delete or edit (Ctrl+Z)">
+                    ↩ Undo <span id="undoCountBadge"></span>
+                  </button>
+                  <input type="search" id="searchChannels" class="input search-input" placeholder="Filter channels... (Alt+F)" />
+                </div>
+              </section>
+
+              <!-- Codeplug Channel Memory Table -->
+              <section class="table-wrap" id="tableWrap">
+                <table class="channels-table" id="channelsTable">
+                  <thead>
+                    <tr>
+                      <th class="col-chk"><input type="checkbox" id="selectAllChannels" title="Select / Deselect all visible channels" /></th>
+                      <th class="col-slot">Slot</th>
+                      <th class="col-badges">Type / Mode</th>
+                      <th class="col-lcd" id="lcdColHeader">LCD Name</th>
+                      <th class="col-call">Callsign</th>
+                      <th class="col-freq">RX (MHz)</th>
+                      <th class="col-freq">TX (MHz)</th>
+                      <th class="col-dup">Duplex</th>
+                      <th class="col-tone">Tone / DCS</th>
+                      <th class="col-loc">Location / Comment</th>
+                      <th class="col-act">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="channelsTbody"></tbody>
+                </table>
+                <div class="table-empty hidden" id="tableEmpty">
+                  No channels match this filter. Clear search or switch filter buttons above.
+                </div>
+              </section>
+            </div>
+
+            <!-- Footer Telemetry Bar -->
+            <footer class="shortcut-footer" id="shortcutFooter" tabindex="0">
+              <div class="shortcut-hints">
+                <span><span class="kbd">Ctrl+↵</span> Assemble</span>
+                <span><span class="kbd">Alt+S</span> Recipes</span>
+                <span><span class="kbd">Alt+B</span> Builder</span>
+                <span><span class="kbd">Alt+M</span> Map</span>
+                <span><span class="kbd">Alt+L</span> Panels</span>
+                <span><span class="kbd">Alt+,</span> Prefs</span>
+                <span><span class="kbd">E</span> Edit Ch</span>
+                <span><span class="kbd">L</span> Locate</span>
+                <span><span class="kbd">Ctrl+Z</span> Undo</span>
+                <span><span class="kbd">Del</span> Delete</span>
+              </div>
+              <span class="mono" id="footerStatus">RadioPlanner Cockpit • Ready</span>
+            </footer>
+          </main>
+
+          <div class="dock-resizer dock-resizer-v" id="resizerRight" data-resize-zone="right" title="Drag to resize right zone"></div>
+
+          <!-- Right Dock Zone (Default: Interactive Map + Plan Summary; plus Templates & Radios when toggled) -->
+          <div class="dock-zone dock-vertical" id="dockRight">
+            <!-- Dockable Panel: Interactive Coverage & Repeater Map -->
+            <aside class="dock-panel" id="panelMap" data-panel-id="map" aria-label="Coverage Map">
+              <div class="dock-panel-header">
+                <div class="plan-title-block">
+                  <span class="sidebar-title">Coverage Map</span>
+                  <span class="mono" style="font-size:0.78em; color:var(--text-muted);" id="mapSubtitle">Ready</span>
+                </div>
+                <div class="plan-actions">
+                  <div class="dock-mini-group" title="Move Coverage Map panel">
+                    <button type="button" class="dock-mini-btn" data-panel-dock="map:left" title="Left">◧</button>
+                    <button type="button" class="dock-mini-btn active" data-panel-dock="map:right" title="Right">◨</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="map:top" title="Top">⬒</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="map:bottom" title="Bottom">⬓</button>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="map" title="Hide Map Panel (Alt+M)">✕</button>
+                </div>
+              </div>
+              <div class="dock-panel-body dock-panel-body-flush">
+                <div id="planLeafletMap" class="map-container"></div>
+              </div>
+            </aside>
+
+            <!-- Dockable Panel: Plan Summary & Band Breakdown -->
+            <aside class="dock-panel" id="panelSummary" data-panel-id="summary" aria-label="Plan Summary">
+              <div class="dock-panel-header">
+                <div class="plan-title-block">
+                  <span class="sidebar-title" id="summaryTitle">Plan Summary</span>
+                  <span class="pill pill-cyan mono" id="summaryMetricBadge">No Plan</span>
+                </div>
+                <div class="plan-actions">
+                  <div class="dock-mini-group" title="Move Plan Summary panel">
+                    <button type="button" class="dock-mini-btn" data-panel-dock="summary:left" title="Left">◧</button>
+                    <button type="button" class="dock-mini-btn active" data-panel-dock="summary:right" title="Right">◨</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="summary:top" title="Top">⬒</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="summary:bottom" title="Bottom">⬓</button>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="summary" title="Hide Summary Panel (Alt+U)">✕</button>
+                </div>
+              </div>
+              <div class="dock-panel-body">
+                <div id="summaryRowsList" class="builder-list">
+                  <div class="mgr-card-sub">Assemble a route, proximity, or aviation plan to view stops, rings, and band distribution.</div>
+                </div>
+                <div class="section-label">Channel Breakdown by Band</div>
+                <div id="summaryBandBreakdown" class="summary-band-grid"></div>
+                <div id="summaryStatesLine" class="mgr-card-sub mono"></div>
+              </div>
+            </aside>
+
+            <!-- Dockable Panel: Preset Codeplug Templates Manager -->
+            <aside class="dock-panel hidden" id="panelTemplates" data-panel-id="templates" aria-label="Preset Templates Manager">
+              <div class="dock-panel-header">
+                <span class="sidebar-title">Preset Templates</span>
+                <div class="plan-actions">
+                  <div class="dock-mini-group" title="Move Preset Templates panel">
+                    <button type="button" class="dock-mini-btn" data-panel-dock="templates:left" title="Left">◧</button>
+                    <button type="button" class="dock-mini-btn active" data-panel-dock="templates:right" title="Right">◨</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="templates:top" title="Top">⬒</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="templates:bottom" title="Bottom">⬓</button>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="templates" title="Hide Templates Panel (Alt+T)">✕</button>
+                </div>
+              </div>
+              <div class="dock-panel-body">
+                <div class="plan-header-row">
+                  <input type="search" id="templatesSearch" class="input input-sm" style="flex:1; min-width:110px;" placeholder="Filter templates..." />
+                  <div class="plan-actions">
+                    <button type="button" class="btn btn-xs" id="btnImportTemplate">Import</button>
+                    <button type="button" class="btn btn-primary btn-xs" id="btnNewTemplate">+ New</button>
+                  </div>
+                </div>
+                <div id="templatesList" class="builder-list"></div>
+              </div>
+            </aside>
+
+            <!-- Dockable Panel: Radios & Hardware Specs Manager -->
+            <aside class="dock-panel hidden" id="panelRadios" data-panel-id="radios" aria-label="Radios and Hardware Specs">
+              <div class="dock-panel-header">
+                <span class="sidebar-title">Radios &amp; Specs</span>
+                <div class="plan-actions">
+                  <div class="dock-mini-group" title="Move Radios panel">
+                    <button type="button" class="dock-mini-btn" data-panel-dock="radios:left" title="Left">◧</button>
+                    <button type="button" class="dock-mini-btn active" data-panel-dock="radios:right" title="Right">◨</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="radios:top" title="Top">⬒</button>
+                    <button type="button" class="dock-mini-btn" data-panel-dock="radios:bottom" title="Bottom">⬓</button>
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="radios" title="Hide Radios Panel (Alt+R)">✕</button>
+                </div>
+              </div>
+              <div class="dock-panel-body">
+                <div class="plan-header-row">
+                  <input type="search" id="radiosSearch" class="input input-sm" style="flex:1; min-width:110px;" placeholder="Filter radio models..." />
+                  <button type="button" class="btn btn-primary btn-xs" id="btnNewRadio">+ Add Radio</button>
+                </div>
+                <div id="radiosList" class="builder-list"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div class="dock-resizer dock-resizer-h hidden" id="resizerBottom" data-resize-zone="bottom" title="Drag to resize bottom zone"></div>
+        <div class="dock-zone dock-horizontal hidden" id="dockBottom"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Workspace Panels & Layout Manager -->
+  <div class="modal-backdrop hidden" id="panelsModalBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="panelsModalTitle">
+      <div class="modal-header">
+        <h2 id="panelsModalTitle">Workspace Panels &amp; Layout</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="panelsModalBackdrop">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Quick Layout Presets</label>
+          <div class="preset-row">
+            <button type="button" class="btn btn-xs btn-primary" data-layout-preset="studio">Studio Default (Builder L + Map/Summary R)</button>
+            <button type="button" class="btn btn-xs btn-success" data-layout-preset="mapFocus">Map Focus (Map Top + Summary R)</button>
+            <button type="button" class="btn btn-xs" data-layout-preset="managers">Managers (Templates L + Radios R)</button>
+            <button type="button" class="btn btn-xs" data-layout-preset="codeplug">Wide Codeplug Only</button>
+          </div>
+        </div>
+
+        <div class="section-label">Dockable Panels — Visibility &amp; Position</div>
+
+        <div class="panels-grid-row">
+          <div>
+            <div class="mgr-card-title">Plan Builder</div>
+            <div class="mgr-card-sub">Modes, waypoints, radius &amp; sequence blocks</div>
+          </div>
+          <label class="panel-toggle-switch"><input type="checkbox" data-panel-vis="builder" checked /> Show</label>
+          <div class="segmented" data-panel-pos-group="builder">
+            <button type="button" class="seg-btn active" data-set-panel-pos="builder:left">Left</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="builder:right">Right</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="builder:top">Top</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="builder:bottom">Bottom</button>
+          </div>
+        </div>
+
+        <div class="panels-grid-row">
+          <div>
+            <div class="mgr-card-title">Coverage Map</div>
+            <div class="mgr-card-sub">Interactive Leaflet route, rings &amp; repeater markers</div>
+          </div>
+          <label class="panel-toggle-switch"><input type="checkbox" data-panel-vis="map" checked /> Show</label>
+          <div class="segmented" data-panel-pos-group="map">
+            <button type="button" class="seg-btn" data-set-panel-pos="map:left">Left</button>
+            <button type="button" class="seg-btn active" data-set-panel-pos="map:right">Right</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="map:top">Top</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="map:bottom">Bottom</button>
+          </div>
+        </div>
+
+        <div class="panels-grid-row">
+          <div>
+            <div class="mgr-card-title">Plan Summary</div>
+            <div class="mgr-card-sub">Stops, rings, airfields &amp; band breakdown</div>
+          </div>
+          <label class="panel-toggle-switch"><input type="checkbox" data-panel-vis="summary" checked /> Show</label>
+          <div class="segmented" data-panel-pos-group="summary">
+            <button type="button" class="seg-btn" data-set-panel-pos="summary:left">Left</button>
+            <button type="button" class="seg-btn active" data-set-panel-pos="summary:right">Right</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="summary:top">Top</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="summary:bottom">Bottom</button>
+          </div>
+        </div>
+
+        <div class="panels-grid-row">
+          <div>
+            <div class="mgr-card-title">Preset Templates</div>
+            <div class="mgr-card-sub">Manage calling, NOAA WX, GMRS &amp; custom channel blocks</div>
+          </div>
+          <label class="panel-toggle-switch"><input type="checkbox" data-panel-vis="templates" /> Show</label>
+          <div class="segmented" data-panel-pos-group="templates">
+            <button type="button" class="seg-btn" data-set-panel-pos="templates:left">Left</button>
+            <button type="button" class="seg-btn active" data-set-panel-pos="templates:right">Right</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="templates:top">Top</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="templates:bottom">Bottom</button>
+          </div>
+        </div>
+
+        <div class="panels-grid-row">
+          <div>
+            <div class="mgr-card-title">Radios &amp; Specs</div>
+            <div class="mgr-card-sub">Hardware memory limits, LCD length &amp; band support</div>
+          </div>
+          <label class="panel-toggle-switch"><input type="checkbox" data-panel-vis="radios" /> Show</label>
+          <div class="segmented" data-panel-pos-group="radios">
+            <button type="button" class="seg-btn" data-set-panel-pos="radios:left">Left</button>
+            <button type="button" class="seg-btn active" data-set-panel-pos="radios:right">Right</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="radios:top">Top</button>
+            <button type="button" class="seg-btn" data-set-panel-pos="radios:bottom">Bottom</button>
+          </div>
+        </div>
+
+        <div class="section-label">Toolbars &amp; Telemetry Strips</div>
+        <div class="form-grid-2">
+          <label class="panel-toggle-switch check-card"><input type="checkbox" data-panel-vis="vfo" checked /> Top Target Radio Readout</label>
+          <label class="panel-toggle-switch check-card"><input type="checkbox" data-panel-vis="footer" checked /> Bottom Shortcut Footer</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="panelsModalBackdrop">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Tabbed Preferences (Appearance & 9 Themes, Operator & Defaults, API Keys & State Cache) -->
+  <div class="modal-backdrop hidden" id="prefsModalBackdrop">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="prefsModalTitle">
+      <div class="modal-header">
+        <h2 id="prefsModalTitle">Preferences</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="btnCancelPrefsTop">✕</button>
+      </div>
+      <div class="tabs-bar" role="tablist">
+        <button type="button" role="tab" class="tab-btn active" data-pref-tab="appearance">Appearance &amp; Fonts</button>
+        <button type="button" role="tab" class="tab-btn" data-pref-tab="operator">Operator &amp; Defaults</button>
+        <button type="button" role="tab" class="tab-btn" data-pref-tab="api">API Keys &amp; State Cache</button>
+        <button type="button" role="tab" class="tab-btn" data-pref-tab="system">Backup &amp; Updates</button>
+      </div>
+      <form id="prefsForm">
+        <div class="modal-body">
+          <!-- Tab 1: Appearance & Fonts (9 Themes) -->
+          <div id="prefTabAppearance" class="builder-list">
+            <div class="field">
+              <label>Light Background Themes</label>
+              <div class="theme-grid" id="themeGridLight">
+                <button type="button" class="theme-card" data-theme-pick="daylight">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#e2e8f0;"></span>
+                    <span class="theme-swatch-dot" style="background:#d7e5f5;"></span>
+                    <span class="theme-swatch-dot" style="background:#dff2fe;"></span>
+                    <span class="theme-swatch-dot" style="background:#0284c7;"></span>
+                  </div>
+                  <span class="theme-card-title">Daylight</span>
+                  <span class="theme-card-desc">Cool slate &amp; steel blue</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="paper-warm">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#f3ead8;"></span>
+                    <span class="theme-swatch-dot" style="background:#edd9b4;"></span>
+                    <span class="theme-swatch-dot" style="background:#fde6c0;"></span>
+                    <span class="theme-swatch-dot" style="background:#b45309;"></span>
+                  </div>
+                  <span class="theme-card-title">Warm Paper</span>
+                  <span class="theme-card-desc">Parchment cream &amp; terracotta</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="eoc-light">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#dfeee5;"></span>
+                    <span class="theme-swatch-dot" style="background:#c4e4d3;"></span>
+                    <span class="theme-swatch-dot" style="background:#c6f0dc;"></span>
+                    <span class="theme-swatch-dot" style="background:#0f766e;"></span>
+                  </div>
+                  <span class="theme-card-title">EOC Mint</span>
+                  <span class="theme-card-desc">Sage green &amp; forest teal</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="sky-breeze">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#dcebfa;"></span>
+                    <span class="theme-swatch-dot" style="background:#bfd9f9;"></span>
+                    <span class="theme-swatch-dot" style="background:#cde3ff;"></span>
+                    <span class="theme-swatch-dot" style="background:#1d4ed8;"></span>
+                  </div>
+                  <span class="theme-card-title">Arctic Blue</span>
+                  <span class="theme-card-desc">Sky blue &amp; cobalt cockpit</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="high-contrast">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#ffffff;"></span>
+                    <span class="theme-swatch-dot" style="background:#fef08a;"></span>
+                    <span class="theme-swatch-dot" style="background:#0038b8;"></span>
+                    <span class="theme-swatch-dot" style="background:#000000;"></span>
+                  </div>
+                  <span class="theme-card-title">High Contrast</span>
+                  <span class="theme-card-desc">Sunlight white, yellow &amp; black</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Dark Background Themes</label>
+              <div class="theme-grid" id="themeGridDark">
+                <button type="button" class="theme-card" data-theme-pick="shack-dark">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#060a11;"></span>
+                    <span class="theme-swatch-dot" style="background:#111c2e;"></span>
+                    <span class="theme-swatch-dot" style="background:#38bdf8;"></span>
+                    <span class="theme-swatch-dot" style="background:#10b981;"></span>
+                  </div>
+                  <span class="theme-card-title">Shack Dark</span>
+                  <span class="theme-card-desc">Obsidian &amp; cyan cockpit</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="night-red">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#0a0405;"></span>
+                    <span class="theme-swatch-dot" style="background:#240e13;"></span>
+                    <span class="theme-swatch-dot" style="background:#ef4444;"></span>
+                    <span class="theme-swatch-dot" style="background:#fb923c;"></span>
+                  </div>
+                  <span class="theme-card-title">Night Ops Red</span>
+                  <span class="theme-card-desc">Low-glare night vision</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="amber-crt">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#0f0c07;"></span>
+                    <span class="theme-swatch-dot" style="background:#2a2010;"></span>
+                    <span class="theme-swatch-dot" style="background:#f59e0b;"></span>
+                    <span class="theme-swatch-dot" style="background:#84cc16;"></span>
+                  </div>
+                  <span class="theme-card-title">Amber Terminal</span>
+                  <span class="theme-card-desc">Warm high-contrast CRT</span>
+                </button>
+                <button type="button" class="theme-card" data-theme-pick="forest-eoc">
+                  <div class="theme-swatches">
+                    <span class="theme-swatch-dot" style="background:#08110c;"></span>
+                    <span class="theme-swatch-dot" style="background:#182f22;"></span>
+                    <span class="theme-swatch-dot" style="background:#22c55e;"></span>
+                    <span class="theme-swatch-dot" style="background:#2dd4bf;"></span>
+                  </div>
+                  <span class="theme-card-title">Tactical Green</span>
+                  <span class="theme-card-desc">EOC dark emerald</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefUiFont">Interface Font Family</label>
+                <select id="prefUiFont" class="select">
+                  <option value="system">System UI (Segoe UI)</option>
+                  <option value="humanist">Humanist Sans (Calibri / Trebuchet)</option>
+                  <option value="geometric">Wide Legible (Verdana / Tahoma)</option>
+                  <option value="serif">Classic Serif (Georgia / Cambria)</option>
+                  <option value="mono">Monospace Everything</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="prefMonoFont">LCD &amp; Frequency Monospace Font</label>
+                <select id="prefMonoFont" class="select">
+                  <option value="cascadia">Cascadia Mono / JetBrains Mono</option>
+                  <option value="consolas">Consolas / Lucida Console</option>
+                  <option value="courier">Courier New</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefFontSize">
+                  <span>Base UI Font Size</span>
+                  <span class="mono" id="prefFontSizeVal">14px</span>
+                </label>
+                <div class="slider-row">
+                  <span class="mono mgr-card-sub">11</span>
+                  <div class="slider-track-wrap">
+                    <input type="range" id="prefFontSize" min="11" max="22" step="1" value="14" />
+                    <span class="slider-thumb-tip mono" id="prefFontSizeTip">14px</span>
+                  </div>
+                  <span class="mono mgr-card-sub">22</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="prefLcdSize">
+                  <span>LCD Name &amp; Callsign Size</span>
+                  <span class="mono" id="prefLcdSizeVal">15px</span>
+                </label>
+                <div class="slider-row">
+                  <span class="mono mgr-card-sub">12</span>
+                  <div class="slider-track-wrap">
+                    <input type="range" id="prefLcdSize" min="12" max="26" step="1" value="15" />
+                    <span class="slider-thumb-tip mono" id="prefLcdSizeTip">15px</span>
+                  </div>
+                  <span class="mono mgr-card-sub">26</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="font-preview-box">
+              <div>
+                <div class="section-label">Live Cockpit Typography Preview</div>
+                <div style="margin-top:4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <span class="lcd-badge">TYLR 6.94</span>
+                  <span class="mono freq-rx">146.94000 MHz</span>
+                  <span>W5ETX — Tyler, TX</span>
+                </div>
+              </div>
+              <span class="pill pill-emerald">2m FM • 136.5 Hz</span>
+            </div>
+          </div>
+
+          <!-- Tab 2: Operator & Default Codeplug Settings -->
+          <div id="prefTabOperator" class="builder-list hidden">
+            <div class="form-grid-3">
+              <div class="field">
+                <label for="prefCallsign">
+                  <span>Amateur Callsign</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btnPrefLookupCall" title="Look up callsign via QRZ or Callook">🔍 Lookup</button>
+                </label>
+                <input type="text" id="prefCallsign" class="input callsign-input" placeholder="W5CDN" />
+              </div>
+              <div class="field">
+                <label for="prefOperatorName">Operator Name</label>
+                <input type="text" id="prefOperatorName" class="input" placeholder="Radio Operator" />
+              </div>
+              <div class="field">
+                <label for="prefDmrId">Primary 7-Digit DMR ID</label>
+                <input type="text" id="prefDmrId" class="input mono" placeholder="Optional" />
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefDefaultRadio">Default Target Radio</label>
+                <select id="prefDefaultRadio" class="select"></select>
+              </div>
+              <div class="field">
+                <label for="prefNamingFormat">Default Channel Naming Format</label>
+                <select id="prefNamingFormat" class="select">
+                  <option value="CITY_FREQ">City + Frequency (e.g. Tyler 7.20)</option>
+                  <option value="CALLSIGN_FREQ">Callsign + Frequency (e.g. W5ETX 7.20)</option>
+                  <option value="CALLSIGN">Callsign Only (e.g. W5ETX)</option>
+                  <option value="CITY">City Only (e.g. Tyler)</option>
+                  <option value="STANDARD">Standard / Full Name</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="field">
+                <label for="prefDistanceUnit">Distance Units</label>
+                <select id="prefDistanceUnit" class="select">
+                  <option value="MILES">MILES</option>
+                  <option value="KILOMETERS">KILOMETERS</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="prefCacheAge">State Cache Max Age (Days)</label>
+                <input type="number" id="prefCacheAge" class="input mono" min="1" max="365" value="30" />
+              </div>
+              <div class="field">
+                <label for="prefWebPort">Web Server Port</label>
+                <input type="number" id="prefWebPort" class="input mono" min="1024" max="65535" value="8000" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: API Keys & State Cache -->
+          <div id="prefTabApi" class="builder-list hidden">
+            <div class="field">
+              <label for="prefRbKey">
+                <span>RepeaterBook REST API Key</span>
+                <span class="mono" id="prefRbKeyStatus">Not Set</span>
+              </label>
+              <div class="secret-input-wrap">
+                <input type="password" id="prefRbKey" class="input mono" autocomplete="new-password" placeholder="Enter new key to save or update" />
+                <button type="button" class="btn btn-sm secret-toggle-btn" data-toggle-secret="prefRbKey" aria-pressed="false">Show</button>
+              </div>
+              <label class="panel-toggle-switch" style="font-size:0.82em; margin-top:4px;">
+                <input type="checkbox" id="prefClearRbKey" /> Clear saved RepeaterBook API Key
+              </label>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefRadioIdUser">RadioID.net Username / Callsign</label>
+                <input type="text" id="prefRadioIdUser" class="input mono" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="prefRadioIdKey">
+                  <span>RadioID.net API Key</span>
+                  <span class="mono" id="prefRadioIdKeyStatus">Not Set</span>
+                </label>
+                <div class="secret-input-wrap">
+                  <input type="password" id="prefRadioIdKey" class="input mono" autocomplete="new-password" placeholder="Enter new key to save" />
+                  <button type="button" class="btn btn-sm secret-toggle-btn" data-toggle-secret="prefRadioIdKey" aria-pressed="false">Show</button>
+                </div>
+              </div>
+            </div>
+            <label class="panel-toggle-switch" style="font-size:0.82em;">
+              <input type="checkbox" id="prefClearRadioIdKey" /> Clear saved RadioID.net API Key
+            </label>
+
+            <div class="section-label">QRZ.com XML Callsign Lookup (Optional — Callook.info fallback built-in)</div>
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="prefQrzUser">QRZ.com Username / Callsign</label>
+                <input type="text" id="prefQrzUser" class="input mono" autocomplete="off" placeholder="Optional" />
+              </div>
+              <div class="field">
+                <label for="prefQrzPass">
+                  <span>QRZ.com XML Password</span>
+                  <span class="mono" id="prefQrzStatus">Not Set</span>
+                </label>
+                <div class="secret-input-wrap">
+                  <input type="password" id="prefQrzPass" class="input mono" autocomplete="new-password" placeholder="Enter password to save" />
+                  <button type="button" class="btn btn-sm secret-toggle-btn" data-toggle-secret="prefQrzPass" aria-pressed="false">Show</button>
+                </div>
+              </div>
+            </div>
+            <div class="plan-header-row">
+              <label class="panel-toggle-switch" style="font-size:0.82em;">
+                <input type="checkbox" id="prefClearQrzPass" /> Clear saved QRZ password
+              </label>
+              <button type="button" class="btn btn-xs" id="btnTestQrz">Test QRZ Login</button>
+            </div>
+            <div id="qrzTestBanner" class="qrz-test-banner hidden"></div>
+
+            <div class="section-label">Cached State RepeaterBook Datasets (<span id="cachedStatesCount">0</span>)</div>
+            <div id="cachedStatesList" class="builder-list" style="max-height:170px; overflow:auto;"></div>
+          </div>
+
+          <!-- Tab 4: Backup, Restore & Application Updates -->
+          <div id="prefTabSystem" class="builder-list hidden">
+            <div class="section-label">Configuration Backup &amp; Restore Archive (.zip)</div>
+            <div class="system-card">
+              <p class="mgr-card-sub">
+                Export your preferences, saved YAML recipes, custom radio specs, and preset templates into a single portable archive.
+                Restoring automatically creates a pre-restore snapshot first.
+              </p>
+              <label class="panel-toggle-switch" style="font-size:0.85em;">
+                <input type="checkbox" id="chkBackupIncludeTokens" /> Include API keys &amp; QRZ credentials in backup (sensitive!)
+              </label>
+              <div class="plan-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btnDownloadBackup">⬇ Download Backup (.zip)</button>
+                <button type="button" class="btn btn-amber btn-sm" id="btnRestoreBackup">⬆ Restore Backup (.zip)</button>
+                <input type="file" id="restoreBackupFile" accept=".zip" class="hidden" />
+              </div>
+            </div>
+
+            <div class="section-label">Application Updates</div>
+            <div class="system-card">
+              <div class="plan-header-row">
+                <div class="plan-actions">
+                  <span class="pill pill-blue mono" id="updateVersionPill">v0.2.0</span>
+                  <span class="pill mono" id="updateModePill">source</span>
+                </div>
+                <div class="plan-actions">
+                  <button type="button" class="btn btn-sm" id="btnCheckUpdate">Check for Updates</button>
+                  <button type="button" class="btn btn-success btn-sm hidden" id="btnApplyUpdate">Install Update</button>
+                  <a id="updateReleaseLink" class="btn btn-ghost btn-sm hidden" href="#" target="_blank" rel="noopener noreferrer">View Release ↗</a>
+                </div>
+              </div>
+              <div id="updateStatusText" class="mgr-card-sub">Click "Check for Updates" to query GitHub Releases (offline-safe).</div>
+              <pre id="updateReleaseNotes" class="update-notes-box hidden"></pre>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" id="btnCancelPrefs">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Preferences</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Inline Channel Editor -->
+  <div class="modal-backdrop hidden" id="editChannelBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editChannelTitle">
+      <div class="modal-header">
+        <h2 id="editChannelTitle">Edit Channel</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="editChannelBackdrop">✕</button>
+      </div>
+      <form id="editChannelForm">
+        <div class="modal-body">
+          <input type="hidden" id="editChSlot" />
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="editChName">
+                <span>LCD Display Name *</span>
+                <span class="mono" id="editChNameCount">0 / 8</span>
+              </label>
+              <input type="text" id="editChName" class="input callsign-input" required />
+            </div>
+            <div class="field">
+              <label for="editChCallsign">
+                <span>Callsign / Ident</span>
+                <button type="button" class="btn btn-ghost btn-xs" id="btnEditLookupCall" title="Look up trustee callsign via QRZ or Callook">🔍 Lookup</button>
+              </label>
+              <input type="text" id="editChCallsign" class="input mono" style="text-transform:uppercase;" />
+            </div>
+          </div>
+
+          <div class="form-grid-3">
+            <div class="field">
+              <label for="editChRx">RX Frequency (MHz) *</label>
+              <input type="number" id="editChRx" class="input mono" step="0.00001" min="0.1" max="2999" required />
+            </div>
+            <div class="field">
+              <label for="editChOffsetDir">Duplex</label>
+              <select id="editChOffsetDir" class="select">
+                <option value="off">Simplex</option>
+                <option value="+">+ Offset</option>
+                <option value="-">- Offset</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="editChOffset">Offset (MHz)</label>
+              <input type="number" id="editChOffset" class="input mono" step="0.005" min="0" max="99" />
+            </div>
+          </div>
+
+          <div class="form-grid-3">
+            <div class="field">
+              <label for="editChMode">Mode</label>
+              <select id="editChMode" class="select">
+                <option value="FM">FM</option>
+                <option value="NFM">NFM</option>
+                <option value="AM">AM</option>
+                <option value="DMR">DMR</option>
+                <option value="USB">USB</option>
+                <option value="LSB">LSB</option>
+                <option value="CW">CW</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="editChPower">TX Power</label>
+              <select id="editChPower" class="select">
+                <option value="High">High</option>
+                <option value="Mid">Mid</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="editChToneMode">Tone Mode</label>
+              <select id="editChToneMode" class="select">
+                <option value="None">None (CSQ)</option>
+                <option value="Tone">Tone (CTCSS TX)</option>
+                <option value="TSQL">TSQL (CTCSS TX/RX)</option>
+                <option value="DCS">DCS</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid-3">
+            <div class="field">
+              <label for="editChToneVal">CTCSS / DCS Value</label>
+              <input type="text" id="editChToneVal" class="input mono" list="standardTonesList" />
+            </div>
+            <div class="field">
+              <label for="editChCity">City / QTH</label>
+              <input type="text" id="editChCity" class="input" />
+            </div>
+            <div class="field">
+              <label for="editChState">State</label>
+              <input type="text" id="editChState" class="input mono" maxlength="4" style="text-transform:uppercase;" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="editChComment">Comment / Notes</label>
+            <input type="text" id="editChComment" class="input" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-close-modal="editChannelBackdrop">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Channel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Printable Codeplug Pocket Reference Card / Plan Report -->
+  <div class="modal-backdrop hidden" id="planReportBackdrop">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="planReportTitle">
+      <div class="modal-header">
+        <div class="plan-title-block">
+          <h2 id="planReportTitle">Codeplug Pocket Reference Card &amp; Report</h2>
+          <span class="pill pill-blue" id="reportModePill">ROUTE_CORRIDOR</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="planReportBackdrop">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="report-meta-strip" id="reportMetaStrip"></div>
+        <div class="report-kpi-grid" id="reportKpiGrid"></div>
+        <div class="field">
+          <label for="planReportText">
+            <span>Shareable / Printable Reference Text (Editable Before Copying or Saving)</span>
+            <button type="button" class="btn btn-ghost btn-xs" id="btnReportRefresh">↻ Refresh</button>
+          </label>
+          <textarea id="planReportText" class="textarea mono" rows="14" style="line-height:1.45; font-size:0.84em; white-space:pre;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer modal-footer-split">
+        <div class="plan-actions">
+          <button type="button" class="btn btn-primary btn-sm" id="btnReportCopy">Copy Text</button>
+          <button type="button" class="btn btn-sm" id="btnReportSaveTxt">Save .txt</button>
+          <button type="button" class="btn btn-success btn-sm" id="btnReportPrint">Print Pocket Card</button>
+        </div>
+        <button type="button" class="btn" data-close-modal="planReportBackdrop">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Template Spreadsheet Editor -->
+  <div class="modal-backdrop hidden" id="templateEditorBackdrop">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="tplEditorTitle">
+      <div class="modal-header">
+        <h2 id="tplEditorTitle">Edit Preset Template</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="templateEditorBackdrop">✕</button>
+      </div>
+      <form id="templateEditorForm">
+        <div class="modal-body">
+          <div class="form-grid-3">
+            <div class="field">
+              <label for="tplEditId">Template ID Slug *</label>
+              <input type="text" id="tplEditId" class="input mono" required placeholder="e.g. east_tx_skywarn" />
+            </div>
+            <div class="field">
+              <label for="tplEditName">Display Name *</label>
+              <input type="text" id="tplEditName" class="input" required placeholder="e.g. East Texas Skywarn" />
+            </div>
+            <div class="field">
+              <label for="tplEditTag">Badge Tag &amp; Color</label>
+              <div class="secret-input-wrap">
+                <input type="text" id="tplEditTag" class="input mono" value="CUSTOM" required />
+                <input type="color" id="tplEditColor" value="#00BCD4" style="width:40px; height:34px; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--bg-input);" />
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="tplEditDesc">Description</label>
+            <input type="text" id="tplEditDesc" class="input" placeholder="Purpose or region of this template" />
+          </div>
+          <div class="tpl-sheet-wrap">
+            <table class="tpl-sheet-table">
+              <thead>
+                <tr>
+                  <th style="width:66px;">Order</th>
+                  <th style="width:125px;">Name</th>
+                  <th style="width:105px;">RX (MHz)</th>
+                  <th style="width:86px;">Duplex</th>
+                  <th style="width:76px;">Offset</th>
+                  <th style="width:68px;">Mode</th>
+                  <th style="width:68px;">Power</th>
+                  <th style="width:78px;">Tone</th>
+                  <th style="width:76px;">Value</th>
+                  <th>Comment</th>
+                  <th style="width:36px;">Del</th>
+                </tr>
+              </thead>
+              <tbody id="tplEditorTbody"></tbody>
+            </table>
+          </div>
+          <div>
+            <button type="button" class="btn btn-sm" id="btnTplAddRow">+ Add Channel Row</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-close-modal="templateEditorBackdrop">Cancel</button>
+          <button type="submit" class="btn btn-success">Save Template YAML</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Import CSV / YAML Template -->
+  <div class="modal-backdrop hidden" id="templateImportBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tplImportTitle">
+      <div class="modal-header">
+        <h2 id="tplImportTitle">Import Template from CSV or YAML</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="templateImportBackdrop">✕</button>
+      </div>
+      <form id="templateImportForm">
+        <div class="modal-body">
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="tplImpId">Template ID Slug *</label>
+              <input type="text" id="tplImpId" class="input mono" required placeholder="e.g. custom_skywarn" />
+            </div>
+            <div class="field">
+              <label for="tplImpTag">Badge Tag</label>
+              <input type="text" id="tplImpTag" class="input mono" value="CUSTOM" required />
+            </div>
+          </div>
+          <div class="field">
+            <label for="tplImpName">Display Name *</label>
+            <input type="text" id="tplImpName" class="input" required placeholder="e.g. County Skywarn Channels" />
+          </div>
+          <div class="field">
+            <label for="tplImpFile">CSV, YAML, or W5CDN Net Logger JSON File *</label>
+            <input type="file" id="tplImpFile" class="input" accept=".csv,.yaml,.yml,.json" required />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-close-modal="templateImportBackdrop">Cancel</button>
+          <button type="submit" class="btn btn-primary">Import &amp; Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add / Edit Radio Hardware Specification -->
+  <div class="modal-backdrop hidden" id="radioEditorBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="radioEditorTitle">
+      <div class="modal-header">
+        <h2 id="radioEditorTitle">Add / Override Radio Model</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="radioEditorBackdrop">✕</button>
+      </div>
+      <form id="radioEditorForm">
+        <div class="modal-body">
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="radBrand">Brand *</label>
+              <input type="text" id="radBrand" class="input" required placeholder="e.g. AnyTone" />
+            </div>
+            <div class="field">
+              <label for="radModel">Model *</label>
+              <input type="text" id="radModel" class="input" required placeholder="e.g. AT-778UV" />
+            </div>
+          </div>
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="radId">Unique Radio ID Slug *</label>
+              <input type="text" id="radId" class="input mono" required placeholder="e.g. anytone_at778uv" />
+            </div>
+            <div class="field">
+              <label for="radProg">Default Programmer</label>
+              <select id="radProg" class="select">
+                <option value="CHIRP">CHIRP</option>
+                <option value="RT_SYSTEMS">RT_SYSTEMS</option>
+                <option value="GENERIC_CSV">GENERIC_CSV</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="radDesc">Description</label>
+            <input type="text" id="radDesc" class="input" placeholder="Dual Band Mobile Transceiver" />
+          </div>
+          <div class="form-grid-3">
+            <div class="field">
+              <label for="radStart">Start Slot (0 or 1)</label>
+              <input type="number" id="radStart" class="input mono" min="0" max="1" value="1" />
+            </div>
+            <div class="field">
+              <label for="radMaxCh">Max Channels</label>
+              <input type="number" id="radMaxCh" class="input mono" min="1" max="10000" value="128" />
+            </div>
+            <div class="field">
+              <label for="radMaxName">LCD Chars</label>
+              <input type="number" id="radMaxName" class="input mono" min="1" max="32" value="8" />
+            </div>
+          </div>
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="radBands">Supported Bands (comma-separated)</label>
+              <input type="text" id="radBands" class="input mono" value="2m, 70cm, WX" />
+            </div>
+            <div class="field">
+              <label for="radModes">Supported Modes (comma-separated)</label>
+              <input type="text" id="radModes" class="input mono" value="FM, AM" />
+            </div>
+          </div>
+          <div class="form-grid-2">
+            <label class="check-card"><input type="checkbox" id="radAllowDots" checked /> Allow Dots (.)</label>
+            <label class="check-card"><input type="checkbox" id="radAllowSpaces" checked /> Allow Spaces</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-close-modal="radioEditorBackdrop">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Radio Spec</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Save Configuration Recipe -->
+  <div class="modal-backdrop hidden" id="saveRecipeBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="saveRecipeTitle">
+      <div class="modal-header">
+        <h2 id="saveRecipeTitle">Save Configuration Recipe (YAML)</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="saveRecipeBackdrop">✕</button>
+      </div>
+      <form id="saveRecipeForm">
+        <div class="modal-body">
+          <div class="field">
+            <label for="saveRecName">Recipe Name *</label>
+            <input type="text" id="saveRecName" class="input mono" required />
+          </div>
+          <div class="field">
+            <label for="saveRecDesc">Description (shown in Saved Recipes Drawer)</label>
+            <input type="text" id="saveRecDesc" class="input" placeholder="e.g. I-20 corridor trip Tyler to Jackson" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" data-close-modal="saveRecipeBackdrop">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Recipe YAML</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: NWS Area Weather Alerts -->
+  <div class="modal-backdrop hidden" id="nwsAlertsBackdrop">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="nwsAlertsTitle">
+      <div class="modal-header">
+        <div class="plan-title-block">
+          <h2 id="nwsAlertsTitle">National Weather Service — Area Alerts</h2>
+          <span class="pill pill-cyan mono" id="nwsStatesPill">--</span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="nwsAlertsBackdrop">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="plan-header-row">
+          <span class="mgr-card-sub mono" id="nwsMetaLine">Fetching active alerts...</span>
+          <div class="plan-actions">
+            <button type="button" class="btn btn-xs" id="btnNwsRefresh">↻ Refresh</button>
+            <button type="button" class="btn btn-primary btn-xs" id="btnNwsCopy">Copy Briefing</button>
+          </div>
+        </div>
+        <div id="nwsAlertsList" class="builder-list" style="max-height:58vh; overflow:auto;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="nwsAlertsBackdrop">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Keyboard Shortcuts -->
+  <div class="modal-backdrop hidden" id="shortcutsBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+      <div class="modal-header">
+        <h2 id="shortcutsTitle">Keyboard Shortcuts</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-modal="shortcutsBackdrop">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="shortcuts-grid">
+          <div class="shortcut-item"><span>Assemble Plan &amp; Map</span><span class="kbd">Ctrl+Enter</span></div>
+          <div class="shortcut-item"><span>Undo Channel Delete / Edit</span><span class="kbd">Ctrl+Z</span></div>
+          <div class="shortcut-item"><span>Toggle Saved Recipes Drawer</span><span class="kbd">Alt+S</span></div>
+          <div class="shortcut-item"><span>New / Reset Plan</span><span class="kbd">Alt+N</span></div>
+          <div class="shortcut-item"><span>Toggle Plan Builder Panel</span><span class="kbd">Alt+B</span></div>
+          <div class="shortcut-item"><span>Toggle Coverage Map Panel</span><span class="kbd">Alt+M</span></div>
+          <div class="shortcut-item"><span>Toggle Plan Summary Panel</span><span class="kbd">Alt+U</span></div>
+          <div class="shortcut-item"><span>Toggle Preset Templates Panel</span><span class="kbd">Alt+T</span></div>
+          <div class="shortcut-item"><span>Toggle Radios &amp; Specs Panel</span><span class="kbd">Alt+R</span></div>
+          <div class="shortcut-item"><span>Workspace Panels &amp; Layout</span><span class="kbd">Alt+L</span></div>
+          <div class="shortcut-item"><span>Open Preferences</span><span class="kbd">Alt+,</span></div>
+          <div class="shortcut-item"><span>Focus Channel Filter</span><span class="kbd">Alt+F</span></div>
+          <div class="shortcut-item"><span>Select Previous / Next Row</span><span><span class="kbd">↑</span> / <span class="kbd">↓</span></span></div>
+          <div class="shortcut-item"><span>Edit Selected Channel</span><span class="kbd">E</span></div>
+          <div class="shortcut-item"><span>Locate Selected Channel on Map</span><span class="kbd">L</span></div>
+          <div class="shortcut-item"><span>Delete Selected Channel</span><span class="kbd">Delete</span></div>
+          <div class="shortcut-item"><span>Close Active Modal / Drawer</span><span class="kbd">Esc</span></div>
+          <div class="shortcut-item"><span>Show This Help</span><span><span class="kbd">?</span> or <span class="kbd">F1</span></span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="shortcutsBackdrop">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Standard CTCSS & DCS Datalist -->
+  <datalist id="standardTonesList">
+    <option value="None"></option>
+    <option value="67.0"></option>
+    <option value="71.9"></option>
+    <option value="74.4"></option>
+    <option value="77.0"></option>
+    <option value="79.7"></option>
+    <option value="82.5"></option>
+    <option value="85.4"></option>
+    <option value="88.5"></option>
+    <option value="91.5"></option>
+    <option value="94.8"></option>
+    <option value="97.4"></option>
+    <option value="100.0"></option>
+    <option value="103.5"></option>
+    <option value="107.2"></option>
+    <option value="110.9"></option>
+    <option value="114.8"></option>
+    <option value="118.8"></option>
+    <option value="123.0"></option>
+    <option value="127.3"></option>
+    <option value="131.8"></option>
+    <option value="136.5"></option>
+    <option value="141.3"></option>
+    <option value="146.2"></option>
+    <option value="151.4"></option>
+    <option value="156.7"></option>
+    <option value="162.2"></option>
+    <option value="167.9"></option>
+    <option value="173.8"></option>
+    <option value="179.9"></option>
+    <option value="186.2"></option>
+    <option value="192.8"></option>
+    <option value="203.5"></option>
+    <option value="210.7"></option>
+    <option value="023"></option>
+    <option value="025"></option>
+    <option value="047"></option>
+    <option value="065"></option>
+    <option value="114"></option>
+    <option value="155"></option>
+    <option value="205"></option>
+  </datalist>
+
+  <!-- Printable Pocket Reference Card Container (Visible only in @media print) -->
+  <div class="print-only-card" id="printCardContainer"></div>
+
+  <div class="toast-stack" id="toastStack" role="region" aria-label="Notifications" aria-live="polite"></div>
+
+  <script defer src="/static/vendor/leaflet/leaflet.js"></script>
+  <script defer src="/static/app.js"></script>
+</body>
+</html>

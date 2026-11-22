@@ -19,7 +19,11 @@ from cli.ui.renderers import (
     render_review_table,
     render_split_summary,
 )
-from cli.wizard.band_selector import select_bands_for_radio, select_repeater_access
+from cli.wizard.band_selector import (
+    select_bands_for_radio,
+    select_channel_naming_format,
+    select_repeater_access,
+)
 from cli.wizard.radio_selector import select_target_radio_hierarchical
 from cli.wizard.sequence_editor import select_and_sequence_blocks
 from cli.wizard.waypoint_editor import validate_and_edit_route
@@ -142,12 +146,16 @@ class InteractiveWizard:
         """Prompt user to select a target radio using two-stage Brand -> Model multi-column selector."""
         return select_target_radio_hierarchical(self.console, self.radio_mgr, default_id)
 
-    def _flow_route_corridor(self) -> None:
+    def _flow_route_corridor(self, initial_recipe: RadioPlannerRecipe | None = None) -> None:
         """Mode 1: Highway Route Corridor Wizard."""
         self.console.clear()
         self.console.print("\n[bold green]═══ Mode 1: Highway Route Corridor ═══[/bold green]")
 
-        default_waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
+        default_waypoints = (
+            list(initial_recipe.corridor.waypoints)
+            if (initial_recipe and initial_recipe.corridor and initial_recipe.corridor.waypoints)
+            else ["Tyler, TX", "Shreveport, LA", "Jackson, MS"]
+        )
         validated = validate_and_edit_route(self.console, default_waypoints, self.geocoder)
         if not validated or len(validated) < 2:
             self.console.print("[yellow]Route planning cancelled or incomplete.[/yellow]")
@@ -181,22 +189,39 @@ class InteractiveWizard:
         self.console.print(summary_panel)
 
         # Prompt for corridor search width
-        corridor_width = float(Prompt.ask("\nCorridor search width in miles", default="25.0"))
-        include_simplex = Confirm.ask("Include Simplex?", default=True)
+        default_width = (
+            str(initial_recipe.corridor.corridor_width_miles)
+            if (initial_recipe and initial_recipe.corridor)
+            else "25.0"
+        )
+        default_simplex = initial_recipe.radio_target.include_simplex if initial_recipe else True
+        corridor_width = float(Prompt.ask("\nCorridor search width in miles", default=default_width))
+        include_simplex = Confirm.ask("Include Simplex?", default=default_simplex)
 
         # Interactive sequence block and template organizer BEFORE radio selection
+        initial_seq = (
+            list(initial_recipe.sequence_order)
+            if (initial_recipe and initial_recipe.sequence_order)
+            else None
+        )
         sequence_keys = select_and_sequence_blocks(
             self.console,
             self.template_mgr,
             primary_block_key="ROUTE_PLAN",
             primary_block_title="Highway Route Corridor Repeaters",
+            initial_sequence=initial_seq,
         )
         if not sequence_keys:
             self.console.print("[yellow]Sequence selection cancelled.[/yellow]")
             return
 
         # Select target radio hardware
-        radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        default_radio_id = (
+            initial_recipe.radio_target.radio_id
+            if initial_recipe
+            else self.prefs_mgr.preferences.defaultRadioId
+        )
+        radio_id = self._select_target_radio(default_radio_id)
         if not radio_id:
             self.console.print("[yellow]Radio selection cancelled.[/yellow]")
             return
@@ -204,22 +229,47 @@ class InteractiveWizard:
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
         # Select active frequency bands for the chosen radio (Spec 2.3)
+        default_bands = [b for b in radio_spec.supportedBands if b.lower() != "airband"]
+        if initial_recipe and initial_recipe.radio_target.bands:
+            matched_bands = [b for b in radio_spec.supportedBands if b in initial_recipe.radio_target.bands]
+            if matched_bands:
+                default_bands = matched_bands
+
         selected_bands = select_bands_for_radio(
             self.console,
             radio_spec,
-            default_bands=[b for b in radio_spec.supportedBands if b.lower() != "airband"],
+            default_bands=default_bands,
             mode_name="Route Corridor",
         )
         if not selected_bands:
             self.console.print("[yellow]Band selection cancelled.[/yellow]")
             return
 
+        default_access = (
+            initial_recipe.radio_target.repeater_access
+            if (initial_recipe and initial_recipe.radio_target.repeater_access)
+            else getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"])
+        )
         selected_access = select_repeater_access(
             self.console,
-            default_access=getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"]),
+            default_access=default_access,
         )
         if not selected_access:
             self.console.print("[yellow]Repeater access selection cancelled.[/yellow]")
+            return
+
+        default_naming = (
+            getattr(initial_recipe.radio_target, "naming_format", None)
+            if initial_recipe
+            else None
+        ) or getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ")
+        selected_naming = select_channel_naming_format(
+            self.console,
+            radio_spec,
+            default_format=default_naming,
+        )
+        if not selected_naming:
+            self.console.print("[yellow]Channel naming selection cancelled.[/yellow]")
             return
 
         route_states = identify_states_for_route(
@@ -230,7 +280,11 @@ class InteractiveWizard:
 
         start_city = waypoints[0].split(",")[0].strip()
         end_city = waypoints[-1].split(",")[0].strip()
-        plan_name = f"{start_city}_to_{end_city}_Corridor"
+        plan_name = (
+            initial_recipe.name
+            if (initial_recipe and initial_recipe.name and initial_recipe.corridor and waypoints == initial_recipe.corridor.waypoints)
+            else f"{start_city}_to_{end_city}_Corridor"
+        )
 
         recipe = RadioPlannerRecipe(
             mode="ROUTE_CORRIDOR",
@@ -238,10 +292,12 @@ class InteractiveWizard:
             corridor=CorridorConfig(waypoints=waypoints, corridor_width_miles=corridor_width),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
+                programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
                 repeater_access=selected_access,
+                naming_format=selected_naming,
             ),
             sequence_order=sequence_keys,
         )
@@ -291,7 +347,7 @@ class InteractiveWizard:
                 template_manager=self.template_mgr,
                 allowed_bands=selected_bands,
                 allowed_modes=recipe.radio_target.modes,
-                naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
+                naming_format=selected_naming,
             )
 
         # Clear screen and render header before notice and review split summary
@@ -323,14 +379,31 @@ class InteractiveWizard:
 
         self._channel_review_and_export_loop(codeplug, recipe, radio_spec)
 
-    def _flow_proximity(self) -> None:
+    def _flow_proximity(self, initial_recipe: RadioPlannerRecipe | None = None) -> None:
         """Mode 2: Radial Proximity Ring Search Wizard."""
         render_header(self.console, subtitle="Radial Proximity Ring Search")
-        center_loc = Prompt.ask("Center location / city", default="Dallas, TX")
-        radius = float(Prompt.ask("Search radius in miles", default="50.0"))
-        include_simplex = Confirm.ask("Include Simplex?", default=True)
+        default_center = (
+            initial_recipe.proximity.center_location
+            if (initial_recipe and initial_recipe.proximity)
+            else "Dallas, TX"
+        )
+        default_radius = (
+            str(initial_recipe.proximity.radius_miles)
+            if (initial_recipe and initial_recipe.proximity)
+            else "50.0"
+        )
+        default_simplex = initial_recipe.radio_target.include_simplex if initial_recipe else True
 
-        radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        center_loc = Prompt.ask("Center location / city", default=default_center)
+        radius = float(Prompt.ask("Search radius in miles", default=default_radius))
+        include_simplex = Confirm.ask("Include Simplex?", default=default_simplex)
+
+        default_radio_id = (
+            initial_recipe.radio_target.radio_id
+            if initial_recipe
+            else self.prefs_mgr.preferences.defaultRadioId
+        )
+        radio_id = self._select_target_radio(default_radio_id)
         if not radio_id:
             self.console.print("[yellow]Radio selection cancelled.[/yellow]")
             return
@@ -338,22 +411,47 @@ class InteractiveWizard:
         radio_spec = self.radio_mgr.get_radio(radio_id)
 
         # Select active frequency bands for the chosen radio (Spec 2.3)
+        default_bands = [b for b in radio_spec.supportedBands if b.lower() != "airband"]
+        if initial_recipe and initial_recipe.radio_target.bands:
+            matched_bands = [b for b in radio_spec.supportedBands if b in initial_recipe.radio_target.bands]
+            if matched_bands:
+                default_bands = matched_bands
+
         selected_bands = select_bands_for_radio(
             self.console,
             radio_spec,
-            default_bands=[b for b in radio_spec.supportedBands if b.lower() != "airband"],
+            default_bands=default_bands,
             mode_name="Proximity",
         )
         if not selected_bands:
             self.console.print("[yellow]Band selection cancelled.[/yellow]")
             return
 
+        default_access = (
+            initial_recipe.radio_target.repeater_access
+            if (initial_recipe and initial_recipe.radio_target.repeater_access)
+            else getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"])
+        )
         selected_access = select_repeater_access(
             self.console,
-            default_access=getattr(self.prefs_mgr.preferences, "repeaterAccess", ["OPEN"]),
+            default_access=default_access,
         )
         if not selected_access:
             self.console.print("[yellow]Repeater access selection cancelled.[/yellow]")
+            return
+
+        default_naming = (
+            getattr(initial_recipe.radio_target, "naming_format", None)
+            if initial_recipe
+            else None
+        ) or getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ")
+        selected_naming = select_channel_naming_format(
+            self.console,
+            radio_spec,
+            default_format=default_naming,
+        )
+        if not selected_naming:
+            self.console.print("[yellow]Channel naming selection cancelled.[/yellow]")
             return
 
         try:
@@ -369,6 +467,15 @@ class InteractiveWizard:
 
         city_clean = center_loc.split(",")[0].strip()
         plan_name = f"{city_clean}_Proximity_{int(radius)}mi"
+        seq_order = (
+            list(initial_recipe.sequence_order)
+            if (initial_recipe and initial_recipe.sequence_order)
+            else [
+                "TEMPLATE:calling_channels",
+                "PROXIMITY_PLAN",
+                "TEMPLATE:noaa_wx_channels",
+            ]
+        )
 
         recipe = RadioPlannerRecipe(
             mode="PROXIMITY_SEARCH",
@@ -376,16 +483,14 @@ class InteractiveWizard:
             proximity=ProximityConfig(center_location=center_loc, radius_miles=radius),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
+                programmer_format=radio_spec.programmerType,
                 include_simplex=include_simplex,
                 bands=selected_bands,
                 modes=radio_spec.supportedModes,
                 repeater_access=selected_access,
+                naming_format=selected_naming,
             ),
-            sequence_order=[
-                "TEMPLATE:calling_channels",
-                "PROXIMITY_PLAN",
-                "TEMPLATE:noaa_wx_channels",
-            ],
+            sequence_order=seq_order,
         )
 
         # Show intermittent configuration preview
@@ -433,7 +538,7 @@ class InteractiveWizard:
                 template_manager=self.template_mgr,
                 allowed_bands=selected_bands,
                 allowed_modes=recipe.radio_target.modes,
-                naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
+                naming_format=selected_naming,
             )
 
         # Clear screen and render header before notice and review split summary
@@ -466,25 +571,45 @@ class InteractiveWizard:
 
         self._channel_review_and_export_loop(codeplug, recipe, radio_spec)
 
-    def _flow_aviation(self) -> None:
+    def _flow_aviation(self, initial_recipe: RadioPlannerRecipe | None = None) -> None:
         """Mode 3: Local Aviation Planner Wizard."""
         render_header(self.console, subtitle="Local Aviation & Airport Planner")
-        center_loc = Prompt.ask("Target city or airport", default="Tyler, TX")
-        radius = float(Prompt.ask("Search radius in miles", default="35.0"))
+        default_center = (
+            initial_recipe.aviation.center_location
+            if (initial_recipe and initial_recipe.aviation)
+            else "Tyler, TX"
+        )
+        default_radius = (
+            str(initial_recipe.aviation.radius_miles)
+            if (initial_recipe and initial_recipe.aviation)
+            else "35.0"
+        )
+        center_loc = Prompt.ask("Target city or airport", default=default_center)
+        radius = float(Prompt.ask("Search radius in miles", default=default_radius))
 
         # Allow user to select and sequence templates to add to the aviation plan
+        initial_seq = (
+            list(initial_recipe.sequence_order)
+            if (initial_recipe and initial_recipe.sequence_order)
+            else ["AVIATION_BLOCK"]
+        )
         sequence_keys = select_and_sequence_blocks(
             self.console,
             self.template_mgr,
             primary_block_key="AVIATION_BLOCK",
             primary_block_title="Local Airport Aviation Channels",
-            initial_sequence=["AVIATION_BLOCK"],
+            initial_sequence=initial_seq,
         )
         if not sequence_keys:
             self.console.print("[yellow]Sequence selection cancelled.[/yellow]")
             return
 
-        radio_id = self._select_target_radio(self.prefs_mgr.preferences.defaultRadioId)
+        default_radio_id = (
+            initial_recipe.radio_target.radio_id
+            if initial_recipe
+            else self.prefs_mgr.preferences.defaultRadioId
+        )
+        radio_id = self._select_target_radio(default_radio_id)
         if not radio_id:
             self.console.print("[yellow]Radio selection cancelled.[/yellow]")
             return
@@ -504,6 +629,7 @@ class InteractiveWizard:
             aviation=AviationConfig(center_location=center_loc, radius_miles=radius),
             radio_target=RadioTargetConfig(
                 radio_id=radio_id,
+                programmer_format=radio_spec.programmerType,
                 include_simplex=False,
                 bands=active_bands,
                 modes=active_modes,
@@ -621,7 +747,7 @@ class InteractiveWizard:
                         continue
                     spec = self.radio_mgr.get_radio(radio_id)
                     filtered = filter_channels_for_radio(chans, spec)
-                    codeplug = Codeplug(name=tpl.name, channels=filtered).renumbered()
+                    codeplug = Codeplug(name=tpl.name, channels=filtered).renumbered(start_slot=spec.startChannel)
                     recipe = RadioPlannerRecipe(
                         mode="PRESET_TEMPLATES",
                         name=tpl.name,
@@ -1030,13 +1156,15 @@ class InteractiveWizard:
         self.console.print("  [1] City + Frequency (e.g. 'Tyler 7.20', shortened to fit LCD)")
         self.console.print("  [2] Callsign + Frequency (e.g. 'W5ETX 7.20')")
         self.console.print("  [3] Callsign Only (e.g. 'W5ETX')")
-        self.console.print("  [4] Standard / Full Name")
-        choice = Prompt.ask("Choose naming format", choices=["1", "2", "3", "4"], default="1")
+        self.console.print("  [4] City Only (e.g. 'Tyler')")
+        self.console.print("  [5] Standard / Full Name")
+        choice = Prompt.ask("Choose naming format", choices=["1", "2", "3", "4", "5"], default="1")
         format_map = {
             "1": "CITY_FREQ",
             "2": "CALLSIGN_FREQ",
             "3": "CALLSIGN",
-            "4": "STANDARD",
+            "4": "CITY",
+            "5": "STANDARD",
         }
         new_format = format_map[choice]
         new_prefs = self.prefs_mgr.preferences.model_copy(update={"channelNamingFormat": new_format})
@@ -1113,6 +1241,8 @@ class InteractiveWizard:
                     if getattr(prefs, "channelNamingFormat", "") == "CALLSIGN_FREQ"
                     else "Callsign Only (e.g. W5ETX)"
                     if getattr(prefs, "channelNamingFormat", "") == "CALLSIGN"
+                    else "City Only (e.g. Tyler)"
+                    if getattr(prefs, "channelNamingFormat", "") == "CITY"
                     else "Standard / Full Name",
                     self._edit_channel_naming_format,
                 ),
@@ -1151,17 +1281,18 @@ class InteractiveWizard:
                 self.console.print(f"[yellow]Invalid selection. Enter 1-{len(pref_items)} or 'Q' to return.[/yellow]")
 
     def _flow_replay_recipe(self) -> None:
-        """Mode 7: Replay a saved configuration recipe."""
+        """Mode 7: Load a saved configuration recipe and walk through interactive verification."""
         self.console.clear()
+        render_header(self.console, subtitle="Load & Verify Saved Configuration Recipe")
         recipes_dir = get_recipes_dir()
-        yaml_files = list(recipes_dir.glob("*.yaml"))
+        yaml_files = sorted(recipes_dir.glob("*.yaml"))
 
         if not yaml_files:
             self.console.print(f"[yellow]No saved recipes found in {recipes_dir}.[/yellow]")
             manual_path = Prompt.ask(
                 "Enter path to custom YAML recipe file (or press Enter to return)",
                 default="",
-            )
+            ).strip()
             if not manual_path:
                 return
             target_path = Path(manual_path)
@@ -1169,28 +1300,89 @@ class InteractiveWizard:
             self.console.print("\n[bold cyan]Saved Recipes in ~/.config/radioplanner/recipes/:[/bold cyan]")
             for idx, f in enumerate(yaml_files, start=1):
                 self.console.print(f"  [{idx}] {f.name}")
-            pick = IntPrompt.ask("Select recipe number", default=1)
-            target_path = yaml_files[pick - 1]
+            self.console.print("  [P] Enter a custom YAML file path")
+            self.console.print("  [Q] Return to Main Menu")
+
+            valid_choices = [str(i) for i in range(1, len(yaml_files) + 1)] + ["P", "p", "Q", "q", "B", "b", "0"]
+            choice = Prompt.ask("Select recipe number (or P/Q)", choices=valid_choices, default="1").strip().upper()
+            if choice in {"Q", "B", "0"}:
+                return
+            if choice == "P":
+                manual_path = Prompt.ask(
+                    "Enter path to custom YAML recipe file (or press Enter to return)",
+                    default="",
+                ).strip()
+                if not manual_path:
+                    return
+                target_path = Path(manual_path)
+            else:
+                target_path = yaml_files[int(choice) - 1]
 
         try:
             recipe = RadioPlannerRecipe.from_yaml_file(target_path)
-            self.console.print(f"[green]Successfully loaded recipe '{recipe.name}'![/green]")
+            render_header(self.console, subtitle="Loaded Configuration Recipe")
             render_config_panel(self.console, recipe, title=f"Loaded Recipe: {target_path.name}")
-
-            from core.runner import RecipeRunner
-
-            runner = RecipeRunner(
-                radio_manager=self.radio_mgr,
-                repeater_provider=self.repeater_provider,
-                airports_provider=self.airports_provider,
-                geocoder=self.geocoder,
+            self.console.print(
+                "[cyan]Stepping through the configuration with loaded values pre-filled for your verification (including target radio selection)...[/cyan]"
             )
-            codeplug, out_file = runner.run(recipe)
-            self.console.print(f"[bold green]✔ Codeplug successfully exported to: {out_file}[/bold green]")
-            target_spec = self.radio_mgr.get_radio(recipe.radio_target.radio_id)
-            render_review_table(self.console, codeplug, target_spec=target_spec)
+            if not Confirm.ask("Continue to review & verify recipe settings?", default=True):
+                return
+
+            if recipe.mode == "ROUTE_CORRIDOR":
+                self._flow_route_corridor(initial_recipe=recipe)
+            elif recipe.mode == "PROXIMITY_SEARCH":
+                self._flow_proximity(initial_recipe=recipe)
+            elif recipe.mode == "AVIATION_PLANNER":
+                self._flow_aviation(initial_recipe=recipe)
+            elif recipe.mode == "PRESET_TEMPLATES":
+                self._flow_preset_templates_recipe(recipe)
+            else:
+                self.console.print(f"[red]Unsupported recipe mode: {recipe.mode}[/red]")
         except Exception as exc:
-            self.console.print(f"[bold red]Failed to execute recipe: {exc}[/bold red]")
+            self.console.print(f"[bold red]Failed to load or execute recipe: {exc}[/bold red]")
+
+    def _flow_preset_templates_recipe(self, initial_recipe: RadioPlannerRecipe) -> None:
+        """Interactive verification flow for a PRESET_TEMPLATES recipe."""
+        sequence_keys = select_and_sequence_blocks(
+            self.console,
+            self.template_mgr,
+            primary_block_key="PRESET_TEMPLATES",
+            primary_block_title="Preset Template Channels",
+            initial_sequence=list(initial_recipe.sequence_order),
+        )
+        if not sequence_keys:
+            self.console.print("[yellow]Sequence selection cancelled.[/yellow]")
+            return
+
+        radio_id = self._select_target_radio(initial_recipe.radio_target.radio_id)
+        if not radio_id:
+            self.console.print("[yellow]Radio selection cancelled.[/yellow]")
+            return
+
+        spec = self.radio_mgr.get_radio(radio_id)
+        codeplug = SequenceOrganizer.assemble(
+            codeplug_name=initial_recipe.name,
+            sequence_keys=sequence_keys,
+            primary_channels=[],
+            target_spec=spec,
+            template_manager=self.template_mgr,
+            allowed_bands=spec.supportedBands,
+            allowed_modes=spec.supportedModes,
+            naming_format=getattr(self.prefs_mgr.preferences, "channelNamingFormat", "CITY_FREQ"),
+        )
+        updated_recipe = RadioPlannerRecipe(
+            mode="PRESET_TEMPLATES",
+            name=initial_recipe.name,
+            radio_target=RadioTargetConfig(
+                radio_id=radio_id,
+                programmer_format=spec.programmerType,
+                include_simplex=initial_recipe.radio_target.include_simplex,
+                bands=spec.supportedBands,
+                modes=spec.supportedModes,
+            ),
+            sequence_order=sequence_keys,
+        )
+        self._channel_review_and_export_loop(codeplug, updated_recipe, spec)
 
     def _channel_review_and_export_loop(self, codeplug: Codeplug, recipe: RadioPlannerRecipe, spec) -> None:
         """Interactive review table actions loop."""
@@ -1199,6 +1391,7 @@ class InteractiveWizard:
         while True:
             self.console.print("\n[bold cyan]Codeplug Actions:[/bold cyan]")
             self.console.print("  [R] Review Channel Table (Badges, Frequencies, Tones)")
+            self.console.print("  [N] Change Channel Naming Format (City+Freq / Callsign / City / Standard)")
             self.console.print("  [E] Export Codeplug CSV to Disk")
             self.console.print("  [D] DMR Talkgroup Expansion / Duplication")
             self.console.print("  [S] Save Configuration Recipe to YAML (for re-running)")
@@ -1207,12 +1400,38 @@ class InteractiveWizard:
 
             act = Prompt.ask(
                 "Choose action",
-                choices=["R", "r", "E", "e", "D", "d", "S", "s", "C", "c", "B", "b"],
+                choices=["R", "r", "N", "n", "E", "e", "D", "d", "S", "s", "C", "c", "B", "b"],
                 default="R",
             ).upper()
 
             if act == "R":
-                render_review_table(self.console, current_codeplug, target_spec=spec)
+                render_review_table(
+                    self.console,
+                    current_codeplug,
+                    target_spec=spec,
+                    naming_format=getattr(recipe.radio_target, "naming_format", "CITY_FREQ"),
+                )
+            elif act == "N":
+                from core.sanitizers.condenser import NameCondenser
+
+                cur_fmt = getattr(recipe.radio_target, "naming_format", "CITY_FREQ")
+                new_fmt = select_channel_naming_format(self.console, spec, default_format=cur_fmt)
+                if new_fmt:
+                    recipe.radio_target.naming_format = new_fmt
+                    renamed_channels = [
+                        ch.with_name(NameCondenser.condense_channel(ch, spec, naming_format=new_fmt))
+                        for ch in current_codeplug.channels
+                    ]
+                    current_codeplug = Codeplug(name=current_codeplug.name, channels=renamed_channels).renumbered(
+                        start_slot=getattr(spec, "startChannel", 1)
+                    )
+                    self.console.print(f"[bold green]✔ Channel naming format updated to: {new_fmt}[/bold green]")
+                    render_review_table(
+                        self.console,
+                        current_codeplug,
+                        target_spec=spec,
+                        naming_format=new_fmt,
+                    )
             elif act == "C":
                 render_config_panel(self.console, recipe, title="Current Active Configuration")
             elif act == "E":
@@ -1220,7 +1439,9 @@ class InteractiveWizard:
                 self.console.print("  [1] RT Systems CSV")
                 self.console.print("  [2] CHIRP Standard CSV")
                 self.console.print("  [3] CPS / Generic CSV")
-                fmt_choice = Prompt.ask("Select format", choices=["1", "2", "3"], default="1")
+                prog_type_upper = getattr(spec, "programmerType", "RT_SYSTEMS").upper()
+                default_fmt_choice = "2" if prog_type_upper == "CHIRP" else ("3" if prog_type_upper in {"GENERIC_CSV", "VENDOR_CPS"} else "1")
+                fmt_choice = Prompt.ask("Select format", choices=["1", "2", "3"], default=default_fmt_choice)
                 fmt_map = {"1": "RT_SYSTEMS", "2": "CHIRP", "3": "GENERIC_CSV"}
                 chosen_format = fmt_map[fmt_choice]
 
@@ -1246,7 +1467,9 @@ class InteractiveWizard:
                         expanded.extend(self.radio_id_provider.duplicate_channel_for_talkgroups(ch))
                     else:
                         expanded.append(ch)
-                current_codeplug = Codeplug(name=current_codeplug.name, channels=expanded).renumbered()
+                current_codeplug = Codeplug(name=current_codeplug.name, channels=expanded).renumbered(
+                    start_slot=getattr(spec, "startChannel", 1)
+                )
                 self.console.print(
                     f"[green]Talkgroups expanded! Total channels now: {current_codeplug.total_channels}[/green]"
                 )

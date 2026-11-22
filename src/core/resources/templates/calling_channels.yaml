@@ -40,3 +40,14 @@ channels:
     mode: FM
     power: High
     comment: GMRS Channel 20 / Emergency Calling
+  - name: GMRS TRVL
+    rxFreq: 462.67500
+    txFreq: 467.67500
+    offset: 5.0
+    offsetDir: "+"
+    mode: FM
+    power: High
+    toneMode: TSQL
+    ctcss: "141.3"
+    rxCtcss: "141.3"
+    comment: National GMRS Travel Tone Repeater Pair (Ch 20R +5 MHz 141.3 Hz)

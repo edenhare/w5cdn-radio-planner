@@ -223,6 +223,7 @@ def test_wizard_flow_route_corridor_with_band_selection():
          patch.object(wizard, "_select_target_radio", return_value="btech_dmr6x2"), \
          patch("cli.wizard.interactive.select_bands_for_radio", return_value=["2m", "70cm", "WX"]), \
          patch("cli.wizard.interactive.select_repeater_access", return_value=["OPEN"]), \
+         patch("cli.wizard.interactive.select_channel_naming_format", return_value="CALLSIGN_FREQ"), \
          patch("rich.prompt.Prompt.ask", side_effect=["25.0"]), \
          patch("rich.prompt.Confirm.ask", side_effect=[True, True]), \
          patch.object(wizard, "_channel_review_and_export_loop") as mock_review:
@@ -235,6 +236,7 @@ def test_wizard_flow_route_corridor_with_band_selection():
         assert radio_spec.id == "btech_dmr6x2"
         assert recipe.radio_target.bands == ["2m", "70cm", "WX"]
         assert recipe.radio_target.repeater_access == ["OPEN"]
+        assert recipe.radio_target.naming_format == "CALLSIGN_FREQ"
         assert "RadioPlanner -- Route Corridor Configuration Review" in out.getvalue()
 
 
@@ -332,5 +334,67 @@ def test_wizard_flow_aviation_with_template_selection():
         assert "Waypoints" not in rendered
 
 
+def test_wizard_replay_recipe_interactive_verification_and_radio_change(tmp_path: Path):
+    """Verify loading a saved recipe steps through the interactive wizard with loaded values and allows changing radio."""
+    from core.config.recipe import CorridorConfig, RadioPlannerRecipe, RadioTargetConfig
+
+    recipe_file = tmp_path / "saved_corridor.yaml"
+    saved_recipe = RadioPlannerRecipe(
+        mode="ROUTE_CORRIDOR",
+        name="East_Texas_Run",
+        corridor=CorridorConfig(waypoints=["Tyler, TX", "Shreveport, LA"], corridor_width_miles=30.0),
+        radio_target=RadioTargetConfig(
+            radio_id="baofeng_5rm",
+            programmer_format="RT_SYSTEMS",
+            include_simplex=False,
+            bands=["2m"],
+            modes=["FM"],
+            repeater_access=["OPEN"],
+        ),
+        sequence_order=["ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"],
+    )
+    saved_recipe.to_yaml_file(recipe_file)
+
+    out = io.StringIO()
+    console = Console(file=out, width=120)
+    wizard = InteractiveWizard(console=console)
+
+    # Mock get_recipes_dir to point to tmp_path
+    # User selects recipe "1", confirms "Continue to review & verify recipe settings?",
+    # then in _flow_route_corridor:
+    # - validate_and_edit_route receives default_waypoints == ["Tyler, TX", "Shreveport, LA"]
+    # - Prompt.ask for corridor width defaults to "30.0" (we return "30.0")
+    # - Confirm.ask for simplex defaults to False (we return False), then True for "Proceed with route calculation?"
+    # - _select_target_radio receives default_id="baofeng_5rm", user changes to "anytone_at778uv"
+    with patch("cli.wizard.interactive.get_recipes_dir", return_value=tmp_path), \
+         patch("cli.wizard.interactive.validate_and_edit_route", side_effect=lambda c, wp, g: wp) as mock_wp, \
+         patch("cli.wizard.interactive.select_and_sequence_blocks", side_effect=lambda c, tm, primary_block_key, primary_block_title, initial_sequence=None: initial_sequence) as mock_seq, \
+         patch.object(wizard, "_select_target_radio", return_value="anytone_at778uv") as mock_radio, \
+         patch("cli.wizard.interactive.select_bands_for_radio", side_effect=lambda c, spec, default_bands, mode_name: default_bands) as mock_bands, \
+         patch("cli.wizard.interactive.select_repeater_access", side_effect=lambda c, default_access: default_access) as mock_access, \
+         patch("cli.wizard.interactive.select_channel_naming_format", return_value="CALLSIGN") as mock_naming, \
+         patch("rich.prompt.Prompt.ask", side_effect=["1", "30.0"]), \
+         patch("rich.prompt.Confirm.ask", side_effect=[True, False, True]), \
+         patch.object(wizard, "_channel_review_and_export_loop") as mock_review:
+        wizard._flow_replay_recipe()
+
+        # Verify initial_recipe values were passed into every step for user verification
+        assert mock_wp.call_args[0][1] == ["Tyler, TX", "Shreveport, LA"]
+        assert mock_seq.call_args[1]["initial_sequence"] == ["ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"]
+        mock_radio.assert_called_once_with(None)
+        assert mock_bands.call_args[1]["default_bands"] == ["2m"]
+        assert mock_access.call_args[1]["default_access"] == ["OPEN"]
+        assert mock_naming.call_args[1]["default_format"] == "CITY_FREQ"
+
+        # Verify final assembled codeplug and recipe reflect verified/updated radio selection (AnyTone AT-778UV) and CALLSIGN naming
+        assert mock_review.called
+        codeplug, updated_recipe, final_spec = mock_review.call_args[0]
+        assert final_spec.id == "anytone_at778uv"
+        assert updated_recipe.radio_target.radio_id == "anytone_at778uv"
+        assert updated_recipe.radio_target.programmer_format == "CHIRP"
+        assert updated_recipe.radio_target.naming_format == "CALLSIGN"
+        assert updated_recipe.name == "East_Texas_Run"
+        for ch in codeplug.channels:
+            assert len(ch.name) <= 5
 
 

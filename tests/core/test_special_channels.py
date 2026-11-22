@@ -9,15 +9,20 @@ from core.special_channels import (
 
 
 def test_national_calling_channels():
-    """Good Data: Verify standard calling channels (10m, 6m, 2m, 1.25m, 70cm, GMRS)."""
+    """Good Data: Verify standard calling channels (10m, 6m, 2m, 1.25m, 70cm, GMRS CALL + GMRS TRVL)."""
     calling = get_national_calling_channels()
-    assert len(calling) == 6
+    assert len(calling) == 7
     bands = {ch.band for ch in calling}
     assert "2m" in bands
     assert "70cm" in bands
     assert "GMRS" in bands
     for ch in calling:
-        assert ch.is_simplex
+        if ch.name == "GMRS TRVL":
+            assert not ch.is_simplex
+            assert ch.offset == 5.0
+            assert ch.ctcss == "141.3"
+        else:
+            assert ch.is_simplex
         assert ch.specialType in {"CALLING", "GMRS"}
 
 

@@ -59,13 +59,14 @@ class SequenceOrganizer:
             raw_combined, target_spec, allowed_bands=allowed_bands, allowed_modes=allowed_modes
         )
 
-        # 2. Deduplicate if enabled (match by rxFreq + tone)
+        # 2. Deduplicate if enabled (match by rxFreq + txFreq + tone + callsign)
         if deduplicate:
             seen = set()
             unique_channels = []
             for ch in filtered:
                 ch_key = (
                     round(ch.rxFreq, 4),
+                    round(ch.txFreq, 4),
                     ch.toneMode,
                     ch.ctcss,
                     ch.dcs,
@@ -82,6 +83,7 @@ class SequenceOrganizer:
             for ch in filtered
         ]
 
-        # 4. Create codeplug and renumber
-        codeplug = Codeplug(name=codeplug_name, channels=condensed_channels).renumbered()
+        # 4. Create codeplug and renumber according to target radio startChannel
+        start_slot = getattr(target_spec, "startChannel", 1)
+        codeplug = Codeplug(name=codeplug_name, channels=condensed_channels).renumbered(start_slot=start_slot)
         return codeplug

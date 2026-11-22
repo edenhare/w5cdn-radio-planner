@@ -33,6 +33,7 @@ def select_target_radio_hierarchical(
 
     # Find which brand default_id belongs to if provided
     default_brand_index = "1"
+    def_radio: Optional[TargetRadioSpec] = None
     if default_id and radio_mgr.has_radio(default_id):
         def_radio = radio_mgr.get_radio(default_id)
         if def_radio.brand in sorted_brands:
@@ -44,6 +45,10 @@ def select_target_radio_hierarchical(
     while True:
         # Stage 1: Brand Selection (Multi-Column Grid)
         console.print("\n[bold cyan]Select Radio Brand / Manufacturer:[/bold cyan]")
+        if def_radio is not None:
+            console.print(
+                f"  [dim]Pre-selected / Default Radio:[/dim] [bold green]{def_radio.brand} {def_radio.model}[/bold green] ([cyan]{def_radio.id}[/cyan])"
+            )
         brand_table = Table(border_style="cyan", show_header=False, padding=(0, 2))
         brand_table.add_column("Col 1", style="bold white")
         brand_table.add_column("Col 2", style="bold white")
@@ -105,10 +110,17 @@ def select_target_radio_hierarchical(
                 m2_val = m_col2[i] if i < len(m_col2) else ""
                 model_table.add_row(m_col1[i], m2_val)
 
+            default_model_index = "1"
+            if def_radio is not None and selected_brand == def_radio.brand:
+                for idx, m in enumerate(models, start=1):
+                    if m.id == def_radio.id:
+                        default_model_index = str(idx)
+                        break
+
             console.print(model_table)
             console.print("  [B] Back to Brand Selection | [Q] Cancel")
 
-            model_choice = Prompt.ask("Select model number", default="1").strip().upper()
+            model_choice = Prompt.ask("Select model number", default=default_model_index).strip().upper()
 
             if model_choice in {"B", "BACK"}:
                 console.clear()

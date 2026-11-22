@@ -11,6 +11,7 @@ supportedBands:
   - "2m"
   - "1.25m"
   - "70cm"
+  - "GMRS"
   - "Airband"
   - "WX"
 supportedModes:

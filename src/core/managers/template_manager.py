@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -12,7 +13,17 @@ from core.config.yaml_loader import load_yaml_file
 from core.models.channel import RadioChannel
 from core.models.template import PresetTemplateFile
 
-APP_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "resources" / "templates"
+
+def _resolve_app_templates_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", str(Path(sys.executable).resolve().parent)))
+        frozen_dir = meipass / "core" / "resources" / "templates"
+        if frozen_dir.is_dir():
+            return frozen_dir
+    return Path(__file__).resolve().parent.parent / "resources" / "templates"
+
+
+APP_TEMPLATES_DIR = _resolve_app_templates_dir()
 
 
 class TemplateManager:
@@ -80,6 +91,28 @@ class TemplateManager:
         resolved_id = self._resolve_id(template_id)
         return resolved_id in self._user_templates
 
+    def is_core_template(self, template_id: str) -> bool:
+        """Check if the template exists in the core application templates directory."""
+        resolved_id = self._resolve_id(template_id)
+        return resolved_id in self._app_templates
+
+    def save_core_template(self, template: PresetTemplateFile) -> Path:
+        """Persist a template directly into the core application templates directory (src/core/resources/templates/<id>.yaml)."""
+        self.app_dir.mkdir(parents=True, exist_ok=True)
+        dest = self.app_dir / f"{template.id}.yaml"
+        dump_data = template.model_dump(exclude_none=True, exclude={"fileName", "rawCsvContent"})
+        with open(dest, "w", encoding="utf-8") as f:
+            yaml.dump(dump_data, f, sort_keys=False, default_flow_style=False)
+        self._app_templates[template.id] = template
+
+        # Remove any stale user override so the core template file is authoritative
+        for ext in (".yaml", ".yml", ".json"):
+            stale_override = self.user_dir / f"{template.id}{ext}"
+            if stale_override.is_file():
+                stale_override.unlink()
+        self._user_templates.pop(template.id, None)
+        return dest
+
     def save_template(self, template: PresetTemplateFile) -> Path:
         """Persist a template into user config directory as YAML (~/.config/radioplanner/templates/<id>.yaml)."""
         self.user_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +157,20 @@ class TemplateManager:
             self.reload()
             return True
         return False
+
+    def delete_template(self, template_id: str) -> bool:
+        """Delete a custom template from user_dir or app_dir (protecting built-in system templates)."""
+        resolved_id = self._resolve_id(template_id)
+        deleted = self.delete_user_template(resolved_id)
+        if resolved_id not in {"calling_channels", "noaa_wx_channels", "gmrs_channels"}:
+            for ext in (".yaml", ".yml"):
+                app_target = self.app_dir / f"{resolved_id}{ext}"
+                if app_target.is_file():
+                    app_target.unlink()
+                    deleted = True
+            if deleted:
+                self.reload()
+        return deleted
 
     def get_template_channels(self, template_id: str) -> List[RadioChannel]:
         """Return CIR RadioChannel items for the requested template."""

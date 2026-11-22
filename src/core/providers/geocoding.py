@@ -149,8 +149,19 @@ class GeocodingProvider:
         self.timeout = timeout
 
     def resolve(self, query: str) -> GeoPoint:
-        """Resolve a city/state query into a GeoPoint."""
+        """Resolve a city/state query or 'lat, lon' coordinate pair into a GeoPoint."""
         normalized = query.strip().lower()
+
+        # Support direct "lat, lon" coordinate strings (e.g. "32.3513, -95.3011")
+        if "," in normalized:
+            parts = [p.strip() for p in normalized.split(",", 1)]
+            try:
+                lat_val = float(parts[0])
+                lon_val = float(parts[1])
+                if -90.0 <= lat_val <= 90.0 and -180.0 <= lon_val <= 180.0:
+                    return GeoPoint(lat=lat_val, lon=lon_val, name=query.strip())
+            except ValueError:
+                pass
 
         # Check offline cache first for instant resolution
         if normalized in OFFLINE_CITIES:
@@ -179,3 +190,70 @@ class GeocodingProvider:
                 return GeoPoint(lat=lat, lon=lon, name=query)
 
         raise ValueError(f"Unable to geocode location: '{query}'. Please check spelling or verify internet connection.")
+
+    def reverse_geocode(self, lat: float, lon: float) -> str:
+        """Reverse-geocode latitude/longitude into 'City, ST' with Nominatim and nearest offline city fallback."""
+        from core.providers.repeaterbook import US_STATE_ABBR
+
+        try:
+            url = "https://nominatim.openstreetmap.org/reverse"
+            headers = {"User-Agent": "RadioPlanner/1.0 (amateur-radio-route-planner)"}
+            params = {"lat": str(lat), "lon": str(lon), "format": "json", "zoom": 10}
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    addr = data.get("address", {})
+                    city = (
+                        addr.get("city")
+                        or addr.get("town")
+                        or addr.get("village")
+                        or addr.get("municipality")
+                        or addr.get("county")
+                    )
+                    state = addr.get("state") or addr.get("province") or ""
+                    iso_lvl = addr.get("ISO3166-2-lvl4", "")
+                    if iso_lvl and "-" in iso_lvl:
+                        st_abbr = iso_lvl.split("-", 1)[1].upper()
+                    else:
+                        st_abbr = US_STATE_ABBR.get(state.lower(), state)
+                    if city and st_abbr:
+                        return f"{city}, {st_abbr}"
+                    if city:
+                        return str(city)
+        except Exception:
+            pass
+
+        # Fallback to nearest known city within 60 miles, or formatted coordinates
+        target = GeoPoint(lat=lat, lon=lon)
+        best_city = None
+        best_dist = 999999.0
+        for name_key, (c_lat, c_lon) in OFFLINE_CITIES.items():
+            if "," not in name_key:
+                continue
+            d = haversine_distance(target, GeoPoint(lat=c_lat, lon=c_lon))
+            if d < best_dist:
+                best_dist = d
+                parts = name_key.split(",")
+                best_city = f"{parts[0].strip().title()}, {parts[1].strip().upper()}"
+        if best_city and best_dist <= 60.0:
+            return best_city
+        return f"{lat:.4f}, {lon:.4f}"
+
+    def detect_ip_location(self) -> dict[str, float | str]:
+        """Detect approximate current location via IP geolocation API."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                resp = client.get("http://ip-api.com/json/?fields=status,city,region,regionName,lat,lon")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("status") == "success":
+                        city = data.get("city", "")
+                        region = data.get("region", "")
+                        lat = float(data.get("lat", 0.0))
+                        lon = float(data.get("lon", 0.0))
+                        label = f"{city}, {region}".strip(", ")
+                        return {"location": label, "lat": lat, "lon": lon}
+        except Exception:
+            pass
+        raise ValueError("Could not automatically detect current location.")

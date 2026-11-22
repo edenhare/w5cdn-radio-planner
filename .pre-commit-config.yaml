@@ -1,0 +1,78 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+  - pre-push
+
+default_stages:
+  - pre-commit
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: \.(ico|png|svg)$
+      - id: trailing-whitespace
+        exclude: \.(md|ico|png|svg)$
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        files: ^(start\.sh|scripts/install_linux_desktop\.sh|\.github/.*\.ya?ml|\.pre-commit-config\.yaml)$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.3
+    hooks:
+      - id: bandit
+        args: ["-ll"]
+        files: ^(src/.*|scripts/.*)\.py$
+
+  - repo: local
+    hooks:
+      - id: block-runtime-secrets-and-exports
+        name: Block local tokens, .env, backups, DBs & exports
+        language: python
+        entry: >-
+          python -c "import pathlib, re, sys;
+          bad = [f for f in sys.argv[1:] if re.search(r'(^|/)\.env$|(^|/)tokens$|ApiToken|\.db(-wal|-shm)?$|\.bak$|(^|/)exports/', pathlib.Path(f).as_posix(), re.I)];
+          sys.exit('Blocked sensitive/runtime files: ' + ', '.join(bad)) if bad else None"
+        pass_filenames: true
+
+      - id: ui-and-code-quality
+        name: Static HTML/CSS/JS integrity & exception quality checks
+        language: python
+        additional_dependencies:
+          - pytest>=8.3.0
+          - pydantic>=2.6.4
+        entry: pytest -o addopts="" tests/web/test_ui_integrity.py tests/test_code_quality.py -q
+        pass_filenames: false
+        files: ^(src/web/.*|src/core/updater\.py|start\.sh|scripts/.*|tests/web/test_ui_integrity\.py|tests/test_code_quality\.py)$
+
+      - id: conventional-commit
+        name: Validate Conventional Commit message
+        language: python
+        stages: [commit-msg]
+        entry: >-
+          python -c "import pathlib, re, sys;
+          msg = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()[0].strip();
+          ok = bool(re.match(r'^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+', msg)) or msg.startswith(('Merge ', 'Revert '));
+          sys.exit('Commit message must follow Conventional Commits (e.g. feat(ui): ... or fix: ...). Got: ' + msg) if not ok else None"
+
+      - id: pytest-pre-push
+        name: Full pytest suite & coverage gate (pre-push)
+        language: system
+        stages: [pre-push]
+        entry: uv run pytest -q --cov=core --cov=cli --cov=web --cov-fail-under=75
+        pass_filenames: false
+        always_run: true
