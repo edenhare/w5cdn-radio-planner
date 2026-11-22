@@ -1,16 +1,51 @@
-# Byte-compiled / optimized / DLL files
+# Local runtime data, credentials & tokens (NEVER commit secrets or exports)
+.env
+.env.*
+!.env.example
+tokens
+*ApiToken*.txt
+docs/RepeaterBookPythonClientApiToken.txt
+*.db
+*.db-wal
+*.db-shm
+*.bak
+exports/
+scratch/
+
+# Python virtual environments & caches
+.venv/
+venv/
+env/
+ENV/
+.Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
+.ruff_cache/
 
-# Distribution / packaging
-.Python
+# Testing, coverage & CI metrics
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+pytest-results.xml
+pytest-output.log
+ci-metrics.json
+security-metrics.json
+ruff.log
+bandit.log
+pip-audit.log
+htmlcov/
+nosetests.xml
+
+# Build & packaging artifacts
 build/
-develop-eggs/
 dist/
+release/
+*.spec
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -24,26 +59,8 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
-.venv/
-env/
-venv/
-ENV/
-
-# Testing and coverage
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-nosetests.xml
-coverage.xml
-
 # IDE & OS files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# User data & exports
-exports/
-scratch/

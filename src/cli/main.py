@@ -161,7 +161,7 @@ def main() -> int:
         render_header(console, title="RadioPlanner", subtitle=f"FastAPI Web Studio — {url}")
 
         # Smart single-instance check: if server is already listening on host:port, open browser and exit cleanly
-        check_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+        check_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host  # nosec B104
         already_running = False
         try:
             with socket.create_connection((check_host, port), timeout=0.6):
