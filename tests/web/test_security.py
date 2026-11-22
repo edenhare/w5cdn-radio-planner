@@ -157,3 +157,31 @@ def test_xxe_qrz_password_crlf_and_backup_zip_slip_defenses() -> None:
     # Untrusted update download URL rejected
     with pytest.raises(UpdateError):
         validate_download_url("https://attacker.example/release.zip")
+
+
+def test_net_logger_regex_resists_redos_input() -> None:
+    """Verify Net Logger tone/offset parser runs in linear time on adversarial repeated spaces."""
+    import json
+    import time
+
+    from web.app import _parse_net_logger_json_to_template
+
+    payload = json.dumps(
+        {
+            "net_type_defaults": {
+                "AdversarialPL": {"frequency": "146.940 MHz", "mode": "FM", "tone_offset": "PL" + " " * 50000 + "!"},
+                "AdversarialDCS": {"frequency": "444.500 MHz", "mode": "FM", "tone_offset": "D" + " " * 50000 + "!"},
+            }
+        }
+    )
+    t0 = time.monotonic()
+    tpl = _parse_net_logger_json_to_template(
+        clean_id="redos_test",
+        name="ReDoS Test",
+        description="",
+        tag_text="TEST",
+        raw_json=payload,
+    )
+    elapsed = time.monotonic() - t0
+    assert len(tpl.channels) == 2
+    assert elapsed < 0.5

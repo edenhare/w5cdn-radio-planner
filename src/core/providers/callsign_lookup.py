@@ -89,7 +89,8 @@ class CallsignLookupService:
                 return {"ok": True, "message": f"QRZ XML login succeeded for {username.strip().upper()}."}
             return {"ok": False, "message": err}
         except (httpx.HTTPError, ET.ParseError, OSError, ValueError) as exc:
-            return {"ok": False, "message": f"QRZ connection error: {exc}"}
+            logger.debug("QRZ login test failed: %s", exc)
+            return {"ok": False, "message": "QRZ XML connection or parsing failed."}
         finally:
             if owns:
                 await http.aclose()
@@ -199,7 +200,7 @@ class CallsignLookupService:
             return {"found": False, "callsign": cleaned, "source": "callook"}
         except (httpx.HTTPError, ValueError, OSError) as exc:
             logger.debug("Callsign lookup failed for %s: %s", cleaned, exc)
-            return {"found": False, "callsign": cleaned, "source": "offline", "error": str(exc)}
+            return {"found": False, "callsign": cleaned, "source": "offline", "error": "Callsign lookup service unavailable."}
         finally:
             if owns:
                 await http.aclose()

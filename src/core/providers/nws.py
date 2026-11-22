@@ -67,7 +67,7 @@ class NwsAlertsService:
                 "fetched_at": fetched_at,
                 "count": 0,
                 "alerts": [],
-                "error": f"Could not reach api.weather.gov: {exc}",
+                "error": "Could not reach api.weather.gov (offline or unreachable).",
                 "briefing_text": f"NWS weather briefing offline/unavailable for {', '.join(clean_states)}.",
             }
         finally:

@@ -664,13 +664,13 @@ def _parse_net_logger_json_to_template(
                 records.append((str(cfg.get("name") or cfg.get("callsign") or f"Net {idx}"), cfg))
 
     channels: list[TemplateChannelItem] = []
-    freq_re = re.compile(r"(\d+(?:\.\d+)?)")
-    off_re = re.compile(r"([+-])\s*(\d+(?:\.\d+)?)")
-    pl_re = re.compile(r"(?:PL|CTCSS|TONE)\s*[:=]?\s*(\d{2,3}\.\d)", re.IGNORECASE)
-    dcs_re = re.compile(r"(?:DCS|DTCS|D)\s*[:=]?\s*(\d{3})", re.IGNORECASE)
+    freq_re = re.compile(r"(\d{1,4}(?:\.\d{1,6})?)")
+    off_re = re.compile(r"([+-])[ \t]{0,4}(\d{1,4}(?:\.\d{1,5})?)")
+    pl_re = re.compile(r"\b(?:PL|CTCSS|TONE)[ \t:=]{0,6}(\d{2,3}\.\d)\b", re.IGNORECASE)
+    dcs_re = re.compile(r"\b(?:DCS|DTCS|D)[ \t:=]{0,6}(\d{3})\b", re.IGNORECASE)
 
     for label, cfg in records:
-        freq_raw = str(cfg.get("frequency") or cfg.get("rxFreq") or "").strip()
+        freq_raw = str(cfg.get("frequency") or cfg.get("rxFreq") or "").strip()[:40]
         fm = freq_re.search(freq_raw)
         if not fm:
             continue
@@ -678,7 +678,7 @@ def _parse_net_logger_json_to_template(
         if rx <= 0.0 or rx >= 3000.0:
             continue
 
-        tone_off = str(cfg.get("tone_offset") or "").strip()
+        tone_off = str(cfg.get("tone_offset") or "").strip()[:120]
         off_dir = "off"
         off_val = 0.0
         om = off_re.search(tone_off)
@@ -1120,7 +1120,8 @@ def create_app() -> FastAPI:
             detected = workspace.geocoder.detect_ip_location()
             return JSONResponse({"ok": True, **detected})
         except (OSError, ValueError, RuntimeError) as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=200)
+            logger.warning("Geolocation lookup failed: %s", exc)
+            return JSONResponse({"ok": False, "error": "Unable to detect current location."}, status_code=200)
 
     # ─── Plan Assembly & Codeplug Operations ─────────────────────────────────
 
