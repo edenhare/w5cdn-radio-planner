@@ -10,6 +10,7 @@ from core.exporters.base import BaseExporter
 from core.models.channel import RadioChannel
 from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
+from core.sanitizers.sanitizer import DataSanitizer
 
 
 class RtSystemsExporter(BaseExporter):
@@ -105,5 +106,5 @@ class RtSystemsExporter(BaseExporter):
             "Standby Color": "Blue",
             "Rx Color": "Orange",
             "Tx Color": "Red",
-            "Comment": ch.comment or "",
+            "Comment": DataSanitizer.csv_safe_cell(ch.comment or ""),
         }

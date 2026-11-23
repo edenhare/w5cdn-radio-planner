@@ -2,8 +2,10 @@
 name = "radioplanner"
 version = "0.2.0"
 description = "W5CDN RadioPlanner — Travel Corridor, Proximity & Aviation Radio Codeplug Cockpit"
+readme = "README.md"
+license = { file = "LICENSE" }
 authors = [
-    { name = "RadioPlanner Team" }
+    { name = "Eden Hare (W5CDN)" }
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -61,10 +63,12 @@ select = ["E", "F", "I"]
 ignore = ["E501"]
 
 [tool.poe.tasks]
-test = "pytest"
-test-cov = "pytest --cov=core --cov=cli --cov=web --cov-report=term-missing --cov-report=html"
+test = "pytest -m 'not ui'"
+test-cov = "pytest -m 'not ui' --cov=core --cov=cli --cov=web --cov-report=term-missing --cov-report=html"
+ui-test = "pytest tests/web/test_ui_e2e.py --no-cov -v"
 lint = "ruff check src scripts tests"
 format = "ruff format src scripts tests"
 check = ["lint", "test"]
 run = "python -m cli.main"
 desktop = "python -m web.desktop"
+build = "python scripts/build_standalone.py"

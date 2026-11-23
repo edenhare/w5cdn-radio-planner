@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from cli.main import build_parser, main
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "configurations"
@@ -45,12 +47,15 @@ def test_cli_validate_invalid_syntax():
         assert ret == 1
 
 
-def test_cli_run_config(tmp_path: Path):
-    """Test --config executes the recipe directly and exits 0."""
+def test_cli_run_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Test --config executes the recipe directly into an isolated directory and exits 0."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RADIOPLANNER_HOME", str(tmp_path / "rp_home"))
     valid_file = str(FIXTURES_DIR / "aviation_tyler_regional.yaml")
     with patch.object(sys, "argv", ["radioplanner", "--config", valid_file]):
         ret = main()
         assert ret == 0
+    assert (tmp_path / "exports" / "test_tyler_aviation.csv").is_file()
 
 
 def test_cli_keyboard_interrupt_graceful_exit():

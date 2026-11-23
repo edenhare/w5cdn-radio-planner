@@ -1,7 +1,7 @@
-.PHONY: default install test test-cov lint format check run
+.PHONY: default install test test-cov ui-test lint format check run desktop build
 
 default:
-	@echo "Available targets: install, test, test-cov, lint, format, check, run"
+	@echo "Available targets: install, test, test-cov, ui-test, lint, format, check, run, desktop, build"
 
 install:
 	uv sync
@@ -11,6 +11,9 @@ test:
 
 test-cov:
 	uv run poe test-cov
+
+ui-test:
+	uv run --group dev --group ui poe ui-test
 
 lint:
 	uv run poe lint
@@ -23,3 +26,9 @@ check:
 
 run:
 	uv run poe run
+
+desktop:
+	uv run poe desktop
+
+build:
+	uv run --group packaging poe build

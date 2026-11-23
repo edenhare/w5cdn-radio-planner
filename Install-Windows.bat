@@ -10,14 +10,7 @@ echo   RadioPlanner Web Studio -- Windows Setup (No uv / No PowerShell 7 require
 echo ============================================================================
 echo.
 
-REM 1. Register radioplanner.pth in official signed Python 3.14 site-packages
-set "PY_SITE=%LOCALAPPDATA%\Python\pythoncore-3.14-64\Lib\site-packages"
-if exist "%PY_SITE%" (
-    echo import sys; sys.path[:0] = [r'%REPO_ROOT%\src', r'%REPO_ROOT%\.venv\Lib\site-packages'] > "%PY_SITE%\radioplanner.pth"
-    echo [OK] Registered Python path in: "%PY_SITE%\radioplanner.pth"
-)
-
-REM 2. Install global CLI command in %USERPROFILE%\.local\bin\radioplanner.cmd
+REM 1. Install global CLI command in %USERPROFILE%\.local\bin\radioplanner.cmd
 set "LOCAL_BIN=%USERPROFILE%\.local\bin"
 if not exist "%LOCAL_BIN%" mkdir "%LOCAL_BIN%"
 (
@@ -26,7 +19,9 @@ if not exist "%LOCAL_BIN%" mkdir "%LOCAL_BIN%"
 ) > "%LOCAL_BIN%\radioplanner.cmd"
 echo [OK] Installed global CLI command: "%LOCAL_BIN%\radioplanner.cmd"
 
-REM 3. Create Desktop shortcut using built-in Windows Script Host (VBScript)
+REM 2. Create Desktop shortcut using built-in Windows Script Host (VBScript)
+set "APP_ICON=%REPO_ROOT%\src\web\static\icon.ico"
+if not exist "%APP_ICON%" set "APP_ICON=%SystemRoot%\System32\shell32.dll,13"
 set "VBS_TMP=%TEMP%\create_rp_shortcut.vbs"
 (
     echo Set oWS = WScript.CreateObject^("WScript.Shell"^)
@@ -34,8 +29,8 @@ set "VBS_TMP=%TEMP%\create_rp_shortcut.vbs"
     echo Set oLink = oWS.CreateShortcut^(sDesktop ^& "\RadioPlanner Web Studio.lnk"^)
     echo oLink.TargetPath = "%LAUNCHER_BAT%"
     echo oLink.WorkingDirectory = "%REPO_ROOT%"
-    echo oLink.Description = "Launch RadioPlanner Web Studio"
-    echo oLink.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
+    echo oLink.Description = "Launch W5CDN RadioPlanner Cockpit Studio"
+    echo oLink.IconLocation = "%APP_ICON%"
     echo oLink.Save
     echo WScript.Echo "[OK] Created Desktop shortcut: " ^& sDesktop ^& "\RadioPlanner Web Studio.lnk"
 ) > "%VBS_TMP%"

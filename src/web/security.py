@@ -18,8 +18,9 @@ from typing import Any, Awaitable, Callable
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from core.sanitizers.sanitizer import DataSanitizer
+
 CTRL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
-NUMERIC_NEG_RE = re.compile(r"^-\d+(\.\d+)?$")
 URL_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*):")
 HOST_PORT_RE = re.compile(r"^(?:localhost|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+):\d{1,5}(?:/.*)?$", re.IGNORECASE)
 LOCAL_ORIGIN_RE = re.compile(r"^https?://(127\.0\.0\.1|localhost|\[::1\]|testserver)(:\d{1,5})?$", re.IGNORECASE)
@@ -65,13 +66,7 @@ def safe_child_path(base_dir: Path, filename: str) -> Path:
 
 def csv_safe_cell(val: Any) -> str:
     """Neutralize spreadsheet formula injection while keeping negative numbers intact."""
-    text = str(val if val is not None else "")
-    if not text:
-        return ""
-    first = text[0]
-    if first in {"=", "+", "@", "\t", "\r"} or (first == "-" and not NUMERIC_NEG_RE.match(text)):
-        return f"'{text}"
-    return text
+    return DataSanitizer.csv_safe_cell(val)
 
 
 def allowed_hosts() -> set[str]:

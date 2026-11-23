@@ -53,6 +53,11 @@ def get_data_dir() -> Path:
     return get_radioplanner_home() / "data"
 
 
+def get_exports_dir() -> Path:
+    """Directory for exported codeplug CSVs ~/.config/radioplanner/exports/"""
+    return get_radioplanner_home() / "exports"
+
+
 DEFAULT_STARTER_RECIPE = """# RadioPlanner Starter Highway Corridor Recipe
 version: "1.0"
 mode: "ROUTE_CORRIDOR"

@@ -24,7 +24,7 @@ Run this checklist before tagging a release (`v*`) or after major UI/desktop cha
 - [ ] **Route Corridor**: Build Tyler, TX -> Shreveport, LA -> Jackson, MS; verify waypoints, corridor repeaters, map route polyline, and summary rows.
 - [ ] **Proximity Search**: Build Dallas, TX (50 mi); verify concentric rings on map and summary.
 - [ ] **Aviation Planner**: Build Tyler, TX (50 mi); verify airfields and AM Airband channels.
-- [ ] Switch Target Radio (e.g., Yaesu FTM-300DR -> Baofeng UV-5R -> Retevis GMRS); verify LCD names re-condense and bands update.
+- [ ] Switch Target Radio (e.g., AnyTone AT-778UV -> Baofeng 5RM -> Baofeng UV-5G Plus (GMRS)); verify LCD names re-condense and bands update.
 - [ ] **Inline Channel Editor**: Click edit on a channel row, modify LCD Name / Tone / Callsign, click `Lookup` to resolve trustee callsign, save, verify table updates.
 - [ ] **Delete & Undo**: Select 2 channels, Delete, verify slots renumber; click **Undo**, verify deleted channels restore cleanly.
 - [ ] **Pocket Reference Card**: Open Pocket Card modal, verify KPIs and monospace reference card, Copy Text, Download `.txt`, and Print preview.

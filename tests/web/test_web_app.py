@@ -303,7 +303,10 @@ def test_recipes_templates_radios_and_preferences_crud(tmp_path: Path, monkeypat
     )
     assert res_tpl.status_code == 200
     assert res_tpl.json()["saved"] is True
+    assert (temp_user_dir / "east_tx_test.yaml").is_file()
+    assert not (temp_app_dir / "east_tx_test.yaml").exists()
     assert client.delete("/api/templates/east_tx_test").status_code == 200
+    assert not (temp_user_dir / "east_tx_test.yaml").exists()
     assert client.delete("/api/templates/calling_channels").status_code == 400
 
     # Radios CRUD in isolated dir
