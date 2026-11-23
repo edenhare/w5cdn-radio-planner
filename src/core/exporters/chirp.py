@@ -8,6 +8,7 @@ import io
 from core.exporters.base import BaseExporter
 from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
+from core.sanitizers.sanitizer import DataSanitizer
 
 CHIRP_COLUMNS = [
     "Location",
@@ -120,7 +121,7 @@ class ChirpExporter(BaseExporter):
                 "5.00",  # TStep (float in kHz)
                 "",  # Skip ("" or "S" or "P")
                 power,
-                ch.comment,
+                DataSanitizer.csv_safe_cell(ch.comment),
                 "",  # URCALL
                 "",  # RPT1CALL
                 "",  # RPT2CALL

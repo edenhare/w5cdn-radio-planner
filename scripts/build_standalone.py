@@ -69,6 +69,8 @@ def build_bundle() -> Path:
         "--hidden-import",
         "core.updater",
         "--hidden-import",
+        "core.version",
+        "--hidden-import",
         "core.providers.callsign_lookup",
         "--hidden-import",
         "core.providers.nws",

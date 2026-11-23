@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 
 class DataSanitizer:
@@ -11,6 +12,7 @@ class DataSanitizer:
 
     CONTROL_CHARS_PATTERN = re.compile(r"[\x00-\x1f\x7f-\x9f]")
     UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+    NUMERIC_NEG_PATTERN = re.compile(r"^-\d+(\.\d+)?$")
 
     @classmethod
     def sanitize_text(cls, text: str, max_length: int = 255) -> str:
@@ -58,3 +60,14 @@ class DataSanitizer:
         """Sanitize a filename by removing illegal filesystem characters."""
         cleaned = cls.UNSAFE_FILENAME_CHARS.sub("_", filename).strip(" ._")
         return cleaned if cleaned else fallback
+
+    @classmethod
+    def csv_safe_cell(cls, val: Any) -> str:
+        """Neutralize spreadsheet formula injection while keeping negative numbers intact."""
+        text = str(val if val is not None else "")
+        if not text:
+            return ""
+        first = text[0]
+        if first in {"=", "+", "@", "\t", "\r"} or (first == "-" and not cls.NUMERIC_NEG_PATTERN.match(text)):
+            return f"'{text}"
+        return text

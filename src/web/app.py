@@ -25,6 +25,7 @@ from cli.wizard.band_selector import (
     NAMING_FORMAT_OPTIONS,
 )
 from core.config.paths import (
+    get_exports_dir,
     get_preferences_file,
     get_radioplanner_home,
     get_radios_dir,
@@ -44,7 +45,7 @@ from core.engines.aviation import AviationEngine
 from core.engines.proximity import ProximityEngine
 from core.engines.route_corridor import RouteCorridorEngine
 from core.engines.sequence import SequenceOrganizer
-from core.exporters import export_codeplug, get_exporter
+from core.exporters import get_exporter
 from core.models.channel import RadioChannel
 from core.models.codeplug import Codeplug
 from core.models.preferences import sanitize_panel_layout
@@ -64,12 +65,12 @@ from core.updater import (
     detect_install_mode,
     safe_error_message,
 )
-from web.security import clean_single_line, safe_child_path, security_middleware
+from core.version import APP_VERSION
+from web.security import clean_single_line, safe_child_path, sanitize_http_url, security_middleware
 from web.state import workspace
 
 logger = logging.getLogger("radioplanner.web")
 
-APP_VERSION = "0.2.0"
 APP_TITLE = "W5CDN RadioPlanner"
 
 
@@ -1916,7 +1917,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/codeplug/export")
     async def api_codeplug_export(payload: ExportCsvRequest) -> Response:
-        """Export active codeplug to ./exports/ AND return as a browser CSV download."""
+        """Export active codeplug as a browser CSV download and best-effort archive to user exports dir."""
         codeplug = workspace.session.codeplug
         spec = workspace.session.radio_spec
         if not codeplug or not spec:
@@ -1925,14 +1926,18 @@ def create_app() -> FastAPI:
         raw_name = clean_single_line(payload.filename, max_len=140) or "codeplug.csv"
         if not raw_name.lower().endswith(".csv"):
             raw_name += ".csv"
-        out_dir = Path("./exports").resolve()
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = get_exports_dir()
         dest_path = safe_child_path(out_dir, raw_name)
 
         programmer = clean_single_line(payload.programmer_type, max_len=32).upper() or "CHIRP"
-        export_codeplug(codeplug, spec, dest_path, programmer_type=programmer)
         exporter = get_exporter(programmer)
         csv_content = exporter.to_csv_string(codeplug, spec)
+
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            dest_path.write_text(csv_content, encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Could not write archive copy of CSV export to %s: %s", dest_path, exc)
 
         return Response(
             content=csv_content,
@@ -2042,7 +2047,7 @@ def create_app() -> FastAPI:
             tagColorHex=clean_single_line(payload.tagColorHex, max_len=16) or "#00BCD4",
             channels=channel_items,
         )
-        dest = workspace.template_mgr.save_core_template(updated_tpl)
+        dest = workspace.template_mgr.save_template(updated_tpl)
         return {
             "saved": True,
             "id": clean_id,
@@ -2080,7 +2085,7 @@ def create_app() -> FastAPI:
                 )
         except (ValueError, YamlDiagnosticError, ValidationError) as exc:
             raise HTTPException(status_code=400, detail=f"Failed to parse imported template: {exc}") from exc
-        workspace.template_mgr.save_core_template(new_tpl)
+        workspace.template_mgr.save_template(new_tpl)
         return {
             "imported": True,
             "id": new_tpl.id,
@@ -2103,7 +2108,7 @@ def create_app() -> FastAPI:
             )
         except (ValueError, ValidationError) as exc:
             raise HTTPException(status_code=400, detail=f"Failed to parse Net Logger JSON: {exc}") from exc
-        workspace.template_mgr.save_core_template(new_tpl)
+        workspace.template_mgr.save_template(new_tpl)
         return {
             "imported": True,
             "id": new_tpl.id,
@@ -2209,7 +2214,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/update/check")
     async def api_update_check() -> dict[str, Any]:
-        return await check_for_update(current_version=APP_VERSION, data_dir=BASE_DIR)
+        info = await check_for_update(current_version=APP_VERSION, data_dir=BASE_DIR)
+        if isinstance(info, dict) and info.get("release_url"):
+            info["release_url"] = sanitize_http_url(info["release_url"])
+        return info
 
     @app.post("/api/update/apply")
     async def api_update_apply() -> dict[str, Any]:

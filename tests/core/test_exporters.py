@@ -201,3 +201,41 @@ def test_export_to_file(tmp_path: Path):
     res = export_codeplug(cp, spec, out_file, programmer_type="CHIRP")
     assert res.is_file()
     assert res.stat().st_size > 0
+
+
+def test_exporters_neutralize_csv_formula_injection():
+    """Verify formula payloads in free-text fields are neutralized while radio syntax/negative coords stay intact."""
+    ch = RadioChannel(
+        number=1,
+        name="TYLER 146.94",
+        rxFreq=146.94,
+        txFreq=146.34,
+        offset=0.6,
+        offsetDir="-",
+        mode="FM",
+        toneMode="Tone",
+        ctcss="136.5",
+        city="=CMD()",
+        state="TX",
+        lat=32.3513,
+        lon=-95.3011,
+        comment="=HYPERLINK(\"http://evil.example\")",
+    )
+    cp = Codeplug(name="FormulaTest", channels=[ch])
+    spec = RadioManager().get_radio("baofeng_5rm")
+
+    chirp_rows = list(csv.reader(io.StringIO(get_exporter("CHIRP").to_csv_string(cp, spec))))
+    assert chirp_rows[1][3] == "-"  # Duplex sign preserved
+    assert chirp_rows[1][16].startswith("'=")  # Comment neutralized
+
+    rt_rows = list(csv.reader(io.StringIO(get_exporter("RT_SYSTEMS").to_csv_string(cp, spec))))
+    comment_idx = rt_rows[0].index("Comment")
+    offset_idx = rt_rows[0].index("Offset direction")
+    assert rt_rows[1][offset_idx] == "-"
+    assert rt_rows[1][comment_idx].startswith("'=")
+
+    generic_spec = spec.model_copy(update={"columns": []})
+    gen_rows = list(csv.reader(io.StringIO(get_exporter("GENERIC_CSV").to_csv_string(cp, generic_spec))))
+    assert gen_rows[1][gen_rows[0].index("City")].startswith("'=")
+    assert gen_rows[1][gen_rows[0].index("Longitude")] == "-95.30110"
+    assert gen_rows[1][gen_rows[0].index("Comment")].startswith("'=")

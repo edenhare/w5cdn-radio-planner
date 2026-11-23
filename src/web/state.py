@@ -124,7 +124,30 @@ class ActivePlanSession:
 class WebWorkspace:
     """Centralized managers and providers for the FastAPI web application."""
 
-    def __init__(self, *, load_persisted_session: bool = True) -> None:
+    _LAZY_ATTRS: frozenset[str] = frozenset(
+        {
+            "radio_mgr",
+            "prefs_mgr",
+            "template_mgr",
+            "geocoder",
+            "repeater_provider",
+            "airports_provider",
+            "radio_id_provider",
+            "lookup_service",
+            "nws_service",
+            "session",
+        }
+    )
+
+    def __init__(self, *, load_persisted_session: bool = True, lazy: bool = False) -> None:
+        self._initialized = False
+        self._load_persisted_session = load_persisted_session
+        if not lazy:
+            self._ensure_initialized()
+
+    def _ensure_initialized(self) -> None:
+        if self._initialized:
+            return
         initialize_startup_environment()
         self.radio_mgr = RadioManager()
         self.prefs_mgr = PreferencesManager()
@@ -141,14 +164,22 @@ class WebWorkspace:
         self.lookup_service = CallsignLookupService()
         self.nws_service = NwsAlertsService()
         self.session = ActivePlanSession()
-        if load_persisted_session:
+        self._initialized = True
+        if self._load_persisted_session:
             self.load_session()
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._LAZY_ATTRS:
+            self._ensure_initialized()
+            return self.__dict__[name]
+        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
     def session_file_path(self) -> Path:
         return get_radioplanner_home() / "session.json"
 
     def save_session(self) -> bool:
         """Persist the active codeplug session to ~/.config/radioplanner/session.json."""
+        self._ensure_initialized()
         path = self.session_file_path()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +192,7 @@ class WebWorkspace:
 
     def load_session(self) -> bool:
         """Restore the last active codeplug session if session.json is present and valid."""
+        self._ensure_initialized()
         path = self.session_file_path()
         if not path.is_file():
             return False
@@ -176,6 +208,10 @@ class WebWorkspace:
 
     def reload_all(self) -> None:
         """Reload preferences, tokens, radios, and templates from disk (e.g. after backup restore)."""
+        if not self._initialized:
+            self._ensure_initialized()
+            return
+        initialize_startup_environment()
         self.prefs_mgr = PreferencesManager()
         self.radio_mgr = RadioManager()
         self.template_mgr = TemplateManager()
@@ -184,4 +220,4 @@ class WebWorkspace:
         self.lookup_service.reset_qrz_session()
 
 
-workspace = WebWorkspace()
+workspace = WebWorkspace(lazy=True)

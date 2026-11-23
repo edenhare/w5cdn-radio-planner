@@ -13,8 +13,9 @@ from core.config.recipe import RadioPlannerRecipe
 from core.config.yaml_loader import YamlDiagnosticError
 from core.managers.radio_manager import RadioManager
 from core.runner import RecipeRunner
+from core.version import APP_VERSION
 
-VERSION = "0.2.0"
+VERSION = APP_VERSION
 
 
 def build_parser() -> argparse.ArgumentParser:

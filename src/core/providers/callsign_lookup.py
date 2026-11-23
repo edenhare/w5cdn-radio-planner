@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from core.version import APP_VERSION
+
 logger = logging.getLogger("radioplanner.callsign_lookup")
 
 CALLSIGN_RE = re.compile(r"^[A-Z0-9]{1,3}[0-9][A-Z0-9]{1,4}(/[A-Z0-9]{1,4})?$")
@@ -61,7 +63,7 @@ class CallsignLookupService:
         return (
             httpx.AsyncClient(
                 timeout=httpx.Timeout(6.0, connect=4.0),
-                headers={"User-Agent": "W5CDN-RadioPlanner/0.2.0"},
+                headers={"User-Agent": f"W5CDN-RadioPlanner/{APP_VERSION}"},
                 follow_redirects=True,
             ),
             True,

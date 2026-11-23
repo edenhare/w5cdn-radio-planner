@@ -8,6 +8,7 @@ import io
 from core.exporters.base import BaseExporter
 from core.models.codeplug import Codeplug
 from core.models.radio_spec import TargetRadioSpec
+from core.sanitizers.sanitizer import DataSanitizer
 
 
 class GenericExporter(BaseExporter):
@@ -45,7 +46,7 @@ class GenericExporter(BaseExporter):
         for ch in prepared.channels:
             row_dict = {
                 "Channel Number": ch.number,
-                "Name": ch.name,
+                "Name": DataSanitizer.csv_safe_cell(ch.name),
                 "Receive Frequency": f"{ch.rxFreq:.5f}",
                 "Transmit Frequency": f"{ch.txFreq:.5f}",
                 "Offset": f"{ch.offset:.5f}",
@@ -59,11 +60,11 @@ class GenericExporter(BaseExporter):
                 "Rx DCS": ch.rxDcs,
                 "DCS Polarity": ch.dcsPolarity,
                 "Bandwidth": ch.bandwidth,
-                "City": ch.city or "",
-                "State": ch.state or "",
+                "City": DataSanitizer.csv_safe_cell(ch.city or ""),
+                "State": DataSanitizer.csv_safe_cell(ch.state or ""),
                 "Latitude": f"{ch.lat:.5f}" if ch.lat is not None else "",
                 "Longitude": f"{ch.lon:.5f}" if ch.lon is not None else "",
-                "Comment": ch.comment or "",
+                "Comment": DataSanitizer.csv_safe_cell(ch.comment or ""),
             }
             row = [row_dict.get(col, "") for col in columns]
             writer.writerow(row)
