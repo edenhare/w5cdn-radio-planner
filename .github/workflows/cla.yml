@@ -30,7 +30,7 @@ jobs:
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/edenhare/w5cdn-radio-planner/blob/main/CLA.md'
-          branch: 'main'
+          branch: 'cla-signatures'
           allowlist: 'edenhare,dependabot[bot]'
           custom-notsigned-prcomment: >-
             Thank you for your pull request and interest in contributing to **W5CDN RadioPlanner**!
