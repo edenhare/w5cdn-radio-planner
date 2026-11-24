@@ -3,24 +3,82 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import yaml
+
+
+def get_w5cdn_suite_root() -> Path:
+    """Return the unified W5CDN Suite user data root directory.
+
+    Defaults to %APPDATA%\\W5CDN on Windows and ~/.config/W5CDN on Linux/macOS,
+    or overridden via W5CDN_SUITE_DIR.
+    """
+    suite_override = os.environ.get("W5CDN_SUITE_DIR")
+    if suite_override:
+        return Path(suite_override).expanduser().resolve()
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return (Path(appdata) / "W5CDN").resolve()
+    return (Path.home() / ".config" / "W5CDN").resolve()
+
+
+def get_w5cdn_shared_dir() -> Path:
+    """Return the shared W5CDN Suite directory (shared across Net-Logger, NTS, RadioPlanner)."""
+    return get_w5cdn_suite_root() / "shared"
+
+
+def get_shared_config_file() -> Path:
+    """Return path to optional shared W5CDN Suite config.txt."""
+    return get_w5cdn_shared_dir() / "config.txt"
+
+
+def read_shared_config(config_path: Path | None = None) -> Dict[str, str]:
+    """Read KEY=VALUE pairs from W5CDN shared config.txt if present."""
+    target = config_path or get_shared_config_file()
+    out: Dict[str, str] = {}
+    if not target.is_file():
+        return out
+    try:
+        content = target.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        if key:
+            out[key] = val
+    return out
 
 
 def get_radioplanner_home() -> Path:
     """Return the root RadioPlanner user configuration directory.
 
-    Defaults to ~/.config/radioplanner across all platforms,
-    or overridden via RADIOPLANNER_HOME environment variable.
+    Resolution order:
+    1. RADIOPLANNER_HOME environment override
+    2. W5CDN_SUITE_DIR/RadioPlanner if W5CDN_SUITE_DIR is set
+    3. Unified suite folder (%APPDATA%\\W5CDN\\RadioPlanner on Windows, ~/.config/W5CDN/RadioPlanner on POSIX),
+       seamlessly preserving an existing legacy ~/.config/radioplanner/preferences.yaml if present.
     """
     env_override = os.environ.get("RADIOPLANNER_HOME")
     if env_override:
-        path = Path(env_override).expanduser().resolve()
-    else:
-        path = (Path.home() / ".config" / "radioplanner").resolve()
-    return path
+        return Path(env_override).expanduser().resolve()
+    suite_dir = (get_w5cdn_suite_root() / "RadioPlanner").resolve()
+    if os.environ.get("W5CDN_SUITE_DIR"):
+        return suite_dir
+    legacy_dir = (Path.home() / ".config" / "radioplanner").resolve()
+    if not (suite_dir / "preferences.yaml").is_file() and (legacy_dir / "preferences.yaml").is_file():
+        return legacy_dir
+    return suite_dir
 
 
 def get_preferences_file() -> Path:
@@ -140,10 +198,14 @@ def initialize_startup_environment() -> Tuple[bool, List[str]]:
         data_dir.mkdir(parents=True, exist_ok=True)
         actions.append(f"Created data cache directory: {data_dir}")
 
-    # 2. Seed preferences.yaml if missing
+    # 2. Seed preferences.yaml if missing (inheriting shared W5CDN OPERATOR_CALL if configured)
     if not prefs_file.is_file():
+        shared_cfg = read_shared_config() if not os.environ.get("RADIOPLANNER_HOME") else {}
+        default_call = (
+            os.environ.get("OPERATOR_CALL") or shared_cfg.get("OPERATOR_CALL") or "N0CALL"
+        ).strip().upper() or "N0CALL"
         default_prefs = {
-            "callsign": "N0CALL",
+            "callsign": default_call,
             "operatorName": "Radio Operator",
             "primaryDmrId": None,
             "distanceUnit": "MILES",
