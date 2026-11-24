@@ -236,6 +236,15 @@
 
   async function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
     const ext = (filename.split(".").pop() || "txt").toLowerCase();
+    if (window.desktopApi && typeof window.desktopApi.saveTextFile === "function") {
+      try {
+        const res = await window.desktopApi.saveTextFile(filename, content);
+        if (res && res.saved) return true;
+        if (res && res.cancelled) return false;
+      } catch {
+        // fallback below
+      }
+    }
     if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_text_file === "function") {
       try {
         const res = await window.pywebview.api.save_text_file(filename, content, ext);
@@ -1415,7 +1424,10 @@
           <div class="recipe-card-meta mono">${escHtml(meta || item.filename)}</div>
           <div class="recipe-card-actions">
             <button type="button" class="btn btn-primary btn-xs" data-recipe-action="load">▶ Load in Builder</button>
-            <button type="button" class="btn btn-danger btn-xs" data-recipe-action="delete">Delete</button>
+            <div class="plan-actions">
+              <button type="button" class="btn btn-xs" data-recipe-action="export" title="Export YAML copy for hand-editing">YAML</button>
+              <button type="button" class="btn btn-danger btn-xs" data-recipe-action="delete">Delete</button>
+            </div>
           </div>
         </div>`;
       })
@@ -1481,6 +1493,7 @@
           <div class="recipe-card-actions">
             <button type="button" class="btn btn-primary btn-xs" data-tpl-action="edit">Edit Channels</button>
             <div class="plan-actions">
+              <button type="button" class="btn btn-xs" data-tpl-action="export" title="Export YAML copy for hand-editing">YAML</button>
               <button type="button" class="btn btn-xs" data-tpl-action="insert">+ Sequence</button>
               ${t.is_builtin ? "" : `<button type="button" class="btn btn-danger btn-xs" data-tpl-action="delete">Delete</button>`}
             </div>
@@ -1576,6 +1589,7 @@
           <div class="recipe-card-actions">
             <button type="button" class="btn btn-primary btn-xs" data-radio-action="edit">Edit Spec</button>
             <div class="plan-actions">
+              <button type="button" class="btn btn-xs" data-radio-action="export" title="Export YAML copy for hand-editing">YAML</button>
               ${state.activePlan ? `<button type="button" class="btn btn-xs" data-radio-action="target">Target</button>` : ""}
               ${r.is_user ? `<button type="button" class="btn btn-danger btn-xs" data-radio-action="delete">Delete</button>` : ""}
             </div>
@@ -1678,6 +1692,15 @@
     $("qrzTestBanner").classList.add("hidden");
     $("updateVersionPill").textContent = `v${state.appVersion}`;
     $("updateModePill").textContent = state.installMode || "source";
+    if ($("configDirPath")) {
+      $("configDirPath").textContent = state.prefs.config_dir || state.configDir || "(default config folder)";
+    }
+    if ($("btnOpenConfigFolder")) {
+      $("btnOpenConfigFolder").classList.toggle(
+        "hidden",
+        !(window.desktopApi && typeof window.desktopApi.openDataFolder === "function")
+      );
+    }
 
     $("cachedStatesCount").textContent = String(state.cachedStates.length);
     $("cachedStatesList").innerHTML = state.cachedStates.length
@@ -2364,6 +2387,16 @@
         } catch (err) {
           toast(`Load failed: ${err.message}`, "error");
         }
+      } else if (btn.dataset.recipeAction === "export") {
+        try {
+          const resp = await fetch(`/api/recipes/${encodeURIComponent(filename)}/export`);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const yamlText = await resp.text();
+          const ok = await downloadTextFile(filename, yamlText, "application/x-yaml;charset=utf-8");
+          if (ok) toast(`Exported recipe YAML: ${filename}`, "success");
+        } catch (err) {
+          toast(`Recipe YAML export failed: ${err.message}`, "error");
+        }
       } else if (btn.dataset.recipeAction === "delete") {
         if (!window.confirm(`Delete saved recipe ${filename}?`)) return;
         try {
@@ -2396,7 +2429,17 @@
       if (!tpl) return;
       const action = btn.dataset.tplAction;
       if (action === "edit") openTemplateEditorModal(tpl);
-      else if (action === "insert") {
+      else if (action === "export") {
+        try {
+          const resp = await fetch(`/api/templates/${encodeURIComponent(tpl.id)}/export`);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const yamlText = await resp.text();
+          const ok = await downloadTextFile(`${tpl.id}.yaml`, yamlText, "application/x-yaml;charset=utf-8");
+          if (ok) toast(`Exported template YAML: ${tpl.id}.yaml`, "success");
+        } catch (err) {
+          toast(`Template YAML export failed: ${err.message}`, "error");
+        }
+      } else if (action === "insert") {
         const key = `TEMPLATE:${tpl.id}`;
         if (!state.sequenceOrder.includes(key)) {
           state.sequenceOrder.push(key);
@@ -2520,6 +2563,24 @@
     // Radios Panel & Editor Modal
     $("radiosSearch").addEventListener("input", renderRadiosPanel);
     $("btnNewRadio").addEventListener("click", () => openRadioEditorModal(null));
+    $("btnImportRadioYaml")?.addEventListener("click", () => $("radioImportYamlFile")?.click());
+    $("radioImportYamlFile")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      try {
+        const yamlText = await file.text();
+        const res = await api("/api/radios/import", {
+          method: "POST",
+          body: JSON.stringify({ filename: file.name, yaml_text: yamlText }),
+        });
+        state.radios = res.radios || [];
+        renderRadiosPanel();
+        toast(res.message || `Imported radio profile from ${file.name}`, "success");
+      } catch (err) {
+        toast(`Radio YAML validation failed: ${err.message}`, "error");
+      }
+    });
     $("radiosList").addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-radio-action]");
       if (!btn) return;
@@ -2528,7 +2589,17 @@
       if (!spec) return;
       const action = btn.dataset.radioAction;
       if (action === "edit") openRadioEditorModal(spec);
-      else if (action === "target" && state.activePlan) {
+      else if (action === "export") {
+        try {
+          const resp = await fetch(`/api/radios/${encodeURIComponent(spec.id)}/export`);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const yamlText = await resp.text();
+          const ok = await downloadTextFile(`${spec.id}.yaml`, yamlText, "application/x-yaml;charset=utf-8");
+          if (ok) toast(`Exported radio profile YAML: ${spec.id}.yaml`, "success");
+        } catch (err) {
+          toast(`Radio YAML export failed: ${err.message}`, "error");
+        }
+      } else if (action === "target" && state.activePlan) {
         $("targetRadioSelect").value = spec.id;
         updateCodeplugTarget(true);
       } else if (action === "delete") {
@@ -2658,6 +2729,28 @@
     });
     $("btnTestQrz").addEventListener("click", testQrzCredentials);
     $("btnDownloadBackup").addEventListener("click", downloadConfigBackup);
+    $("btnOpenConfigFolder")?.addEventListener("click", async () => {
+      if (window.desktopApi && typeof window.desktopApi.openDataFolder === "function") {
+        const res = await window.desktopApi.openDataFolder();
+        if (res && res.ok) toast(`Opened config folder: ${res.path || ""}`, "info");
+        else toast(`Could not open config folder: ${res?.error || "unknown error"}`, "error");
+      }
+    });
+    $("btnReloadConfigs")?.addEventListener("click", async () => {
+      try {
+        const res = await api("/api/workspace/reload", { method: "POST" });
+        if (res.preferences) applySavedPrefs(res.preferences);
+        if (res.radios) state.radios = res.radios;
+        if (res.templates) state.templates = res.templates;
+        if (res.recipes) state.recipes = res.recipes;
+        renderTemplatesPanel();
+        renderRadiosPanel();
+        renderRecipesList();
+        toast("Reloaded radios, templates, recipes & preferences from disk", "success");
+      } catch (err) {
+        toast(`Reload failed: ${err.message}`, "error");
+      }
+    });
     $("btnRestoreBackup").addEventListener("click", () => $("restoreBackupFile").click());
     $("restoreBackupFile").addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
@@ -2776,6 +2869,8 @@
       const cfg = await api("/api/config");
       state.appVersion = cfg.version || "0.2.0";
       state.installMode = cfg.install_mode || "source";
+      state.configDir = cfg.config_dir || "";
+      if ($("rpVersionPill")) $("rpVersionPill").textContent = `v${state.appVersion}`;
       state.radios = cfg.radios || [];
       state.templates = cfg.templates || [];
       state.cachedStates = cfg.cached_states || [];

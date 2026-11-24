@@ -1,0 +1,68 @@
+{
+  "name": "w5cdn-radio-planner",
+  "version": "0.2.0",
+  "description": "W5CDN RadioPlanner — Offline Travel Corridor, Proximity & Aviation Radio Codeplug Studio (Electron + TypeScript)",
+  "author": "W5CDN / Eden Hare",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "ensure-electron": "node scripts/ensure-electron.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "start": "npm run ensure-electron && npm run build && electron .",
+    "dev": "npm run ensure-electron && npm run build && electron .",
+    "smoke": "npm run ensure-electron && npm run build && node scripts/run-smoke.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage",
+    "test:watch": "vitest",
+    "package:dir": "npm run build && electron-builder --dir -c.win.signAndEditExecutable=false",
+    "package:win": "npm run build && electron-builder --win nsis",
+    "package:linux": "npm run build && electron-builder --linux AppImage"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^5.1.1",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  },
+  "build": {
+    "appId": "org.w5cdn.radio-planner",
+    "productName": "W5CDN RadioPlanner",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src/web/static/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "menuCategory": "W5CDN",
+      "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  },
+  "allowScripts": {
+    "electron@35.7.5": true,
+    "esbuild@0.28.2": true
+  }
+}
