@@ -1,0 +1,597 @@
+[
+  {
+    "ident": "KTYR",
+    "name": "Tyler Pounds Regional Airport",
+    "latitude": 32.3541,
+    "longitude": -95.4024,
+    "municipality": "Tyler",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Tyler Pounds ATIS",
+        "frequencyMhz": 126.25
+      },
+      {
+        "type": "CTAF",
+        "description": "Tower / CTAF",
+        "frequencyMhz": 120.1
+      },
+      {
+        "type": "TWR",
+        "description": "Pounds Tower",
+        "frequencyMhz": 120.1
+      },
+      {
+        "type": "GND",
+        "description": "Ground Control",
+        "frequencyMhz": 121.9
+      },
+      {
+        "type": "UNICOM",
+        "description": "Tyler UNICOM",
+        "frequencyMhz": 122.95
+      },
+      {
+        "type": "APP",
+        "description": "Fort Worth Center App/Dep",
+        "frequencyMhz": 135.25
+      }
+    ]
+  },
+  {
+    "ident": "7F3",
+    "name": "Gladewater Municipal Airport",
+    "latitude": 32.5289,
+    "longitude": -94.9715,
+    "municipality": "Gladewater",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "CTAF",
+        "description": "Gladewater CTAF",
+        "frequencyMhz": 122.9
+      }
+    ]
+  },
+  {
+    "ident": "3F9",
+    "name": "Mineola Wisener Field Airport",
+    "latitude": 32.6776,
+    "longitude": -95.5105,
+    "municipality": "Mineola",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "CTAF",
+        "description": "Wisener CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      }
+    ]
+  },
+  {
+    "ident": "KJDD",
+    "name": "Wood County Airport (Collins Field)",
+    "latitude": 32.7422,
+    "longitude": -95.4963,
+    "municipality": "Mineola",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Wood County AWOS-3",
+        "frequencyMhz": 118.225
+      },
+      {
+        "type": "CTAF",
+        "description": "Wood County CTAF / UNICOM",
+        "frequencyMhz": 123.05
+      },
+      {
+        "type": "APP",
+        "description": "Fort Worth Center App/Dep",
+        "frequencyMhz": 135.25
+      }
+    ]
+  },
+  {
+    "ident": "F12",
+    "name": "Rusk County Airport",
+    "latitude": 32.1404,
+    "longitude": -94.8529,
+    "municipality": "Henderson",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Rusk County AWOS-3",
+        "frequencyMhz": 118.675
+      },
+      {
+        "type": "CTAF",
+        "description": "Rusk County CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      },
+      {
+        "type": "APP",
+        "description": "Longview Approach",
+        "frequencyMhz": 128.75
+      }
+    ]
+  },
+  {
+    "ident": "F44",
+    "name": "Athens Municipal Airport",
+    "latitude": 32.1639,
+    "longitude": -95.8283,
+    "municipality": "Athens",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Athens AWOS-3",
+        "frequencyMhz": 118.525
+      },
+      {
+        "type": "CTAF",
+        "description": "Athens CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      },
+      {
+        "type": "APP",
+        "description": "Fort Worth Center App/Dep",
+        "frequencyMhz": 135.25
+      }
+    ]
+  },
+  {
+    "ident": "KJSO",
+    "name": "Cherokee County Airport",
+    "latitude": 31.869,
+    "longitude": -95.2175,
+    "municipality": "Jacksonville",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Cherokee County AWOS-3",
+        "frequencyMhz": 119.025
+      },
+      {
+        "type": "CTAF",
+        "description": "Cherokee CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      },
+      {
+        "type": "APP",
+        "description": "Fort Worth Center App/Dep",
+        "frequencyMhz": 135.25
+      }
+    ]
+  },
+  {
+    "ident": "KGGG",
+    "name": "East Texas Regional Airport",
+    "latitude": 32.384,
+    "longitude": -94.7115,
+    "municipality": "Longview",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Longview ATIS",
+        "frequencyMhz": 119.85
+      },
+      {
+        "type": "CTAF",
+        "description": "Tower / CTAF",
+        "frequencyMhz": 119.2
+      },
+      {
+        "type": "TWR",
+        "description": "Gregg Tower",
+        "frequencyMhz": 119.2
+      },
+      {
+        "type": "GND",
+        "description": "Ground Control",
+        "frequencyMhz": 121.6
+      },
+      {
+        "type": "APP",
+        "description": "Longview Approach",
+        "frequencyMhz": 128.75
+      }
+    ]
+  },
+  {
+    "ident": "76F",
+    "name": "Canton-Hackney Airport",
+    "latitude": 32.5818,
+    "longitude": -95.8636,
+    "municipality": "Canton",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "CTAF",
+        "description": "Canton CTAF",
+        "frequencyMhz": 122.9
+      }
+    ]
+  },
+  {
+    "ident": "KPSN",
+    "name": "Palestine Municipal Airport",
+    "latitude": 31.7797,
+    "longitude": -95.7064,
+    "municipality": "Palestine",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Palestine AWOS-3",
+        "frequencyMhz": 118.075
+      },
+      {
+        "type": "CTAF",
+        "description": "Palestine CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      }
+    ]
+  },
+  {
+    "ident": "KASL",
+    "name": "Harrison County Airport",
+    "latitude": 32.5205,
+    "longitude": -94.3078,
+    "municipality": "Marshall",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "AWOS",
+        "description": "Harrison County AWOS-3",
+        "frequencyMhz": 119.975
+      },
+      {
+        "type": "CTAF",
+        "description": "Marshall CTAF / UNICOM",
+        "frequencyMhz": 122.8
+      }
+    ]
+  },
+  {
+    "ident": "KSHV",
+    "name": "Shreveport Regional Airport",
+    "latitude": 32.4466,
+    "longitude": -93.8256,
+    "municipality": "Shreveport",
+    "state": "LA",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Shreveport ATIS",
+        "frequencyMhz": 128.52
+      },
+      {
+        "type": "CTAF",
+        "description": "Tower / CTAF",
+        "frequencyMhz": 121.4
+      },
+      {
+        "type": "TWR",
+        "description": "Shreveport Tower",
+        "frequencyMhz": 121.4
+      },
+      {
+        "type": "GND",
+        "description": "Ground Control",
+        "frequencyMhz": 121.9
+      },
+      {
+        "type": "APP",
+        "description": "Shreveport Approach",
+        "frequencyMhz": 119.9
+      }
+    ]
+  },
+  {
+    "ident": "KDTN",
+    "name": "Shreveport Downtown Airport",
+    "latitude": 32.5402,
+    "longitude": -93.745,
+    "municipality": "Shreveport",
+    "state": "LA",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Downtown ASOS",
+        "frequencyMhz": 135.575
+      },
+      {
+        "type": "CTAF",
+        "description": "Downtown Tower / CTAF",
+        "frequencyMhz": 118.4
+      },
+      {
+        "type": "GND",
+        "description": "Downtown Ground",
+        "frequencyMhz": 121.6
+      }
+    ]
+  },
+  {
+    "ident": "KBAD",
+    "name": "Barksdale Air Force Base",
+    "latitude": 32.5018,
+    "longitude": -93.6627,
+    "municipality": "Bossier City",
+    "state": "LA",
+    "frequencies": [
+      {
+        "type": "TWR",
+        "description": "Barksdale Tower",
+        "frequencyMhz": 126.2
+      },
+      {
+        "type": "APP",
+        "description": "Shreveport Approach",
+        "frequencyMhz": 123.75
+      }
+    ]
+  },
+  {
+    "ident": "KMLU",
+    "name": "Monroe Regional Airport",
+    "latitude": 32.5109,
+    "longitude": -92.0377,
+    "municipality": "Monroe",
+    "state": "LA",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Monroe ATIS",
+        "frequencyMhz": 125.05
+      },
+      {
+        "type": "CTAF",
+        "description": "Monroe Tower / CTAF",
+        "frequencyMhz": 118.9
+      },
+      {
+        "type": "GND",
+        "description": "Monroe Ground",
+        "frequencyMhz": 121.9
+      },
+      {
+        "type": "APP",
+        "description": "Monroe Approach",
+        "frequencyMhz": 126.9
+      }
+    ]
+  },
+  {
+    "ident": "KJAN",
+    "name": "Jackson-Medgar Wiley Evers Intl Airport",
+    "latitude": 32.3112,
+    "longitude": -90.0759,
+    "municipality": "Jackson",
+    "state": "MS",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Jackson ATIS",
+        "frequencyMhz": 120.9
+      },
+      {
+        "type": "CTAF",
+        "description": "Jackson Tower / CTAF",
+        "frequencyMhz": 120.9
+      },
+      {
+        "type": "TWR",
+        "description": "Jackson Tower",
+        "frequencyMhz": 118.7
+      },
+      {
+        "type": "GND",
+        "description": "Jackson Ground",
+        "frequencyMhz": 121.9
+      },
+      {
+        "type": "APP",
+        "description": "Jackson Approach",
+        "frequencyMhz": 123.9
+      }
+    ]
+  },
+  {
+    "ident": "KHKS",
+    "name": "Hawkins Field Airport",
+    "latitude": 32.3341,
+    "longitude": -90.2222,
+    "municipality": "Jackson",
+    "state": "MS",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Hawkins ASOS",
+        "frequencyMhz": 126.425
+      },
+      {
+        "type": "CTAF",
+        "description": "Hawkins Tower / CTAF",
+        "frequencyMhz": 119.65
+      },
+      {
+        "type": "GND",
+        "description": "Hawkins Ground",
+        "frequencyMhz": 121.7
+      }
+    ]
+  },
+  {
+    "ident": "KDAL",
+    "name": "Dallas Love Field Airport",
+    "latitude": 32.8471,
+    "longitude": -96.8518,
+    "municipality": "Dallas",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Love ATIS",
+        "frequencyMhz": 120.15
+      },
+      {
+        "type": "CTAF",
+        "description": "Tower / CTAF",
+        "frequencyMhz": 118.7
+      },
+      {
+        "type": "TWR",
+        "description": "Love Tower",
+        "frequencyMhz": 123.7
+      },
+      {
+        "type": "GND",
+        "description": "Ground Control",
+        "frequencyMhz": 121.75
+      }
+    ]
+  },
+  {
+    "ident": "KDFW",
+    "name": "Dallas/Fort Worth International Airport",
+    "latitude": 32.8998,
+    "longitude": -97.0403,
+    "municipality": "DFW Airport",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "DFW Arrival ATIS",
+        "frequencyMhz": 123.775
+      },
+      {
+        "type": "TWR",
+        "description": "DFW East Tower",
+        "frequencyMhz": 126.55
+      },
+      {
+        "type": "TWR",
+        "description": "DFW West Tower",
+        "frequencyMhz": 124.15
+      },
+      {
+        "type": "GND",
+        "description": "DFW Ground",
+        "frequencyMhz": 121.8
+      },
+      {
+        "type": "APP",
+        "description": "Regional Approach",
+        "frequencyMhz": 125.025
+      }
+    ]
+  },
+  {
+    "ident": "KADS",
+    "name": "Addison Airport",
+    "latitude": 32.9686,
+    "longitude": -96.8364,
+    "municipality": "Addison",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Addison ATIS",
+        "frequencyMhz": 133.4
+      },
+      {
+        "type": "CTAF",
+        "description": "Addison Tower / CTAF",
+        "frequencyMhz": 126.0
+      },
+      {
+        "type": "GND",
+        "description": "Addison Ground",
+        "frequencyMhz": 121.6
+      }
+    ]
+  },
+  {
+    "ident": "KRBD",
+    "name": "Dallas Executive Airport",
+    "latitude": 32.6809,
+    "longitude": -96.8682,
+    "municipality": "Dallas",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Executive ASOS",
+        "frequencyMhz": 126.35
+      },
+      {
+        "type": "CTAF",
+        "description": "Executive Tower / CTAF",
+        "frequencyMhz": 127.25
+      },
+      {
+        "type": "GND",
+        "description": "Executive Ground",
+        "frequencyMhz": 121.9
+      }
+    ]
+  },
+  {
+    "ident": "KFTW",
+    "name": "Fort Worth Meacham International Airport",
+    "latitude": 32.8198,
+    "longitude": -97.3624,
+    "municipality": "Fort Worth",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Meacham ATIS",
+        "frequencyMhz": 120.7
+      },
+      {
+        "type": "CTAF",
+        "description": "Meacham Tower / CTAF",
+        "frequencyMhz": 118.3
+      },
+      {
+        "type": "GND",
+        "description": "Meacham Ground",
+        "frequencyMhz": 121.9
+      }
+    ]
+  },
+  {
+    "ident": "KGKY",
+    "name": "Arlington Municipal Airport",
+    "latitude": 32.6639,
+    "longitude": -97.0943,
+    "municipality": "Arlington",
+    "state": "TX",
+    "frequencies": [
+      {
+        "type": "ATIS",
+        "description": "Arlington ASOS",
+        "frequencyMhz": 127.375
+      },
+      {
+        "type": "CTAF",
+        "description": "Arlington Tower / CTAF",
+        "frequencyMhz": 128.55
+      },
+      {
+        "type": "GND",
+        "description": "Arlington Ground",
+        "frequencyMhz": 121.875
+      }
+    ]
+  }
+]

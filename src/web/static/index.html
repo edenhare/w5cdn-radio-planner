@@ -19,6 +19,7 @@
           <span class="brand-call">RP</span>
           <span class="brand-title">RADIOPLANNER</span>
         </div>
+        <span class="lookup-source-pill mono" id="rpVersionPill" title="W5CDN RadioPlanner version">v0.2.0</span>
         <span class="lookup-source-pill" id="operatorCallBadge" title="Active Operator Callsign (click to edit preferences)">OP: N0CALL</span>
         <span class="lookup-source-pill" id="apiStatusPill" title="Click to configure RepeaterBook API Key">OFFLINE CACHE</span>
       </div>
@@ -495,7 +496,11 @@
               <div class="dock-panel-body">
                 <div class="plan-header-row">
                   <input type="search" id="radiosSearch" class="input input-sm" style="flex:1; min-width:110px;" placeholder="Filter radio models..." />
-                  <button type="button" class="btn btn-primary btn-xs" id="btnNewRadio">+ Add Radio</button>
+                  <div class="plan-actions">
+                    <button type="button" class="btn btn-xs" id="btnImportRadioYaml" title="Import and strictly validate a hand-edited Radio Profile YAML">Import YAML</button>
+                    <input type="file" id="radioImportYamlFile" accept=".yaml,.yml" class="hidden" />
+                    <button type="button" class="btn btn-primary btn-xs" id="btnNewRadio">+ Add Radio</button>
+                  </div>
                 </div>
                 <div id="radiosList" class="builder-list"></div>
               </div>
@@ -918,6 +923,19 @@
 
           <!-- Tab 4: Backup, Restore & Application Updates -->
           <div id="prefTabSystem" class="builder-list hidden">
+            <div class="section-label">Hand-Editable Configuration Files (YAML)</div>
+            <div class="system-card">
+              <p class="mgr-card-sub">
+                Radio profiles, channel templates, recipes, and preferences are stored as human-readable YAML files.
+                Export any radio, template, or recipe as YAML to edit externally and re-import with strict validation, or open your config folder directly.
+              </p>
+              <div class="mgr-card-sub mono" id="configDirPath" style="word-break:break-all;">--</div>
+              <div class="plan-actions">
+                <button type="button" class="btn btn-sm" id="btnOpenConfigFolder">📂 Open Config Folder</button>
+                <button type="button" class="btn btn-sm" id="btnReloadConfigs">↻ Reload Configs from Disk</button>
+              </div>
+            </div>
+
             <div class="section-label">Configuration Backup &amp; Restore Archive (.zip)</div>
             <div class="system-card">
               <p class="mgr-card-sub">
