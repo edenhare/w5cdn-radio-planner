@@ -396,5 +396,3 @@ def test_wizard_replay_recipe_interactive_verification_and_radio_change(tmp_path
         assert updated_recipe.name == "East_Texas_Run"
         for ch in codeplug.channels:
             assert len(ch.name) <= 5
-
-

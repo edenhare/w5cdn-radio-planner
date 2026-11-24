@@ -179,4 +179,3 @@ def test_along_track_distance_calculation():
 
     atd_behind = along_track_distance(p_behind, p_start, p_end, unit="MILES")
     assert atd_behind < 0.0
-
