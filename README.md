@@ -154,4 +154,3 @@ See [docs/MANUAL_UI_TEST_PLAN.md](docs/MANUAL_UI_TEST_PLAN.md) for the pre-relea
 
 - **License**: Copyright © 2026 **Eden Hare (W5CDN)**. Licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see [LICENSE](LICENSE).
 - **Contributing**: Pull requests are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) and our [Contributor License Agreement (CLA.md)](CLA.md) before submitting a PR.
-

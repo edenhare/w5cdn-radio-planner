@@ -88,4 +88,3 @@ class RadioManager:
             self.reload()
             return True
         return False
-

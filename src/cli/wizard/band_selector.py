@@ -275,5 +275,3 @@ def select_channel_naming_format(
                 active_format = NAMING_FORMAT_OPTIONS[idx][0]
                 console.clear()
                 render_header(console, subtitle="Channel Naming Configuration")
-
-

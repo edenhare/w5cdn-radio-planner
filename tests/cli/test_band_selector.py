@@ -141,5 +141,3 @@ def test_select_channel_naming_format_select_and_confirm():
     rendered = console.export_text()
     assert "W5ETX" in rendered
     assert "AT-778UV" in rendered
-
-

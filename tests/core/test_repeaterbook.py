@@ -394,6 +394,3 @@ def test_get_repeaters_for_states_fresh_vs_stale_refresh(tmp_path: Path):
     # Old LA file should be replaced by today's LA file
     assert not la_stale_path.exists()
     assert (cache_dir / f"rb_LA_{today_str}.json").is_file()
-
-
-

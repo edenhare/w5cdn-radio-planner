@@ -93,4 +93,3 @@ def test_sequence_editor_add_template():
         "TEMPLATE:calling_channels",
         "ROUTE_PLAN",
     ]
-
