@@ -61,8 +61,26 @@ export async function startTestServer(opts?: {
         bodyBuffer,
         bodyText: bodyBuffer.toString("utf-8"),
       });
-      res.writeHead(result.status, result.headers);
-      res.end(result.body);
+      const rawCt = (result.headers["Content-Type"] || "").toLowerCase();
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'");
+      if (result.headers["Content-Disposition"]) {
+        res.setHeader("Content-Disposition", result.headers["Content-Disposition"]);
+      }
+      res.statusCode = result.status;
+      if (rawCt.startsWith("application/zip")) {
+        res.setHeader("Content-Type", "application/zip");
+        res.end(Buffer.isBuffer(result.body) ? result.body : Buffer.from(String(result.body)));
+      } else if (rawCt.startsWith("text/csv")) {
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.end(result.body);
+      } else if (rawCt.startsWith("application/x-yaml")) {
+        res.setHeader("Content-Type", "application/x-yaml; charset=utf-8");
+        res.end(result.body);
+      } else {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(result.body);
+      }
       return;
     }
 

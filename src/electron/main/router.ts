@@ -1049,7 +1049,7 @@ export class ApiRouter {
         );
       }
 
-      return jsonResponse({ detail: `Not found: ${method} ${p}` }, 404);
+      return jsonResponse({ detail: "API endpoint not found." }, 404);
     } catch (err) {
       if (err instanceof ApiError) {
         return jsonResponse({ detail: err.message, ...(err.detail ? { info: err.detail } : {}) }, err.status);
