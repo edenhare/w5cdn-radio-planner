@@ -66,18 +66,21 @@ rp/
 
 ---
 
-## User Configuration Storage
+## User Configuration Storage (W5CDN Suite Layout)
 
-User configuration, templates, recipes, caches, and credentials are stored under `~/.config/radioplanner/` (overridable via `RADIOPLANNER_HOME`):
+All **W5CDN** apps (`Net-Logger`, `NTS`, and `RadioPlanner`) share the unified **W5CDN Suite** install and user-data root (`%APPDATA%\W5CDN\` on Windows, `~/.config/W5CDN/` on Linux/macOS — existing legacy `~/.config/radioplanner/` installs are preserved automatically; override with `W5CDN_SUITE_DIR` or `RADIOPLANNER_HOME`):
 
-- `preferences.yaml`: Callsign, operator name, DMR ID, theme, fonts, 5-zone dock layout, and defaults.
-- `tokens`: API credentials (`chmod 0600` on POSIX) for RepeaterBook, RadioID, and QRZ.
-- `radios/`: Custom user-defined target radio specification YAML files.
-- `templates/`: Custom and overridden user channel template YAML files.
-- `recipes/`: Saved replayable YAML plan recipes.
-- `data/`: Date-versioned offline RepeaterBook state cache files.
-- `exports/`: Archived CSV exports written by the Cockpit Studio.
-- `session.json`: Last active codeplug session for automatic restore on launch.
+- **Windows Install / Start Menu:** `%LOCALAPPDATA%\Programs\W5CDN\RadioPlanner` and Start Menu folder **W5CDN** (alongside `Net-Logger` and `NTS`).
+- **Shared Suite Folder (`W5CDN/shared/`):** Optional `config.txt` (`OPERATOR_CALL`, `QRZ_USER`, `QRZ_PASS`) plus shared `radiograms/` and `outbox/` folders used by the suite.
+- **RadioPlanner Private Data (`W5CDN/RadioPlanner/`):**
+  - `preferences.yaml`: Callsign, operator name, DMR ID, theme, fonts, 5-zone dock layout, and defaults.
+  - `tokens`: API credentials (`chmod 0600` on POSIX) for RepeaterBook, RadioID, and QRZ.
+  - `radios/`: Custom user-defined target radio specification YAML files.
+  - `templates/`: Custom and overridden user channel template YAML files.
+  - `recipes/`: Saved replayable YAML plan recipes.
+  - `data/`: Date-versioned offline RepeaterBook state cache files.
+  - `exports/`: Archived CSV exports written by the Cockpit Studio.
+  - `session.json`: Last active codeplug session for automatic restore on launch.
 
 ---
 
