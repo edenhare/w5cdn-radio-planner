@@ -428,28 +428,28 @@ jobs:
             const labels = (pr.labels || []).map((l) => (l.name || '').toLowerCase());
             const wantsAutoMerge = labels.includes('auto-merge') || isDependabot;
 
-            let autoApproveNote = 'Manual review (default)';
+            let autoApproveNote = isTrustedAuthor
+              ? 'Pending CI pass (automated approval for repo owner/Dependabot)'
+              : 'Human approval required from repo owner (external contributor PR)';
             let autoMergeNote = allPassed
-              ? 'Ready — click **Enable auto-merge** below, or add the `auto-merge` label.'
+              ? 'Ready — click **Merge pull request** or **Enable auto-merge** below, or add the `auto-merge` label.'
               : 'Blocked until all required checks pass.';
 
-            if (allPassed && wantsAutoMerge) {
-              if (!isTrustedAuthor) {
-                autoMergeNote = 'Skipped — auto-merge is restricted to same-repo PRs from the repo owner or Dependabot.';
-              } else {
-                try {
-                  await github.rest.pulls.createReview({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    event: 'APPROVE',
-                    body: 'Automated CI approval: all cross-platform pytest tests, coverage (>=75%), Playwright UI & WCAG, Ruff, Bandit, and pip-audit checks passed.',
-                  });
-                  autoApproveNote = '✅ Approved by `github-actions[bot]`';
-                } catch {
-                  autoApproveNote = 'ℹ️ Skipped (enable *Allow GitHub Actions to create and approve pull requests* in Settings → Actions if desired)';
-                }
+            if (allPassed && isTrustedAuthor) {
+              try {
+                await github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  event: 'APPROVE',
+                  body: 'Automated CI approval for repo owner/Dependabot PR: all cross-platform pytest tests, coverage (>=75%), Playwright UI & WCAG, Ruff, Bandit, and pip-audit checks passed.',
+                });
+                autoApproveNote = '✅ Approved by `github-actions[bot]` (trusted repo owner/Dependabot PR)';
+              } catch {
+                autoApproveNote = 'ℹ️ Skipped (enable *Allow GitHub Actions to create and approve pull requests* in Settings → Actions if desired)';
+              }
 
+              if (wantsAutoMerge) {
                 try {
                   await github.graphql(
                     `mutation($prId: ID!) {
@@ -465,6 +465,8 @@ jobs:
                   autoMergeNote = `ℹ️ Could not enable auto-merge automatically (${msg}). You can merge manually below.`;
                 }
               }
+            } else if (allPassed && wantsAutoMerge && !isTrustedAuthor) {
+              autoMergeNote = 'Skipped — auto-approval and auto-merge are restricted to same-repo PRs from the repo owner or Dependabot.';
             }
 
             let testDetail = 'Ubuntu & Windows × Python 3.11 & 3.12';
