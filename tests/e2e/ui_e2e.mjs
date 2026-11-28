@@ -59,7 +59,7 @@ async function run() {
     await page.click('[data-pref-tab="system"]');
     await page.waitForSelector("#btnReloadConfigs");
     await page.click('#prefsForm button[type="submit"]');
-    await page.waitForSelector("#prefsModalBackdrop.hidden");
+    await page.waitForSelector("#prefsModalBackdrop", { state: "hidden" });
 
     const activeTheme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
     assert.equal(activeTheme, "amber-crt", "Theme did not persist to amber-crt");
