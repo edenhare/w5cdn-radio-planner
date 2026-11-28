@@ -1,6 +1,6 @@
 {
   "name": "w5cdn-radio-planner",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "W5CDN RadioPlanner — Offline Travel Corridor, Proximity & Aviation Radio Codeplug Studio (Electron + TypeScript)",
   "author": "W5CDN / Eden Hare",
   "main": "dist/main/main.js",

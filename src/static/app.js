@@ -3118,7 +3118,7 @@
 
     try {
       const cfg = await api("/api/config");
-      state.appVersion = cfg.version || "0.2.1";
+      state.appVersion = cfg.version || "0.3.0";
       state.installMode = cfg.install_mode || "source";
       state.configDir = cfg.config_dir || "";
       if ($("rpVersionPill")) $("rpVersionPill").textContent = `v${state.appVersion}`;
