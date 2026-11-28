@@ -27,7 +27,7 @@
   "devDependencies": {
     "@types/node": "^26.6.7",
     "@vitest/coverage-v8": "^5.1.1",
-    "electron": "^35.0.0",
+    "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
     "husky": "^9.1.7",
     "typescript": "^7.0.2",
