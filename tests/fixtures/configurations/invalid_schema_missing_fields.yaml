@@ -1,6 +1,0 @@
-version: "1.0"
-mode: "ROUTE_CORRIDOR"
-name: "Missing Corridor Section"
-# Missing corridor section for ROUTE_CORRIDOR mode
-radio_target:
-  radio_id: "baofeng_5rm"

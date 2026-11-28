@@ -7,6 +7,18 @@ on:
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Optional vX.Y.Z tag to build and publish a GitHub Release for"
+        required: false
+        type: string
+        default: ""
+      skip_checks:
+        description: "Skip redundant test/security/UI re-runs when called after a verified Release PR merge"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -18,374 +30,99 @@ concurrency:
 
 jobs:
   test:
-    name: Pytest (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    name: Electron & Vitest (${{ matrix.os }})
+    if: inputs.skip_checks != true
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          ref: ${{ inputs.release_tag || '' }}
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
 
       - name: Install dependencies
-        run: uv sync --python ${{ matrix.python-version }} --group dev
+        run: npm ci
 
-      - name: Syntax check Python entrypoints & web modules
-        run: uv run --python ${{ matrix.python-version }} python -m py_compile src/cli/main.py src/web/app.py src/web/desktop.py src/web/security.py src/web/state.py src/core/updater.py src/core/providers/callsign_lookup.py src/core/providers/nws.py scripts/build_standalone.py scripts/generate_changelog.py
-
-      - name: Run full pytest suite (core, CLI, web API, desktop, updater, security, UI integrity & coverage)
-        shell: bash
+      - name: Verify version consistency, TypeScript, and Vitest coverage gate
         run: |
-          set -o pipefail
-          uv run --python ${{ matrix.python-version }} pytest -v -ra -m "not ui" --cov=core --cov=cli --cov=web --cov-fail-under=75 --junitxml=pytest-results.xml --cov-report=json:coverage.json 2>&1 | tee pytest-output.log
+          node scripts/bump-version.mjs --check
+          npm run typecheck
+          npm run test:cov
 
-      - name: Publish pytest & coverage output to Job Summary
-        if: always()
-        shell: bash
-        env:
-          MATRIX_OS: ${{ matrix.os }}
-          MATRIX_PY: ${{ matrix.python-version }}
-        run: |
-          uv run --python ${{ matrix.python-version }} python - <<'PY'
-          import json, os, pathlib, xml.etree.ElementTree as ET
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
-          if not summary_path:
-              raise SystemExit(0)
-
-          matrix_os = os.environ.get("MATRIX_OS", "")
-          matrix_py = os.environ.get("MATRIX_PY", "")
-          lines = [f"## Pytest & Coverage ({matrix_os} / Python {matrix_py})", ""]
-
-          junit = pathlib.Path("pytest-results.xml")
-          if junit.is_file():
-              root = ET.parse(junit).getroot()
-              suite = root.find("testsuite") if root.tag == "testsuites" else root
-              if suite is not None:
-                  t = int(suite.attrib.get("tests", 0))
-                  f = int(suite.attrib.get("failures", 0))
-                  e = int(suite.attrib.get("errors", 0))
-                  s = int(suite.attrib.get("skipped", 0))
-                  p = max(0, t - f - e - s)
-                  lines.append(f"**Results:** {p} passed, {f} failed, {e} errors, {s} skipped (total: {t})")
-                  lines.append("")
-
-          cov = pathlib.Path("coverage.json")
-          if cov.is_file():
-              data = json.loads(cov.read_text(encoding="utf-8"))
-              total_pct = round(float(data.get("totals", {}).get("percent_covered", 0.0)), 2)
-              lines.append(f"**Total Coverage:** {total_pct}% (gate: >= 75%)")
-              lines.append("")
-              lines.append("| Module | Coverage |")
-              lines.append("| :--- | :---: |")
-              for fname, fdata in sorted(data.get("files", {}).items()):
-                  pct = round(float(fdata.get("summary", {}).get("percent_covered", 0.0)), 1)
-                  lines.append(f"| `{fname}` | {pct}% |")
-              lines.append("")
-
-          log = pathlib.Path("pytest-output.log")
-          if log.is_file():
-              text = log.read_text(encoding="utf-8", errors="replace")
-              if len(text) > 120000:
-                  text = text[:40000] + "\n... [truncated middle] ...\n" + text[-75000:]
-              lines.extend([
-                  "<details open>",
-                  "<summary>Full pytest & coverage console output</summary>",
-                  "",
-                  "```text",
-                  text.rstrip(),
-                  "```",
-                  "</details>",
-                  "",
-              ])
-
-          with open(summary_path, "a", encoding="utf-8") as fh:
-              fh.write("\n".join(lines))
-          PY
-
-      - name: Export pytest & coverage metrics
-        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        run: |
-          uv run --python 3.12 python -c "
-          import json, pathlib, xml.etree.ElementTree as ET
-          metrics = {'tests': 0, 'passed': 0, 'failures': 0, 'errors': 0, 'skipped': 0, 'coverage_total': None, 'files': {}}
-          junit = pathlib.Path('pytest-results.xml')
-          if junit.is_file():
-              root = ET.parse(junit).getroot()
-              suite = root.find('testsuite') if root.tag == 'testsuites' else root
-              if suite is not None:
-                  t = int(suite.attrib.get('tests', 0))
-                  f = int(suite.attrib.get('failures', 0))
-                  e = int(suite.attrib.get('errors', 0))
-                  s = int(suite.attrib.get('skipped', 0))
-                  metrics.update({'tests': t, 'failures': f, 'errors': e, 'skipped': s, 'passed': max(0, t - f - e - s)})
-          cov = pathlib.Path('coverage.json')
-          if cov.is_file():
-              data = json.loads(cov.read_text(encoding='utf-8'))
-              metrics['coverage_total'] = round(float(data.get('totals', {}).get('percent_covered', 0.0)), 2)
-              for fname, fdata in data.get('files', {}).items():
-                  metrics['files'][pathlib.Path(fname).name] = round(float(fdata.get('summary', {}).get('percent_covered', 0.0)), 1)
-          pathlib.Path('ci-metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
-          "
-
-      - name: Upload pytest & coverage metrics
-        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-metrics
-          path: ci-metrics.json
-          retention-days: 1
-          if-no-files-found: ignore
+      - name: Live Electron GUI smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: npm run smoke
 
   security:
-    name: Security & Static Analysis (Ruff, Bandit, pip-audit)
+    name: Security & Dependency Audit
+    if: inputs.skip_checks != true
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          ref: ${{ inputs.release_tag || '' }}
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install runtime dependencies
-        run: uv sync --python 3.12
-
-      - name: Lint & bug-check with Ruff
-        id: ruff
-        shell: bash
-        run: |
-          set -o pipefail
-          uvx ruff check --output-format=full src scripts tests 2>&1 | tee ruff.log
-
-      - name: Static security scan with Bandit (Medium/High severity)
-        id: bandit
-        if: always()
-        shell: bash
-        run: |
-          set -o pipefail
-          uvx bandit -r src scripts -ll 2>&1 | tee bandit.log
-
-      - name: Dependency vulnerability audit (pip-audit)
-        id: pip_audit
-        if: always()
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run --python 3.12 --with pip-audit pip-audit --skip-editable --desc 2>&1 | tee pip-audit.log
-
-      - name: Publish security tool outputs to Job Summary
-        if: always()
-        shell: bash
-        env:
-          RUFF_OUTCOME: ${{ steps.ruff.outcome }}
-          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
-          AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
-        run: |
-          uv run --python 3.12 python - <<'PY'
-          import os, pathlib
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
-          if not summary_path:
-              raise SystemExit(0)
-
-          def badge(val):
-              return "✅ Passed" if val == "success" else ("❌ Failed" if val == "failure" else f"⏭️ {val}")
-
-          tools = [
-              ("Ruff Lint & Bug Check", os.environ.get("RUFF_OUTCOME", "skipped"), "ruff.log"),
-              ("Bandit SAST (Medium/High)", os.environ.get("BANDIT_OUTCOME", "skipped"), "bandit.log"),
-              ("pip-audit Dependency CVE Scan", os.environ.get("AUDIT_OUTCOME", "skipped"), "pip-audit.log"),
-          ]
-
-          lines = [
-              "## Security & Static Analysis Tool Outputs",
-              "",
-              "| Tool | Status |",
-              "| :--- | :---: |",
-          ]
-          for title, outcome, _ in tools:
-              lines.append(f"| **{title}** | {badge(outcome)} |")
-          lines.append("")
-
-          for title, outcome, log_name in tools:
-              p = pathlib.Path(log_name)
-              body = p.read_text(encoding="utf-8", errors="replace").strip() if p.is_file() else "(no output captured)"
-              if not body:
-                  body = "(no output)"
-              lines.extend([
-                  "<details open>",
-                  f"<summary>{title} — {badge(outcome)}</summary>",
-                  "",
-                  "```text",
-                  body[:60000],
-                  "```",
-                  "</details>",
-                  "",
-              ])
-
-          with open(summary_path, "a", encoding="utf-8") as fh:
-              fh.write("\n".join(lines))
-          PY
-
-      - name: Export security tool statuses
-        if: always()
-        env:
-          RUFF_OUTCOME: ${{ steps.ruff.outcome }}
-          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
-          AUDIT_OUTCOME: ${{ steps.pip_audit.outcome }}
-        run: |
-          uv run --python 3.12 python -c "
-          import json, os, pathlib
-          data = {
-              'ruff': os.environ.get('RUFF_OUTCOME', 'skipped'),
-              'bandit': os.environ.get('BANDIT_OUTCOME', 'skipped'),
-              'pip_audit': os.environ.get('AUDIT_OUTCOME', 'skipped'),
-          }
-          pathlib.Path('security-metrics.json').write_text(json.dumps(data, indent=2), encoding='utf-8')
-          "
-
-      - name: Upload security tool statuses
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
         with:
-          name: security-metrics
-          path: security-metrics.json
-          retention-days: 1
-          if-no-files-found: ignore
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check JS syntax & production dependency CVE audit
+        run: |
+          node --check src/static/app.js
+          npm audit --omit=dev --audit-level=high
 
   ui-e2e:
-    name: Playwright UI & WCAG (ubuntu-latest / Python 3.12)
+    name: Playwright UI E2E (Chromium)
+    if: inputs.skip_checks != true
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          ref: ${{ inputs.release_tag || '' }}
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install UI E2E dependencies
-        run: uv sync --python 3.12 --group dev --group ui
-
-      - name: Install Playwright Chromium browser
-        run: uv run --python 3.12 playwright install --with-deps chromium
-
-      - name: Run Playwright E2E & axe-core WCAG accessibility suite
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run --python 3.12 pytest tests/web/test_ui_e2e.py --no-cov -v -ra --junitxml=ui-e2e-results.xml 2>&1 | tee ui-e2e-output.log
-
-      - name: Publish Playwright E2E & WCAG output to Job Summary
-        if: always()
-        shell: bash
-        run: |
-          uv run --python 3.12 python - <<'PY'
-          import json, os, pathlib, xml.etree.ElementTree as ET
-
-          metrics = {"tests": 0, "passed": 0, "failures": 0, "errors": 0, "skipped": 0}
-          junit = pathlib.Path("ui-e2e-results.xml")
-          if junit.is_file():
-              root = ET.parse(junit).getroot()
-              suite = root.find("testsuite") if root.tag == "testsuites" else root
-              if suite is not None:
-                  t = int(suite.attrib.get("tests", 0))
-                  f = int(suite.attrib.get("failures", 0))
-                  e = int(suite.attrib.get("errors", 0))
-                  s = int(suite.attrib.get("skipped", 0))
-                  metrics.update({"tests": t, "failures": f, "errors": e, "skipped": s, "passed": max(0, t - f - e - s)})
-          pathlib.Path("ui-e2e-metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
-          if not summary_path:
-              raise SystemExit(0)
-
-          lines = [
-              "## Playwright UI E2E & axe-core WCAG Suite",
-              "",
-              f"**Results:** {metrics['passed']} passed, {metrics['failures']} failed, {metrics['errors']} errors, {metrics['skipped']} skipped (total: {metrics['tests']})",
-              "",
-          ]
-          log = pathlib.Path("ui-e2e-output.log")
-          if log.is_file():
-              body = log.read_text(encoding="utf-8", errors="replace").strip()
-              lines.extend([
-                  "<details open>",
-                  "<summary>Full Playwright E2E & WCAG console output</summary>",
-                  "",
-                  "```text",
-                  body[:80000],
-                  "```",
-                  "</details>",
-                  "",
-              ])
-          with open(summary_path, "a", encoding="utf-8") as fh:
-              fh.write("\n".join(lines))
-          PY
-
-      - name: Upload Playwright UI metrics
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
         with:
-          name: ui-e2e-metrics
-          path: ui-e2e-metrics.json
-          retention-days: 1
-          if-no-files-found: ignore
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies & Playwright Chromium
+        run: |
+          npm ci
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run full browser Playwright UI E2E suite
+        run: npm run test:e2e
 
   all-checks-passed:
     name: Required PR Merge Gate
     needs: [test, security, ui-e2e]
-    if: always()
+    if: always() && inputs.skip_checks != true
     runs-on: ubuntu-latest
+
     steps:
-      - name: Download pytest metrics
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: ci-metrics
-          path: metrics
-
-      - name: Download security metrics
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: security-metrics
-          path: metrics
-
-      - name: Download Playwright UI metrics
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: ui-e2e-metrics
-          path: metrics
-
-      - name: Post PR check summary & handle opt-in auto-merge
-        if: always() && github.event_name == 'pull_request'
+      - name: Post PR check summary
+        if: always() && github.event_name == 'pull_request' && inputs.release_tag == ''
         continue-on-error: true
         uses: actions/github-script@v9
         env:
@@ -394,133 +131,31 @@ jobs:
           UI_E2E_RESULT: ${{ needs.ui-e2e.result }}
         with:
           script: |
-            const fs = require('fs');
-            const path = require('path');
-
-            const readJson = (file) => {
-              const p = path.join('metrics', file);
-              if (!fs.existsSync(p)) return null;
-              try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
-            };
-
-            const icon = (status) => {
-              if (status === 'success') return '✅ Passed';
-              if (status === 'failure') return '❌ Failed';
-              if (status === 'cancelled') return '⚠️ Cancelled';
-              return `⏭️ ${status || 'Skipped'}`;
-            };
-
+            const icon = (s) => (s === 'success' ? '✅ Passed' : s === 'failure' ? '❌ Failed' : `⏭️ ${s || 'Skipped'}`);
             const testRes = process.env.TEST_RESULT;
             const secRes = process.env.SECURITY_RESULT;
             const uiRes = process.env.UI_E2E_RESULT;
             const allPassed = testRes === 'success' && secRes === 'success' && uiRes === 'success';
-            const ciMetrics = readJson('ci-metrics.json');
-            const secMetrics = readJson('security-metrics.json');
-            const uiMetrics = readJson('ui-e2e-metrics.json');
-
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
-            const pr = context.payload.pull_request;
-            const isSameRepo = Boolean(pr.head && pr.head.repo && pr.head.repo.full_name === `${owner}/${repo}`);
-            const author = (pr.user && pr.user.login) || '';
-            const isDependabot = author === 'dependabot[bot]';
-            const isTrustedAuthor = isSameRepo && (author === owner || isDependabot);
-            const labels = (pr.labels || []).map((l) => (l.name || '').toLowerCase());
-            const wantsAutoMerge = labels.includes('auto-merge') || isDependabot;
-
-            let autoApproveNote = isTrustedAuthor
-              ? 'Pending CI pass (automated approval for repo owner/Dependabot)'
-              : 'Human approval required from repo owner (external contributor PR)';
-            let autoMergeNote = allPassed
-              ? 'Ready — click **Merge pull request** or **Enable auto-merge** below, or add the `auto-merge` label.'
-              : 'Blocked until all required checks pass.';
-
-            if (allPassed && isTrustedAuthor) {
-              try {
-                await github.rest.pulls.createReview({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  event: 'APPROVE',
-                  body: 'Automated CI approval for repo owner/Dependabot PR: all cross-platform pytest tests, coverage (>=75%), Playwright UI & WCAG, Ruff, Bandit, and pip-audit checks passed.',
-                });
-                autoApproveNote = '✅ Approved by `github-actions[bot]` (trusted repo owner/Dependabot PR)';
-              } catch {
-                autoApproveNote = 'ℹ️ Skipped (enable *Allow GitHub Actions to create and approve pull requests* in Settings → Actions if desired)';
-              }
-
-              if (wantsAutoMerge) {
-                try {
-                  await github.graphql(
-                    `mutation($prId: ID!) {
-                      enablePullRequestAutoMerge(input: { pullRequestId: $prId, mergeMethod: MERGE }) {
-                        pullRequest { number }
-                      }
-                    }`,
-                    { prId: pr.node_id }
-                  );
-                  autoMergeNote = '✅ **Auto-merge enabled** (merge commit once all required checks including CodeQL complete).';
-                } catch (err) {
-                  const msg = (err && err.message) ? err.message : 'Enable "Allow auto-merge" in repo Settings → General';
-                  autoMergeNote = `ℹ️ Could not enable auto-merge automatically (${msg}). You can merge manually below.`;
-                }
-              }
-            } else if (allPassed && wantsAutoMerge && !isTrustedAuthor) {
-              autoMergeNote = 'Skipped — auto-approval and auto-merge are restricted to same-repo PRs from the repo owner or Dependabot.';
-            }
-
-            let testDetail = 'Ubuntu & Windows × Python 3.11 & 3.12';
-            let covDetail = '>= 75% required';
-            if (ciMetrics && ciMetrics.tests > 0) {
-              testDetail = `**${ciMetrics.passed} passed**, ${ciMetrics.failures} failed, ${ciMetrics.errors} errors, ${ciMetrics.skipped} skipped (Ubuntu & Windows × Py 3.11/3.12)`;
-              if (ciMetrics.coverage_total !== null) {
-                const f = ciMetrics.files || {};
-                const parts = ['app.py', 'desktop.py', 'updater.py']
-                  .filter((k) => f[k] !== undefined)
-                  .map((k) => `\`${k}\`: ${f[k]}%`);
-                const fileCov = parts.length ? ` (${parts.join(', ')})` : '';
-                covDetail = `**${ciMetrics.coverage_total}%**${fileCov} — gate: >= 75%`;
-              }
-            }
-
-            const uiDetail = (uiMetrics && uiMetrics.tests > 0)
-              ? `**${uiMetrics.passed} passed**, ${uiMetrics.failures} failed, ${uiMetrics.skipped} skipped (Chromium + axe-core WCAG 2.1 AA)`
-              : 'Chromium headless E2E + axe-core WCAG 2.1 AA';
-
-            const ruffLine = secMetrics ? icon(secMetrics.ruff) : icon(secRes);
-            const banditLine = secMetrics ? icon(secMetrics.bandit) : icon(secRes);
-            const auditLine = secMetrics ? icon(secMetrics.pip_audit) : icon(secRes);
-            const shortSha = (pr.head && pr.head.sha ? pr.head.sha : context.sha).slice(0, 7);
+            const shortSha = (context.payload.pull_request.head?.sha || context.sha).slice(0, 7);
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-
-            const marker = '<!-- radioplanner-ci-summary -->';
-            const header = allPassed
-              ? '### ✅ W5CDN RadioPlanner — CI & Security Gate Passed'
-              : '### ❌ W5CDN RadioPlanner — CI & Security Gate Failed';
-
+            const marker = '<!-- w5cdn-ci-summary -->';
             const body = [
               marker,
-              header,
+              allPassed
+                ? '### ✅ W5CDN RadioPlanner (Electron) — CI & Security Gate Passed'
+                : '### ❌ W5CDN RadioPlanner (Electron) — CI & Security Gate Failed',
               '',
               '| Check | Status | Details |',
               '| :--- | :--- | :--- |',
-              `| **Pytest Suite** | ${icon(testRes)} | ${testDetail} |`,
-              `| **Test Coverage** | ${icon(testRes)} | ${covDetail} |`,
-              `| **Playwright UI & WCAG** | ${icon(uiRes)} | ${uiDetail} |`,
-              `| **Ruff Lint** | ${ruffLine} | Static lint & bug checks |`,
-              `| **Bandit SAST** | ${banditLine} | Python security scan (Medium/High) |`,
-              `| **pip-audit** | ${auditLine} | Dependency CVE audit |`,
-              '| **CodeQL** | 🔍 Separate workflow | Python & JavaScript SAST (see Checks tab) |',
-              '',
-              `**Auto-Approval:** ${autoApproveNote}  `,
-              `**Auto-Merge:** ${autoMergeNote}`,
+              `| **TypeScript, Vitest & Coverage** | ${icon(testRes)} | Ubuntu & Windows × Node 22 + Windows Electron smoke |`,
+              `| **Playwright UI E2E** | ${icon(uiRes)} | Chromium headless E2E across corridor plans, YAML validation & 9 themes |`,
+              `| **Security & CVE Audit** | ${icon(secRes)} | Production npm audit (High/Critical) & JS syntax verification |`,
+              '| **CodeQL** | 🔍 Separate workflow | JavaScript/TypeScript SAST (see Checks tab) |',
               '',
               `_Commit \`${shortSha}\` • [View full CI run logs](${runUrl})_`,
             ].join('\n');
-
-            if (process.env.GITHUB_STEP_SUMMARY) {
-              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n\n`, 'utf8');
-            }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
@@ -530,41 +165,35 @@ jobs:
             });
             const existing = comments.find((c) => c.body && c.body.includes(marker));
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body,
-              });
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
             }
 
       - name: Verify all test and security jobs succeeded
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
-            echo "Test matrix failed (${{ needs.test.result }}). Blocking merge."
+            echo "Electron & Vitest matrix failed (${{ needs.test.result }})."
             exit 1
           fi
           if [ "${{ needs.security.result }}" != "success" ]; then
-            echo "Security & lint checks failed (${{ needs.security.result }}). Blocking merge."
+            echo "Security & dependency audit failed (${{ needs.security.result }})."
             exit 1
           fi
           if [ "${{ needs.ui-e2e.result }}" != "success" ]; then
-            echo "Playwright UI & WCAG suite failed (${{ needs.ui-e2e.result }}). Blocking merge."
+            echo "Playwright UI E2E suite failed (${{ needs.ui-e2e.result }})."
             exit 1
           fi
-          echo "All cross-platform pytest tests, Playwright UI & WCAG tests, security scans, and coverage gates passed."
+          echo "All Electron/TypeScript tests, Playwright UI E2E, coverage, and security gates passed."
 
   build-standalone:
-    name: Build Standalone (${{ matrix.os }})
+    name: Build Electron Installer (${{ matrix.os }})
     needs: [all-checks-passed]
-    if: github.event_name != 'pull_request'
+    if: >-
+      always() &&
+      (needs.all-checks-passed.result == 'success' ||
+       (inputs.skip_checks == true && inputs.release_tag != '')) &&
+      (github.event_name != 'pull_request' || inputs.release_tag != '')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -574,132 +203,88 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          ref: ${{ inputs.release_tag || '' }}
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
 
-      - name: Install runtime and packaging dependencies
-        run: uv sync --python 3.12 --group packaging
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build standalone portable bundle
-        run: uv run --python 3.12 --group packaging python scripts/build_standalone.py
-
-      - name: Smoke-test built standalone executable
-        shell: bash
-        env:
-          MATRIX_OS: ${{ matrix.os }}
+      - name: Build Windows NSIS installer & smoke-test packaged app
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          uv run --python 3.12 python - <<'PY'
-          import json, os, pathlib, subprocess, sys, tempfile, zipfile
+          npm run package:win
+          $exe = "release\win-unpacked\W5CDN RadioPlanner.exe"
+          if (-not (Test-Path $exe)) { throw "Packaged executable missing: $exe" }
+          node scripts/run-smoke.mjs $exe
 
-          zips = sorted(pathlib.Path("release").glob("W5CDN-RadioPlanner-*.zip"))
-          assert zips, "No standalone release zip found!"
-          zip_path = zips[0]
+      - name: Build Linux AppImage
+        if: runner.os == 'Linux'
+        run: npm run package:linux
 
-          with tempfile.TemporaryDirectory() as tmp:
-              tmp_dir = pathlib.Path(tmp)
-              with zipfile.ZipFile(zip_path, "r") as zf:
-                  zf.extractall(tmp_dir)
-
-              app_dir = tmp_dir / "W5CDN-RadioPlanner"
-              exe = app_dir / ("W5CDN-RadioPlanner.exe" if sys.platform == "win32" else "W5CDN-RadioPlanner")
-              assert exe.is_file(), f"Built executable missing: {exe}"
-              if sys.platform != "win32":
-                  os.chmod(exe, 0o755)
-
-              smoke_out = tmp_dir / "smoke-result.json"
-              env = os.environ.copy()
-              env["RADIOPLANNER_HOME"] = str(tmp_dir / "rp_smoke_home")
-              proc = subprocess.run(
-                  [str(exe), "--smoke-test", "--smoke-test-out", str(smoke_out), "--port", "0"],
-                  cwd=str(app_dir),
-                  env=env,
-                  capture_output=True,
-                  text=True,
-                  timeout=45.0,
-                  check=False,
-              )
-              assert proc.returncode == 0, f"Standalone smoke test failed (rc={proc.returncode}): {proc.stdout} {proc.stderr}"
-              assert smoke_out.is_file(), "Smoke test did not write verification JSON"
-              data = json.loads(smoke_out.read_text(encoding="utf-8"))
-              assert data.get("ok") is True, f"Smoke test reported failure: {data}"
-              assert data.get("install_mode") == "standalone", f"Expected standalone install_mode: {data}"
-              assert data.get("index_status") == 200 and data.get("config_status") == 200
-
-              size_mb = round(zip_path.stat().st_size / (1024 * 1024), 2)
-              print(f"Standalone smoke test PASSED for {zip_path.name} ({size_mb} MiB): {json.dumps(data)}")
-              summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
-              if summary_path:
-                  with open(summary_path, "a", encoding="utf-8") as fh:
-                      fh.write(
-                          f"## Standalone Bundle Smoke Test ({os.environ.get('MATRIX_OS', '')})\n\n"
-                          f"- **Artifact:** `{zip_path.name}` ({size_mb} MiB)\n"
-                          f"- **Executable launch:** ✅ Passed (`--smoke-test`)\n"
-                          f"- **HTTP `/`:** `{data['index_status']}` • **HTTP `/api/config`:** `{data['config_status']}`\n"
-                          f"- **Detected Mode:** `{data['install_mode']}` • **Version:** `{data['version']}`\n\n"
-                      )
-          PY
-
-      - name: Upload standalone artifact
+      - name: Upload standalone Electron installer
         uses: actions/upload-artifact@v7
         with:
           name: standalone-${{ matrix.os }}
-          path: release/W5CDN-RadioPlanner-*.zip
+          path: |
+            release/*.exe
+            release/*.AppImage
           if-no-files-found: error
 
   release:
     name: Publish GitHub Release
     needs: [build-standalone]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() &&
+      needs.build-standalone.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v'))
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
     steps:
-      - name: Checkout full Git history for automatic changelog generation
+      - name: Checkout full Git history for changelog generation
         uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
-      - name: Download standalone artifacts
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Download built installers
         uses: actions/download-artifact@v8
         with:
-          path: release-artifacts
+          path: dist-artifacts
           merge-multiple: true
 
-      - name: Generate categorized Conventional Commits changelog
+      - name: Generate changelog and SHA256SUMS.txt
         run: |
-          python3 scripts/generate_changelog.py \
-            --version "${GITHUB_REF_NAME}" \
+          node scripts/generate-changelog.mjs \
+            --version "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
-            --output release-artifacts/CHANGELOG.md
-          cat release-artifacts/CHANGELOG.md
-
-      - name: Generate SHA256SUMS.txt for release integrity verification
-        run: |
-          cd release-artifacts
-          sha256sum W5CDN-RadioPlanner-*.zip > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-          {
-            echo "## Release ${GITHUB_REF_NAME}"
-            echo ""
-            cat CHANGELOG.md
-            echo ""
-            echo "### SHA-256 Checksums"
-            echo '```text'
-            cat SHA256SUMS.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            --to "${RELEASE_TAG}" \
+            --output dist-artifacts/CHANGELOG.md
+          (cd dist-artifacts && sha256sum *.exe *.AppImage > SHA256SUMS.txt)
+          cat dist-artifacts/SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          body_path: release-artifacts/CHANGELOG.md
-          generate_release_notes: true
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: W5CDN RadioPlanner ${{ env.RELEASE_TAG }}
+          body_path: dist-artifacts/CHANGELOG.md
           files: |
-            release-artifacts/W5CDN-RadioPlanner-*.zip
-            release-artifacts/SHA256SUMS.txt
-            release-artifacts/CHANGELOG.md
+            dist-artifacts/*.exe
+            dist-artifacts/*.AppImage
+            dist-artifacts/CHANGELOG.md
+            dist-artifacts/SHA256SUMS.txt
+          generate_release_notes: false

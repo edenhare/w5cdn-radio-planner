@@ -1,159 +1,49 @@
-# W5CDN RadioPlanner 📻
+# W5CDN RadioPlanner
 
-**W5CDN RadioPlanner** is an offline-first desktop studio, local web cockpit, and Python CLI for amateur radio operators, aviation enthusiasts, and GMRS users. It builds highway travel corridor repeater sequences, 5-ring radial proximity plans, and local aviation airband codeplugs, exporting hardware-constrained CSVs for **CHIRP**, **RT Systems**, and **Generic CSV** programmers.
-
----
+**Offline-first Travel Corridor, Radial Proximity & Local Aviation Radio Codeplug Studio** built with **Electron + TypeScript** as part of the **W5CDN Amateur Radio Desktop Suite** alongside [W5CDN Net Logger](https://github.com/edenhare/w5cdn-net-logger) and [W5CDN NTS Traffic Manager](https://github.com/edenhare/w5cdn-nts-traffic).
 
 ## Key Features
 
-### Offline Cockpit Studio & Desktop Shell
-- **Native Desktop & Chromeless App Modes**: Runs as a native `pywebview` window on Windows/macOS, a chromeless `--app-window` on Linux/Windows, or in any local browser (`start.bat`, `start.sh`, `w5cdn-radio-planner`).
-- **100% Offline-Ready UI**: Local vendored Leaflet maps, zero external CDN dependencies, and persistent session restore across restarts.
-- **9 Shack-Ready Themes & 5-Zone Dockable Layout**: `shack-dark`, `night-red`, `amber-crt`, `forest-eoc`, `daylight`, `paper-warm`, `eoc-light`, `sky-breeze`, and `high-contrast`, with resizable dock zones, layout presets, and configurable UI/LCD typography.
-- **Inline Codeplug Editor & Pocket Reference Card**: Edit channel LCD names/tones/callsigns in place, delete with multi-step **Undo**, expand DMR talkgroups, and generate printable/downloadable monospace Pocket Reference Cards.
+- **Three Planning Modes:**
+  - **Highway Route Corridor** — multi-waypoint travel route with perpendicular corridor width filtering and along-track ordering.
+  - **Radial Proximity Search** — concentric distance rings around any city, ZIP, or coordinates.
+  - **Local Aviation Planner** — airband VHF AM frequencies (ATIS, AWOS, CTAF, Tower, Ground, Approach/Departure) for nearby airfields.
+- **Live Hardware Targeting & LCD Condensation** — switch target radios live, preview LCD name condensation rules (`CITY_FREQ`, `CALLSIGN_FREQ`, `CALLSIGN`, `CITY`, `STANDARD`, plus aviation formats), and export **CHIRP (21-column)**, **RT Systems**, or **Generic CSV** codeplugs.
+- **Hand-Editable YAML Configuration:**
+  - Radio profiles (`radios/*.yaml`), channel templates (`templates/*.yaml`), saved recipes (`recipes/*.yaml`), and preferences (`preferences.yaml`) are stored as human-readable YAML files.
+  - Export any radio profile, template, or recipe as `.yaml`, hand-edit it in your favorite editor, and re-import it with **strict YAML syntax & schema validation** (line/column and field-level diagnostics).
+  - Open your config folder directly or reload modified YAML files from disk inside **Preferences → Backup & Updates**.
+- **W5CDN Cockpit Studio UI:** 9 dark/light/high-contrast themes, precision UTC/Local clock, 5-zone dockable panels, offline Leaflet map, 20-step undo + session persistence, printable Pocket Reference Card, Net Logger JSON preset import/export, QRZ/Callook callsign lookup, NWS area weather alerts, and Zip-Slip hardened `.zip` backup/restore.
 
-### Planning Engines & Hardware Constraints
-- **Highway Route Corridor Mode**: Calculates cross-track perpendicular distance and along-track sequencing across multi-state highway waypoints (e.g. *Tyler, TX → Shreveport, LA → Jackson, MS*).
-- **Radial Proximity Ring Search**: Organizes nearby repeaters into 5 concentric distance rings around a target city or GPS coordinates.
-- **Local Aviation Planner**: Builds AM Airband channel plans (ATIS/AWOS, CTAF, Tower, Ground, Approach) with aviation naming formats.
-- **Hardware-Constrained Exporters**: Target radio LCD condensation (`REPEATER → RPT`, `NORTH → N`, city-frequency & callsign formats), band/mode filtering, channel capacity clamping, and spreadsheet-safe CSV exports for **CHIRP (21-column)**, **RT Systems**, and **Generic CSV**.
-- **Bundled Radio Profiles**: Alinco DR-735T, AnyTone AT-778UV, Baofeng 5RM, Baofeng UV-21R, Baofeng UV-5G Plus (GMRS), BTECH DMR-6X2, Wouxun KG-1000G, and Wouxun KG-UV980P — plus custom user radio specs.
+## Unified W5CDN Suite Directory Layout
 
-### Ham-Suite & Operational Extensions
-- **Date-Versioned RepeaterBook Offline Cache**: On-demand US/Canadian state file downloads (`rb_<STATE>_<DATE>.json`) with freshness checks and OPEN/CLOSED/PRIVATE access filtering.
-- **Area Weather Briefings (NWS)**: Fetches active National Weather Service alerts (`api.weather.gov`) for the states covered by your active plan with one-click copyable briefings.
-- **Callsign Lookup (QRZ XML + Callook)**: Resolve operator or repeater trustee callsigns via QRZ.com XML (optional credentials) with automatic Callook.info fallback.
-- **W5CDN Net Logger Interop**: Export any repeater channel as a Net Logger preset JSON, or import Net Logger `net_type_defaults` JSON into a reusable preset template.
-- **Backup/Restore & Verified Self-Updater**: Download/restore configuration `.zip` backups and self-update via Git fast-forward or SHA-256 verified GitHub Release standalone bundles.
+- **Windows Install Directory:** `%LOCALAPPDATA%\Programs\W5CDN\RadioPlanner` (Start Menu group **W5CDN**)
+- **User Data & Hand-Editable YAML Configs:**
+  - Windows: `%APPDATA%\W5CDN\RadioPlanner` (plus shared suite settings in `%APPDATA%\W5CDN\shared\config.txt`)
+  - Linux / macOS: `~/.config/W5CDN/RadioPlanner` (plus `~/.config/W5CDN/shared/config.txt`)
+  - Legacy installations with `~/.config/radioplanner/preferences.yaml` are automatically preserved.
+  - Override with `RADIOPLANNER_HOME` or `W5CDN_SUITE_DIR`.
 
----
+## Running From Source
 
-## Directory Architecture
-
-```text
-rp/
-├── src/
-│   ├── core/                      # Reusable domain library (zero UI dependencies)
-│   │   ├── config/                # YAML loader, recipe schema, path resolvers
-│   │   ├── engines/               # Route corridor, proximity rings, aviation, sequence
-│   │   ├── exporters/             # CHIRP, RT Systems, Generic CSV exporters
-│   │   ├── managers/              # Radio specs, templates, user preferences
-│   │   ├── models/                # Common Internal Representation (CIR) models
-│   │   ├── providers/             # RepeaterBook, Airports, RadioID, Geocoding, NWS, QRZ/Callook
-│   │   ├── resources/             # Bundled radio hardware specs & YAML channel templates
-│   │   ├── sanitizers/            # DataSanitizer & LCD NameCondenser
-│   │   ├── special_channels/      # National Calling & NOAA Weather frequencies
-│   │   ├── runner.py              # Headless YAML recipe execution engine
-│   │   ├── updater.py             # Git & SHA-256 standalone self-updater
-│   │   └── version.py             # Single source of truth for application version
-│   │
-│   ├── web/                       # FastAPI REST API, Desktop Shell & Offline Cockpit SPA
-│   │   ├── app.py                 # Localhost JSON API + SPA serving
-│   │   ├── desktop.py             # pywebview / chromeless browser launcher & --smoke-test
-│   │   ├── security.py            # Host allowlist, CSRF Origin check, headers, path guards
-│   │   ├── state.py               # Lazy workspace & persistent session state
-│   │   └── static/                # index.html, styles.css, app.js, icons, vendored Leaflet
-│   │
-│   └── cli/                       # CLI entrypoint (--config, --validate, --list-radios)
-│
-├── scripts/                       # PyInstaller standalone builder, changelog, Linux desktop installer
-├── tests/                         # Core, CLI, Web API, Security, UI Integrity & Playwright E2E/WCAG
-├── docs/                          # Technical spec, ADRs, Manual UI QA Test Plan
-├── start.bat / start.sh           # One-click Windows / Linux desktop launchers
-├── Install-Windows.bat / .ps1     # Windows PATH shim & Desktop shortcut installer
-└── pyproject.toml                 # Dependencies, hatch build, Ruff & Poe tasks
-```
-
----
-
-## User Configuration Storage (W5CDN Suite Layout)
-
-All **W5CDN** apps (`Net-Logger`, `NTS`, and `RadioPlanner`) share the unified **W5CDN Suite** install and user-data root (`%APPDATA%\W5CDN\` on Windows, `~/.config/W5CDN/` on Linux/macOS — existing legacy `~/.config/radioplanner/` installs are preserved automatically; override with `W5CDN_SUITE_DIR` or `RADIOPLANNER_HOME`):
-
-- **Windows Install / Start Menu:** `%LOCALAPPDATA%\Programs\W5CDN\RadioPlanner` and Start Menu folder **W5CDN** (alongside `Net-Logger` and `NTS`).
-- **Shared Suite Folder (`W5CDN/shared/`):** Optional `config.txt` (`OPERATOR_CALL`, `QRZ_USER`, `QRZ_PASS`) plus shared `radiograms/` and `outbox/` folders used by the suite.
-- **RadioPlanner Private Data (`W5CDN/RadioPlanner/`):**
-  - `preferences.yaml`: Callsign, operator name, DMR ID, theme, fonts, 5-zone dock layout, and defaults.
-  - `tokens`: API credentials (`chmod 0600` on POSIX) for RepeaterBook, RadioID, and QRZ.
-  - `radios/`: Custom user-defined target radio specification YAML files.
-  - `templates/`: Custom and overridden user channel template YAML files.
-  - `recipes/`: Saved replayable YAML plan recipes.
-  - `data/`: Date-versioned offline RepeaterBook state cache files.
-  - `exports/`: Archived CSV exports written by the Cockpit Studio.
-  - `session.json`: Last active codeplug session for automatic restore on launch.
-
----
-
-## Quickstart
-
-### 1. Install Dependencies
-Using [`uv`](https://docs.astral.sh/uv/):
-```bash
-uv sync
-```
-
-### 2. Launch Cockpit Studio (Desktop Window)
-- **Windows**: Double-click `start.bat` (or run `Install-Windows.bat` to add a Desktop shortcut and global `radioplanner` command).
-- **Linux**: Run `./start.sh` (or `./scripts/install_linux_desktop.sh` to add an application menu entry).
-- **From CLI**:
-  ```bash
-  uv run w5cdn-radio-planner          # Native pywebview window (or chromeless fallback)
-  uv run w5cdn-radio-planner --browser # Open in default tabbed browser
-  uv run radioplanner                  # Launch Cockpit Studio with single-instance detection
-  ```
-
-### 3. Headless CLI Recipe Execution & Validation
-```bash
-# List bundled + custom radio hardware profiles
-uv run radioplanner --list-radios
-
-# Validate a YAML recipe (syntax + schema diagnostics)
-uv run radioplanner --validate tests/fixtures/configurations/route_corridor_tx_la_ms.yaml
-
-# Replay a saved YAML recipe directly to CSV
-uv run radioplanner --config tests/fixtures/configurations/route_corridor_tx_la_ms.yaml
-```
-
----
-
-## Development, Testing & Packaging
-
-Tasks can be run via `poethepoet` (`uv run poe ...`), `just`, or `make`:
+Requires **Node.js 22+ LTS**:
 
 ```bash
-# Run linter (Ruff)
-uv run poe lint
-
-# Format code
-uv run poe format
-
-# Run unit, API, security & UI integrity tests
-uv run poe test
-
-# Run tests with coverage report
-uv run poe test-cov
-
-# Run full quality gate (lint + test)
-uv run poe check
-
-# Run Playwright real-browser E2E & axe-core WCAG 2.1 AA suite (all 9 themes)
-uv sync --group dev --group ui
-uv run --group dev --group ui playwright install chromium
-uv run --group dev --group ui poe ui-test
-
-# Build portable standalone bundle (.zip) in release/
-uv sync --group packaging
-uv run --group packaging poe build
-
-# Smoke-test the desktop server without opening a window
-uv run python -m web.desktop --smoke-test --port 0
+npm install
+npm start
 ```
 
-See [docs/MANUAL_UI_TEST_PLAN.md](docs/MANUAL_UI_TEST_PLAN.md) for the pre-release manual QA checklist.
+Or double-click `start.bat` (Windows) / run `./start.sh` (Linux/macOS).
 
----
+## Development & Testing
 
-## Contributing & License
-
-- **License**: Copyright © 2026 **Eden Hare (W5CDN)**. Licensed under the **GNU General Public License v3.0 (GPL-3.0)** — see [LICENSE](LICENSE).
-- **Contributing**: Pull requests are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) and our [Contributor License Agreement (CLA.md)](CLA.md) before submitting a PR.
+```bash
+npm run typecheck      # TypeScript strict type checking
+npm run test           # Vitest unit & API tests
+npm run test:cov       # Vitest with V8 coverage report
+npm run smoke          # Live headless Electron GUI + API smoke test
+npm run test:e2e       # Playwright Chromium end-to-end UI suite
+npm run package:dir    # Unpacked Electron build (local smoke test)
+npm run package:win    # Windows NSIS installer
+npm run package:linux  # Linux AppImage
+```

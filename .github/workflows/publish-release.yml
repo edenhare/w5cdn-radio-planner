@@ -1,0 +1,92 @@
+name: Publish Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      confirm_tag_main:
+        description: "Manually tag and publish the current version on main (leave empty to use package.json version)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  create-tag:
+    name: Create Release Tag on main
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == true &&
+       (startsWith(github.event.pull_request.head.ref, 'release/v') ||
+        contains(github.event.pull_request.labels.*.name, 'release')))
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Verify version consistency and push release tag
+        id: tag
+        env:
+          OVERRIDE_VER: ${{ inputs.confirm_tag_main }}
+        run: |
+          CURRENT_VER="$(node scripts/bump-version.mjs --check)"
+          if [ -n "${OVERRIDE_VER}" ]; then
+            CLEAN_OVERRIDE="${OVERRIDE_VER#v}"
+            if [ "${CLEAN_OVERRIDE}" != "${CURRENT_VER}" ]; then
+              echo "Error: Requested version ${CLEAN_OVERRIDE} does not match main version ${CURRENT_VER}." >&2
+              exit 1
+            fi
+          fi
+          TAG="v${CURRENT_VER}"
+          HEAD_SHA="$(git rev-parse HEAD)"
+
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            TAG_SHA="$(git rev-parse "${TAG}^{commit}")"
+            if [ "${TAG_SHA}" != "${HEAD_SHA}" ]; then
+              echo "Error: Tag ${TAG} already exists on ${TAG_SHA} (main HEAD is ${HEAD_SHA})." >&2
+              exit 1
+            fi
+            echo "Tag ${TAG} already points to main HEAD (${HEAD_SHA}); proceeding with release."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" -m "Release ${TAG}"
+            git push origin "${TAG}"
+            echo "Created and pushed annotated tag ${TAG} at ${HEAD_SHA}."
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    name: Build & Publish Standalone Release
+    needs: [create-tag]
+    if: needs.create-tag.outputs.tag != ''
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_tag: ${{ needs.create-tag.outputs.tag }}
+      skip_checks: true
+    secrets: inherit
