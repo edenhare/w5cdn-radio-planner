@@ -21,6 +21,7 @@ interface RawRepeaterRecord {
 let stateGeoCache: StateGeoData | null = null;
 let offlineRepeatersCache: RawRepeaterRecord[] | null = null;
 let gmrsRepeatersCache: RawRepeaterRecord[] | null = null;
+let wxStationsCache: RawRepeaterRecord[] | null = null;
 
 function loadStateGeo(): StateGeoData {
   if (stateGeoCache) return stateGeoCache;
@@ -49,6 +50,53 @@ export function getGmrsRepeaters(): RawRepeaterRecord[] {
     gmrsRepeatersCache = [];
   }
   return gmrsRepeatersCache;
+}
+
+export function getOfflineWxStations(): RadioChannel[] {
+  if (!wxStationsCache) {
+    try {
+      const filePath = path.join(resolveResourcesDir(), "offline_wx_stations.json");
+      wxStationsCache = JSON.parse(fs.readFileSync(filePath, "utf-8")) as RawRepeaterRecord[];
+    } catch {
+      wxStationsCache = [];
+    }
+  }
+  return wxStationsCache.map((rec, idx) => {
+    const rxFreq = Number(rec.rxFreq ?? rec.Frequency ?? 162.55);
+    const city = String(rec.city ?? "").trim() || null;
+    const state = String(rec.state ?? "").trim() || null;
+    const callsign = String(rec.callsign ?? "").trim() || null;
+    const lat = rec.lat !== undefined ? Number(rec.lat) : null;
+    const lon = rec.lon !== undefined ? Number(rec.lon) : null;
+    const name = String(rec.name ?? (city ? `${city} WX` : `WX ${rxFreq.toFixed(3)}`)).trim();
+    const comment =
+      String(rec.comment ?? "").trim() ||
+      [callsign ? `NOAA NWR ${callsign}` : "NOAA Weather Radio", city && state ? `${city}, ${state}` : city]
+        .filter(Boolean)
+        .join(" - ");
+    return createRadioChannel({
+      number: idx + 1,
+      name,
+      callsign,
+      rxFreq,
+      txFreq: rxFreq,
+      offset: 0,
+      offsetDir: "off",
+      mode: "FM",
+      power: "Low",
+      toneMode: "None",
+      ctcss: "None",
+      rxCtcss: "None",
+      dcs: "None",
+      rxDcs: "None",
+      city,
+      state,
+      lat: lat !== null && Number.isFinite(lat) ? lat : null,
+      lon: lon !== null && Number.isFinite(lon) ? lon : null,
+      specialType: "WX",
+      comment,
+    });
+  });
 }
 
 export function resolveStateCode(stateInput: string): string | null {
@@ -271,6 +319,75 @@ export class RepeaterBookProvider {
 
   hasApiKey(): boolean {
     return Boolean(this.apiKey && this.apiKey.trim().length > 0);
+  }
+
+  async testApiKey(candidateKey?: string | null): Promise<{ ok: boolean; message: string; count?: number }> {
+    const keyToTest = (candidateKey !== undefined && candidateKey !== null ? candidateKey : this.apiKey || "").trim();
+    if (!keyToTest) {
+      return { ok: false, message: "Enter a RepeaterBook API Key first (or save one in Preferences)." };
+    }
+    if (this.offlineOnly) {
+      return {
+        ok: true,
+        message: "Offline test mode — RepeaterBook API key format accepted (live network check skipped).",
+      };
+    }
+
+    const headers: Record<string, string> = {
+      "User-Agent": "W5CDN-RadioPlanner/0.2.0 (Amateur Radio Codeplug Studio)",
+      Accept: "application/json",
+      "X-RB-App-Token": keyToTest,
+    };
+
+    try {
+      // Delaware (FIPS 10) is a small, fast state export query for verifying token auth
+      const url = "https://www.repeaterbook.com/api/export.php?state_id=10";
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (res.status === 401 || res.status === 403) {
+        return {
+          ok: false,
+          message: `RepeaterBook rejected this API key (HTTP ${res.status} Unauthorized/Forbidden).`,
+        };
+      }
+      if (!res.ok) {
+        return {
+          ok: false,
+          message: `RepeaterBook API returned HTTP ${res.status}.`,
+        };
+      }
+      const text = await res.text();
+      let body: { results?: unknown[]; count?: number; error?: string; message?: string } | null = null;
+      try {
+        body = JSON.parse(text) as { results?: unknown[]; count?: number; error?: string; message?: string };
+      } catch {
+        return {
+          ok: false,
+          message: `RepeaterBook returned non-JSON response: ${text.slice(0, 120).trim()}`,
+        };
+      }
+      if (body && (body.error || body.message) && !Array.isArray(body.results)) {
+        return {
+          ok: false,
+          message: `RepeaterBook API error: ${String(body.error || body.message)}`,
+        };
+      }
+      if (!body || !Array.isArray(body.results)) {
+        return {
+          ok: false,
+          message: "RepeaterBook API response did not contain a valid repeater results array.",
+        };
+      }
+      return {
+        ok: true,
+        count: body.results.length,
+        message: `RepeaterBook API key verified (${body.results.length} repeaters returned in test query).`,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        message: `Could not reach RepeaterBook API: ${err instanceof Error ? err.message : "Network error"}`,
+      };
+    }
   }
 
   listCachedStateFiles(): CachedStateFileInfo[] {

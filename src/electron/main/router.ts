@@ -43,7 +43,11 @@ import { getExportsDir } from "./paths";
 import { CallsignLookupService } from "./providers/callsignLookup";
 import { haversineMiles } from "./providers/geocoding";
 import { RadioIdProvider } from "./providers/radioId";
-import { identifyStatesForProximity, identifyStatesForRoute } from "./providers/repeaterbook";
+import {
+  getOfflineWxStations,
+  identifyStatesForProximity,
+  identifyStatesForRoute,
+} from "./providers/repeaterbook";
 import { CodeplugState, WebWorkspace, channelDeleteKey } from "./workspace";
 
 export interface RouterRequest {
@@ -117,14 +121,21 @@ function parseJsonBody(bodyText?: string): Record<string, unknown> {
 function computeBandCountsAndMapChannels(
   channels: RadioChannel[],
   activeBands: string[],
+  extraWxStations: RadioChannel[] = [],
 ): { bandCounts: Record<string, number>; mapChannels: Array<Record<string, unknown>> } {
   const counts: Record<string, number> = {};
   for (const b of activeBands) counts[b] = 0;
 
   const mapChannels: Array<Record<string, unknown>> = [];
+  const mappedCoordKeys = new Set<string>();
+  const wxChannelByFreq = new Map<string, RadioChannel>();
+
   for (const ch of channels) {
     const band = channelBand(ch.rxFreq);
     counts[band] = (counts[band] ?? 0) + 1;
+    if (band === "WX" && !wxChannelByFreq.has(ch.rxFreq.toFixed(3))) {
+      wxChannelByFreq.set(ch.rxFreq.toFixed(3), ch);
+    }
     if (ch.lat !== null && ch.lon !== null) {
       const toneLbl =
         ch.toneMode === "Tone" || ch.toneMode === "TSQL"
@@ -132,6 +143,8 @@ function computeBandCountsAndMapChannels(
           : ch.toneMode === "DCS" || ch.toneMode === "DTCS"
             ? `D${ch.dcs}`
             : "CSQ";
+      const coordKey = `${ch.rxFreq.toFixed(3)}|${ch.lat.toFixed(3)}|${ch.lon.toFixed(3)}`;
+      mappedCoordKeys.add(coordKey);
       mapChannels.push({
         number: ch.number,
         name: ch.name,
@@ -147,6 +160,33 @@ function computeBandCountsAndMapChannels(
       });
     }
   }
+
+  // Also include nearby/corridor NOAA WX transmitter sites on the map when WX band/channels are active
+  const wxActive =
+    (counts.WX ?? 0) > 0 || activeBands.some((b) => b.toUpperCase() === "WX");
+  if (wxActive && extraWxStations.length > 0) {
+    for (const wx of extraWxStations) {
+      if (wx.lat === null || wx.lon === null) continue;
+      const coordKey = `${wx.rxFreq.toFixed(3)}|${wx.lat.toFixed(3)}|${wx.lon.toFixed(3)}`;
+      if (mappedCoordKeys.has(coordKey)) continue;
+      mappedCoordKeys.add(coordKey);
+      const matchedSlot = wxChannelByFreq.get(wx.rxFreq.toFixed(3));
+      mapChannels.push({
+        number: matchedSlot ? matchedSlot.number : wx.number,
+        name: matchedSlot ? `${matchedSlot.name} (${wx.city || wx.callsign || "NWR"})` : wx.name,
+        callsign: wx.callsign || matchedSlot?.callsign || "NWR",
+        rxFreq: wx.rxFreq,
+        mode: wx.mode || "FM",
+        band: "WX",
+        color: BAND_COLORS.WX ?? "#38bdf8",
+        tone: "CSQ",
+        location: [wx.city, wx.state].filter(Boolean).join(", "),
+        lat: wx.lat,
+        lon: wx.lon,
+      });
+    }
+  }
+
   return { bandCounts: counts, mapChannels };
 }
 
@@ -765,6 +805,16 @@ export class ApiRouter {
         return jsonResponse(await tester.testQrzLogin());
       }
 
+      if (method === "POST" && p === "/api/preferences/test-repeaterbook") {
+        const body = parseJsonBody(req.bodyText);
+        const tokens = this.workspace.prefsMgr.tokens;
+        const key =
+          typeof body.repeaterBookApiKey === "string" && body.repeaterBookApiKey.trim()
+            ? cleanSingleLine(body.repeaterBookApiKey, 256)
+            : tokens.repeaterBookApiKey || "";
+        return jsonResponse(await this.workspace.repeaterProvider.testApiKey(key));
+      }
+
       // ─── NWS Alerts ───────────────────────────────────────────────────────
       if (method === "GET" && p === "/api/nws/plan-alerts") {
         const rawStates = (req.query.get("states") || "").trim();
@@ -1170,7 +1220,12 @@ export class ApiRouter {
         : rbRes.channels.filter((ch) => !channelIsSimplex(ch));
 
       const matches = RouteCorridorEngine.filterAndOrder(candidateChannels, routeCoords, corridorWidth);
-      primaryChannels = matches.map((m) => m.channel);
+      const wxMatches = RouteCorridorEngine.filterAndOrder(
+        getOfflineWxStations(),
+        routeCoords,
+        Math.max(corridorWidth, 45),
+      );
+      primaryChannels = [...matches.map((m) => m.channel), ...wxMatches.map((m) => m.channel)];
 
       const cumulativeMiles: number[] = [0];
       let totalMiles = 0;
@@ -1248,7 +1303,13 @@ export class ApiRouter {
         : rbRes.channels.filter((ch) => !channelIsSimplex(ch));
 
       const matches = ProximityEngine.filterAndOrder(candidateChannels, centerCoords[0], centerCoords[1], radiusMiles);
-      primaryChannels = matches.map((m) => m.channel);
+      const wxMatches = ProximityEngine.filterAndOrder(
+        getOfflineWxStations(),
+        centerCoords[0],
+        centerCoords[1],
+        Math.max(radiusMiles, 50),
+      );
+      primaryChannels = [...matches.map((m) => m.channel), ...wxMatches.map((m) => m.channel)];
 
       // Build concentric distance rings (up to 4 rings)
       const ringCount = radiusMiles <= 20 ? 2 : radiusMiles <= 45 ? 3 : 4;
@@ -1426,7 +1487,12 @@ export class ApiRouter {
       });
     }
 
-    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(codeplug.channels, bands);
+    const primaryWxStations = primaryChannels.filter((ch) => channelBand(ch.rxFreq) === "WX");
+    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(
+      codeplug.channels,
+      bands,
+      primaryWxStations,
+    );
     mapData.channels = mapChannels;
     summary.band_counts = bandCounts;
 
@@ -1562,7 +1628,12 @@ export class ApiRouter {
     sess.radio_spec = spec;
     sess.notices = notices;
 
-    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(assembled.channels, activeBands);
+    const primaryWxStations = sess.primary_channels.filter((ch) => channelBand(ch.rxFreq) === "WX");
+    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(
+      assembled.channels,
+      activeBands,
+      primaryWxStations,
+    );
     sess.summary_data.band_counts = bandCounts;
     sess.map_data.channels = mapChannels;
     this.workspace.saveSession();
@@ -1605,7 +1676,12 @@ export class ApiRouter {
     const renumbered = renumberChannels(remaining, sess.radio_spec.startChannel);
     sess.codeplug = { name: sess.codeplug.name, channels: renumbered };
 
-    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(renumbered, sess.recipe.radio_target.bands);
+    const primaryWxStations = sess.primary_channels.filter((ch) => channelBand(ch.rxFreq) === "WX");
+    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(
+      renumbered,
+      sess.recipe.radio_target.bands,
+      primaryWxStations,
+    );
     sess.summary_data.band_counts = bandCounts;
     sess.map_data.channels = mapChannels;
     this.workspace.saveSession();
@@ -1631,7 +1707,12 @@ export class ApiRouter {
     sess.primary_channels = [...snap.primary_channels];
     sess.deleted_keys = new Set(snap.deleted_keys);
 
-    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(restored, sess.recipe.radio_target.bands);
+    const primaryWxStations = sess.primary_channels.filter((ch) => channelBand(ch.rxFreq) === "WX");
+    const { bandCounts, mapChannels } = computeBandCountsAndMapChannels(
+      restored,
+      sess.recipe.radio_target.bands,
+      primaryWxStations,
+    );
     sess.summary_data.band_counts = bandCounts;
     sess.map_data.channels = mapChannels;
     this.workspace.saveSession();

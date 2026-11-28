@@ -1,0 +1,242 @@
+[
+  {
+    "name": "Tyler NWR 162.475",
+    "callsign": "WXK36",
+    "rxFreq": 162.475,
+    "city": "Tyler",
+    "state": "TX",
+    "lat": 32.3513,
+    "lon": -95.3011,
+    "comment": "NOAA Weather Radio WXK36 Tyler / Smith County (162.475 MHz)"
+  },
+  {
+    "name": "Longview NWR 162.400",
+    "callsign": "WXK31",
+    "rxFreq": 162.4,
+    "city": "Longview",
+    "state": "TX",
+    "lat": 32.5007,
+    "lon": -94.7405,
+    "comment": "NOAA Weather Radio WXK31 Longview / Gregg County (162.400 MHz)"
+  },
+  {
+    "name": "Palestine NWR 162.450",
+    "callsign": "KWN34",
+    "rxFreq": 162.45,
+    "city": "Palestine",
+    "state": "TX",
+    "lat": 31.7797,
+    "lon": -95.7064,
+    "comment": "NOAA Weather Radio KWN34 Palestine / Anderson County (162.450 MHz)"
+  },
+  {
+    "name": "Corsicana NWR 162.525",
+    "callsign": "WNG652",
+    "rxFreq": 162.525,
+    "city": "Corsicana",
+    "state": "TX",
+    "lat": 32.0954,
+    "lon": -96.4689,
+    "comment": "NOAA Weather Radio WNG652 Corsicana / Navarro County (162.525 MHz)"
+  },
+  {
+    "name": "Dallas NWR 162.400",
+    "callsign": "KEC56",
+    "rxFreq": 162.4,
+    "city": "Dallas",
+    "state": "TX",
+    "lat": 32.7767,
+    "lon": -96.797,
+    "comment": "NOAA Weather Radio KEC56 Dallas Metro (162.400 MHz)"
+  },
+  {
+    "name": "Fort Worth NWR 162.550",
+    "callsign": "KEC55",
+    "rxFreq": 162.55,
+    "city": "Fort Worth",
+    "state": "TX",
+    "lat": 32.7555,
+    "lon": -97.3308,
+    "comment": "NOAA Weather Radio KEC55 Fort Worth / Tarrant County (162.550 MHz)"
+  },
+  {
+    "name": "McKinney NWR 162.425",
+    "callsign": "WWF38",
+    "rxFreq": 162.425,
+    "city": "McKinney",
+    "state": "TX",
+    "lat": 33.1972,
+    "lon": -96.6397,
+    "comment": "NOAA Weather Radio WWF38 McKinney / Collin County (162.425 MHz)"
+  },
+  {
+    "name": "Paris NWR 162.550",
+    "callsign": "WXK20",
+    "rxFreq": 162.55,
+    "city": "Paris",
+    "state": "TX",
+    "lat": 33.6609,
+    "lon": -95.5555,
+    "comment": "NOAA Weather Radio WXK20 Paris / Northeast TX (162.550 MHz)"
+  },
+  {
+    "name": "Waco NWR 162.475",
+    "callsign": "WXK35",
+    "rxFreq": 162.475,
+    "city": "Waco",
+    "state": "TX",
+    "lat": 31.5493,
+    "lon": -97.1467,
+    "comment": "NOAA Weather Radio WXK35 Waco / McLennan County (162.475 MHz)"
+  },
+  {
+    "name": "Austin NWR 162.400",
+    "callsign": "WXK27",
+    "rxFreq": 162.4,
+    "city": "Austin",
+    "state": "TX",
+    "lat": 30.2672,
+    "lon": -97.7431,
+    "comment": "NOAA Weather Radio WXK27 Austin / Central TX (162.400 MHz)"
+  },
+  {
+    "name": "Houston NWR 162.400",
+    "callsign": "KGG68",
+    "rxFreq": 162.4,
+    "city": "Houston",
+    "state": "TX",
+    "lat": 29.7604,
+    "lon": -95.3698,
+    "comment": "NOAA Weather Radio KGG68 Houston / Southeast TX (162.400 MHz)"
+  },
+  {
+    "name": "Lufkin NWR 162.550",
+    "callsign": "WXK24",
+    "rxFreq": 162.55,
+    "city": "Lufkin",
+    "state": "TX",
+    "lat": 31.3382,
+    "lon": -94.7291,
+    "comment": "NOAA Weather Radio WXK24 Lufkin / Angelina County (162.550 MHz)"
+  },
+  {
+    "name": "Shreveport NWR 162.400",
+    "callsign": "WXJ96",
+    "rxFreq": 162.4,
+    "city": "Shreveport",
+    "state": "LA",
+    "lat": 32.5252,
+    "lon": -93.7502,
+    "comment": "NOAA Weather Radio WXJ96 Shreveport / Northwest LA (162.400 MHz)"
+  },
+  {
+    "name": "Minden NWR 162.525",
+    "callsign": "KXI89",
+    "rxFreq": 162.525,
+    "city": "Minden",
+    "state": "LA",
+    "lat": 32.6154,
+    "lon": -93.2868,
+    "comment": "NOAA Weather Radio KXI89 Minden / Webster Parish (162.525 MHz)"
+  },
+  {
+    "name": "Ruston NWR 162.450",
+    "callsign": "KXI54",
+    "rxFreq": 162.45,
+    "city": "Ruston",
+    "state": "LA",
+    "lat": 32.5232,
+    "lon": -92.6379,
+    "comment": "NOAA Weather Radio KXI54 Ruston / Lincoln Parish (162.450 MHz)"
+  },
+  {
+    "name": "Monroe NWR 162.550",
+    "callsign": "WXJ94",
+    "rxFreq": 162.55,
+    "city": "Monroe",
+    "state": "LA",
+    "lat": 32.5093,
+    "lon": -92.1193,
+    "comment": "NOAA Weather Radio WXJ94 Monroe / Ouachita Parish (162.550 MHz)"
+  },
+  {
+    "name": "Delhi NWR 162.475",
+    "callsign": "WNG583",
+    "rxFreq": 162.475,
+    "city": "Delhi",
+    "state": "LA",
+    "lat": 32.4549,
+    "lon": -91.4937,
+    "comment": "NOAA Weather Radio WNG583 Delhi / Richland Parish (162.475 MHz)"
+  },
+  {
+    "name": "Vicksburg NWR 162.475",
+    "callsign": "KXI76",
+    "rxFreq": 162.475,
+    "city": "Vicksburg",
+    "state": "MS",
+    "lat": 32.3526,
+    "lon": -90.8779,
+    "comment": "NOAA Weather Radio KXI76 Vicksburg / Warren County (162.475 MHz)"
+  },
+  {
+    "name": "Jackson NWR 162.400",
+    "callsign": "KIH38",
+    "rxFreq": 162.4,
+    "city": "Jackson",
+    "state": "MS",
+    "lat": 32.2988,
+    "lon": -90.1848,
+    "comment": "NOAA Weather Radio KIH38 Jackson / Central MS (162.400 MHz)"
+  },
+  {
+    "name": "Yazoo City NWR 162.425",
+    "callsign": "WXL90",
+    "rxFreq": 162.425,
+    "city": "Yazoo City",
+    "state": "MS",
+    "lat": 32.8551,
+    "lon": -90.4056,
+    "comment": "NOAA Weather Radio WXL90 Yazoo City (162.425 MHz)"
+  },
+  {
+    "name": "Meridian NWR 162.550",
+    "callsign": "KIH48",
+    "rxFreq": 162.55,
+    "city": "Meridian",
+    "state": "MS",
+    "lat": 32.3643,
+    "lon": -88.7037,
+    "comment": "NOAA Weather Radio KIH48 Meridian / East MS (162.550 MHz)"
+  },
+  {
+    "name": "Texarkana NWR 162.550",
+    "callsign": "WXJ58",
+    "rxFreq": 162.55,
+    "city": "Texarkana",
+    "state": "AR",
+    "lat": 33.4418,
+    "lon": -94.0477,
+    "comment": "NOAA Weather Radio WXJ58 Texarkana (162.550 MHz)"
+  },
+  {
+    "name": "Little Rock NWR 162.550",
+    "callsign": "WXJ55",
+    "rxFreq": 162.55,
+    "city": "Little Rock",
+    "state": "AR",
+    "lat": 34.7465,
+    "lon": -92.2896,
+    "comment": "NOAA Weather Radio WXJ55 Little Rock (162.550 MHz)"
+  },
+  {
+    "name": "Oklahoma City NWR 162.400",
+    "callsign": "WXK85",
+    "rxFreq": 162.4,
+    "city": "Oklahoma City",
+    "state": "OK",
+    "lat": 35.4676,
+    "lon": -97.5164,
+    "comment": "NOAA Weather Radio WXK85 Oklahoma City (162.400 MHz)"
+  }
+]

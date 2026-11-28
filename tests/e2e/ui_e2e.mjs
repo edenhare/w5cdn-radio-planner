@@ -35,6 +35,33 @@ async function run() {
     const rowCount = await page.locator("#channelsTbody tr").count();
     assert.ok(rowCount > 5, `Expected >5 channels assembled, got ${rowCount}`);
 
+    // Verify WX station locations are plotted on the map alongside 2m and 70cm repeaters
+    const mapBands = await page.evaluate(async () => {
+      const res = await fetch("/api/plan/current");
+      const plan = await res.json();
+      const mapCh = plan?.map_data?.channels || [];
+      const bands = Array.from(new Set(mapCh.map((c) => c.band)));
+      const wxMarkers = mapCh.filter((c) => c.band === "WX" && typeof c.lat === "number" && typeof c.lon === "number");
+      return { bands, wxMarkerCount: wxMarkers.length };
+    });
+    assert.ok(mapBands.bands.includes("2m"), `Expected 2m markers on map, got ${mapBands.bands.join(",")}`);
+    assert.ok(mapBands.bands.includes("70cm"), `Expected 70cm markers on map, got ${mapBands.bands.join(",")}`);
+    assert.ok(
+      mapBands.wxMarkerCount >= 2,
+      `Expected >=2 NOAA WX transmitter station markers on map, got ${mapBands.wxMarkerCount}`,
+    );
+
+    // Verify collapsible panes in Plan Builder and Active Route Corridor panel
+    await page.click('#paneCorridorRoute > summary');
+    assert.equal(await page.locator("#paneCorridorRoute").getAttribute("open"), null, "paneCorridorRoute should collapse");
+    await page.click('#paneCorridorRoute > summary');
+    assert.notEqual(await page.locator("#paneCorridorRoute").getAttribute("open"), null, "paneCorridorRoute should re-open");
+
+    await page.click('[data-toggle-pane="targetBarBody"]');
+    assert.ok(await page.locator("#targetBarBody").evaluate((el) => el.classList.contains("hidden")), "targetBarBody should collapse");
+    await page.click('[data-toggle-pane="targetBarBody"]');
+    assert.ok(!(await page.locator("#targetBarBody").evaluate((el) => el.classList.contains("hidden"))), "targetBarBody should expand");
+
     // 2. Switch target radio live
     await page.selectOption("#targetRadioSelect", "btech_dmr6x2");
     await page.waitForTimeout(400);
@@ -52,10 +79,15 @@ async function run() {
     assert.ok(await page.locator("#btnImportRadioYaml").isVisible(), "Import YAML button missing");
     assert.ok((await page.locator('#radiosList [data-radio-action="export"]').count()) >= 8, "Radio YAML export buttons missing");
 
-    // 5. Switch theme via Preferences modal & verify hand-edit config section
+    // 5. Switch theme via Preferences modal, test RepeaterBook API Key button & verify hand-edit config section
     await page.click("#btnOpenPrefs");
     await page.waitForSelector("#prefsModalBackdrop:not(.hidden)");
     await page.click('[data-theme-pick="amber-crt"]');
+    await page.click('[data-pref-tab="api"]');
+    await page.waitForSelector("#btnTestRbKey");
+    await page.fill("#prefRbKey", "test-repeaterbook-token");
+    await page.click("#btnTestRbKey");
+    await page.waitForSelector("#rbTestBanner.ok");
     await page.click('[data-pref-tab="system"]');
     await page.waitForSelector("#btnReloadConfigs");
     await page.click('#prefsForm button[type="submit"]');

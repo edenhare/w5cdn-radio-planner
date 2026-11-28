@@ -55,7 +55,10 @@ export function filterChannelsForRadio(
 
   return channels.filter((ch) => {
     const band = channelBand(ch.rxFreq).toLowerCase();
-    const isSpecialAlways = ch.specialType === "WX" || ch.specialType === "CALLING" || ch.specialType === "CUSTOM";
+    const isSpecialAlways =
+      ch.specialType === "CALLING" ||
+      ch.specialType === "CUSTOM" ||
+      (ch.specialType === "WX" && ch.lat === null && ch.lon === null);
 
     if (radioBands.size > 0 && !radioBands.has(band)) {
       return false;
