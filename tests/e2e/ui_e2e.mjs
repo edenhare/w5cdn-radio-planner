@@ -64,20 +64,18 @@ async function run() {
     const activeTheme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
     assert.equal(activeTheme, "amber-crt", "Theme did not persist to amber-crt");
 
-    // 6. Verify strict YAML validation rejects malformed radio YAML over HTTP API
-    const badRes = await page.evaluate(async () => {
-      const r = await fetch("/api/radios/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: "bad.yaml", yaml_text: "id: bad slug!\nmaxChannels: -1\n" }),
-      });
-      return { status: r.status, body: await r.json() };
-    });
-    assert.equal(badRes.status, 400);
-    assert.ok(String(badRes.body.detail).includes("schema validation"));
-
     assert.equal(pageErrors.length, 0, `Page errors detected: ${pageErrors.join("; ")}`);
     assert.equal(consoleErrors.length, 0, `Console errors detected: ${consoleErrors.join("; ")}`);
+
+    // 6. Verify strict YAML validation rejects malformed radio YAML over HTTP API
+    const badHttp = await fetch(`${srv.url}/api/radios/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: "bad.yaml", yaml_text: "id: bad slug!\nmaxChannels: -1\n" }),
+    });
+    const badBody = await badHttp.json();
+    assert.equal(badHttp.status, 400);
+    assert.ok(String(badBody.detail).includes("schema validation"));
 
     console.log(`PLAYWRIGHT_E2E_OK rows=${rowCount} theme=${activeTheme}`);
   } finally {
