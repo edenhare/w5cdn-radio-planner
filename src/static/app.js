@@ -163,6 +163,8 @@
     waypoints: ["Tyler, TX", "Shreveport, LA", "Jackson, MS"],
     sequenceOrder: ["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"],
     loadedRecipeFile: null,
+    loadedRecipeName: "",
+    loadedRecipeDescription: "",
     channelFilter: "ALL",
     bandFilter: "ALL",
     searchQuery: "",
@@ -621,8 +623,8 @@
 
     const payload = {
       mode: state.builderMode,
-      plan_name: $("inPlanName").value.trim(),
-      plan_description: $("inPlanDesc").value.trim(),
+      plan_name: state.loadedRecipeName || "",
+      plan_description: state.loadedRecipeDescription || "",
       waypoints: state.waypoints.map((w) => w.trim()).filter(Boolean),
       corridor_width: Number($("inCorridorWidth").value) || 25,
       center_location: $("inCenterLocation").value.trim() || "Dallas, TX",
@@ -1446,8 +1448,8 @@
     document.querySelectorAll("[data-access-opt]").forEach((cb) => {
       cb.checked = acc.has(cb.dataset.accessOpt);
     });
-    $("inPlanName").value = rec.name || "";
-    $("inPlanDesc").value = rec.description || "";
+    state.loadedRecipeName = rec.name || "";
+    state.loadedRecipeDescription = rec.description || "";
     state.sequenceOrder = rec.sequence_order?.length ? [...rec.sequence_order] : defaultSequenceForMode(mode);
 
     setBuilderMode(mode, true);
@@ -2063,9 +2065,9 @@
     });
     $("btnNewPlan").addEventListener("click", () => {
       state.loadedRecipeFile = null;
+      state.loadedRecipeName = "";
+      state.loadedRecipeDescription = "";
       $("loadedRecipeBanner").classList.add("hidden");
-      $("inPlanName").value = "";
-      $("inPlanDesc").value = "";
       if (!state.prefs.panel_layout?.builder?.visible) togglePanel("builder", true);
       toast("Plan Builder reset for new plan");
     });
@@ -2200,13 +2202,13 @@
     });
     $("btnResetBuilderDefaults").addEventListener("click", () => {
       state.loadedRecipeFile = null;
+      state.loadedRecipeName = "";
+      state.loadedRecipeDescription = "";
       $("loadedRecipeBanner").classList.add("hidden");
       state.waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"];
       $("inCorridorWidth").value = "25";
       $("inCenterLocation").value = "Dallas, TX";
       $("inRadiusMiles").value = "50";
-      $("inPlanName").value = "";
-      $("inPlanDesc").value = "";
       state.sequenceOrder = defaultSequenceForMode(state.builderMode);
       renderWaypointsList();
       renderSequenceList();
@@ -2281,20 +2283,33 @@
       $("saveRecDesc").value = state.activePlan.recipe.description || "";
       $("saveRecipeBackdrop").classList.remove("hidden");
       $("saveRecName").focus();
+      $("saveRecName").select();
     };
     $("btnPlanSaveRecipe").addEventListener("click", openSaveRecipeModal);
     $("btnDrawerSaveRecipe").addEventListener("click", openSaveRecipeModal);
     $("saveRecipeForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        const newName = $("saveRecName").value.trim();
+        const newDesc = $("saveRecDesc").value.trim();
         const res = await api("/api/recipes/save", {
           method: "POST",
           body: JSON.stringify({
-            name: $("saveRecName").value.trim(),
-            description: $("saveRecDesc").value.trim(),
+            name: newName,
+            description: newDesc,
           }),
         });
         state.recipes = res.recipes || state.recipes;
+        state.loadedRecipeName = newName;
+        state.loadedRecipeDescription = newDesc;
+        if (res.active_plan && res.active_plan.active) {
+          renderActivePlan(res.active_plan);
+        } else if (state.activePlan && newName) {
+          state.activePlan.recipe.name = newName;
+          state.activePlan.recipe.description = newDesc;
+          state.activePlan.codeplug.name = newName;
+          $("planTitle").textContent = newName;
+        }
         renderRecipesList();
         $("saveRecipeBackdrop").classList.add("hidden");
         toast(res.message || "Recipe saved", "success");

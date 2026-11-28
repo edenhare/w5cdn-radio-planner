@@ -263,25 +263,6 @@
                       </div>
                     </details>
 
-                    <!-- Plan Name & Description Metadata -->
-                    <details class="collapsible-pane" id="panePlanMetadata" data-pane-key="corridor-meta" open>
-                      <summary class="collapsible-pane-summary">
-                        <span>Plan Name &amp; Notes</span>
-                        <span class="pane-chevron" aria-hidden="true">▾</span>
-                      </summary>
-                      <div class="collapsible-pane-body">
-                        <div class="field">
-                          <label for="inPlanName">Plan Name (Optional)</label>
-                          <input type="text" id="inPlanName" class="input input-sm" placeholder="Auto-generated from route/location" />
-                        </div>
-
-                        <div class="field">
-                          <label for="inPlanDesc">Description / Notes</label>
-                          <input type="text" id="inPlanDesc" class="input input-sm" placeholder="Saved in recipe metadata &amp; pocket card" />
-                        </div>
-                      </div>
-                    </details>
-
                     <button type="submit" class="btn btn-success btn-block" id="btnAssemblePlan">
                       ⚡ Assemble Plan &amp; Map <span class="kbd kbd-solid">Ctrl+↵</span>
                     </button>
@@ -1362,12 +1343,12 @@
       <form id="saveRecipeForm">
         <div class="modal-body">
           <div class="field">
-            <label for="saveRecName">Recipe Name *</label>
-            <input type="text" id="saveRecName" class="input mono" required />
+            <label for="saveRecName">Recipe / Plan Name *</label>
+            <input type="text" id="saveRecName" class="input mono" required placeholder="e.g. Tyler_to_Jackson_Corridor" />
           </div>
           <div class="field">
-            <label for="saveRecDesc">Description (shown in Saved Recipes Drawer)</label>
-            <input type="text" id="saveRecDesc" class="input" placeholder="e.g. I-20 corridor trip Tyler to Jackson" />
+            <label for="saveRecDesc">Description / Notes (shown in Saved Recipes &amp; Pocket Card)</label>
+            <textarea id="saveRecDesc" class="textarea" rows="3" placeholder="e.g. I-20 corridor trip Tyler to Jackson"></textarea>
           </div>
         </div>
         <div class="modal-footer">

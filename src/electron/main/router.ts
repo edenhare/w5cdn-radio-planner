@@ -912,11 +912,18 @@ export class ApiRouter {
         if (!sess.recipe || !sess.codeplug || !sess.radio_spec) {
           throw new ApiError(400, "No active recipe to save.");
         }
+        const nextName = cleanSingleLine(body.name ?? sess.recipe.name, 100) || sess.recipe.name;
+        const nextDesc = cleanSingleLine(body.description ?? sess.recipe.description, 300);
         sess.recipe = {
           ...sess.recipe,
-          name: cleanSingleLine(body.name ?? sess.recipe.name, 100) || sess.recipe.name,
-          description: cleanSingleLine(body.description ?? sess.recipe.description, 300),
+          name: nextName,
+          description: nextDesc,
         };
+        sess.codeplug = {
+          ...sess.codeplug,
+          name: nextName,
+        };
+        this.workspace.saveSession();
         const saved = this.workspace.recipeMgr.saveRecipe(sess.recipe);
         return jsonResponse({
           saved: true,
@@ -924,6 +931,7 @@ export class ApiRouter {
           path: saved.fullPath,
           message: `Saved radio-agnostic recipe '${sess.recipe.name}' to ${saved.filename}`,
           recipes: this.serializeRecipes(),
+          active_plan: this.serializeActivePlan(),
         });
       }
 
