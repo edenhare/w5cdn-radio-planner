@@ -35,6 +35,33 @@ async function run() {
     const rowCount = await page.locator("#channelsTbody tr").count();
     assert.ok(rowCount > 5, `Expected >5 channels assembled, got ${rowCount}`);
 
+    // Verify WX station locations are plotted on the map alongside 2m and 70cm repeaters
+    const mapBands = await page.evaluate(async () => {
+      const res = await fetch("/api/plan/current");
+      const plan = await res.json();
+      const mapCh = plan?.map_data?.channels || [];
+      const bands = Array.from(new Set(mapCh.map((c) => c.band)));
+      const wxMarkers = mapCh.filter((c) => c.band === "WX" && typeof c.lat === "number" && typeof c.lon === "number");
+      return { bands, wxMarkerCount: wxMarkers.length };
+    });
+    assert.ok(mapBands.bands.includes("2m"), `Expected 2m markers on map, got ${mapBands.bands.join(",")}`);
+    assert.ok(mapBands.bands.includes("70cm"), `Expected 70cm markers on map, got ${mapBands.bands.join(",")}`);
+    assert.ok(
+      mapBands.wxMarkerCount >= 2,
+      `Expected >=2 NOAA WX transmitter station markers on map, got ${mapBands.wxMarkerCount}`,
+    );
+
+    // Verify collapsible panes in Plan Builder and Active Route Corridor panel
+    await page.click('#paneCorridorRoute > summary');
+    assert.equal(await page.locator("#paneCorridorRoute").getAttribute("open"), null, "paneCorridorRoute should collapse");
+    await page.click('#paneCorridorRoute > summary');
+    assert.notEqual(await page.locator("#paneCorridorRoute").getAttribute("open"), null, "paneCorridorRoute should re-open");
+
+    await page.click('[data-toggle-pane="targetBarBody"]');
+    assert.ok(await page.locator("#targetBarBody").evaluate((el) => el.classList.contains("hidden")), "targetBarBody should collapse");
+    await page.click('[data-toggle-pane="targetBarBody"]');
+    assert.ok(!(await page.locator("#targetBarBody").evaluate((el) => el.classList.contains("hidden"))), "targetBarBody should expand");
+
     // 2. Switch target radio live
     await page.selectOption("#targetRadioSelect", "btech_dmr6x2");
     await page.waitForTimeout(400);

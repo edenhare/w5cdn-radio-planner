@@ -155,6 +155,7 @@
                     <button type="button" class="dock-mini-btn" data-panel-dock="builder:top" title="Top">⬒</button>
                     <button type="button" class="dock-mini-btn" data-panel-dock="builder:bottom" title="Bottom">⬓</button>
                   </div>
+                  <button type="button" class="btn btn-ghost btn-xs pane-collapse-dock-btn" data-collapse-panel="panelBuilder" aria-expanded="true" title="Collapse or expand Plan Builder body">▾</button>
                   <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="builder" title="Hide Plan Builder (Alt+B)">✕</button>
                 </div>
               </div>
@@ -176,83 +177,110 @@
                     </div>
 
                     <!-- Mode 1: Route Corridor Inputs -->
-                    <div id="builderCorridorSection" class="builder-list">
-                      <div class="plan-header-row">
-                        <span class="section-label">Route Waypoints</span>
-                        <div class="plan-actions">
-                          <button type="button" class="btn btn-xs" id="btnReverseWaypoints" title="Reverse stop order">⇅ Reverse</button>
-                          <button type="button" class="btn btn-primary btn-xs" id="btnAddWaypoint">+ Stop</button>
+                    <details class="collapsible-pane" id="paneCorridorRoute" data-pane-key="corridor-route" open>
+                      <summary class="collapsible-pane-summary">
+                        <span>Route Waypoints &amp; Corridor</span>
+                        <span class="pane-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="collapsible-pane-body">
+                        <div id="builderCorridorSection" class="builder-list">
+                          <div class="plan-header-row">
+                            <span class="section-label">Route Waypoints</span>
+                            <div class="plan-actions">
+                              <button type="button" class="btn btn-xs" id="btnReverseWaypoints" title="Reverse stop order">⇅ Reverse</button>
+                              <button type="button" class="btn btn-primary btn-xs" id="btnAddWaypoint">+ Stop</button>
+                            </div>
+                          </div>
+                          <div id="waypointsList" class="builder-list"></div>
+                          <div class="form-grid-2">
+                            <div class="field">
+                              <label for="inCorridorWidth">Width (mi)</label>
+                              <input type="number" id="inCorridorWidth" class="input input-sm mono" step="any" min="1" max="200" value="25" />
+                            </div>
+                            <div class="field">
+                              <label>Options</label>
+                              <label class="check-card">
+                                <input type="checkbox" id="chkCorridorSimplex" checked />
+                                <span>Simplex</span>
+                              </label>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div id="waypointsList" class="builder-list"></div>
-                      <div class="form-grid-2">
-                        <div class="field">
-                          <label for="inCorridorWidth">Width (mi)</label>
-                          <input type="number" id="inCorridorWidth" class="input input-sm mono" step="any" min="1" max="200" value="25" />
-                        </div>
-                        <div class="field">
-                          <label>Options</label>
-                          <label class="check-card">
-                            <input type="checkbox" id="chkCorridorSimplex" checked />
-                            <span>Simplex</span>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
 
-                    <!-- Mode 2 & 3: Proximity / Aviation Center & Radius -->
-                    <div id="builderRadialSection" class="builder-list hidden">
-                      <div class="field">
-                        <label for="inCenterLocation">
-                          <span id="lblCenterLocation">Center Location / City</span>
-                          <button type="button" class="btn btn-ghost btn-xs" id="btnUseCurrentLocation" title="Detect current GPS or IP location">📍 Locate</button>
-                        </label>
-                        <input type="text" id="inCenterLocation" class="input input-sm" value="Dallas, TX" placeholder="e.g. Dallas, TX or KTYR" />
-                      </div>
-                      <div class="form-grid-2">
-                        <div class="field">
-                          <label for="inRadiusMiles">Radius (mi)</label>
-                          <input type="number" id="inRadiusMiles" class="input input-sm mono" step="any" min="1" max="300" value="50" />
+                        <!-- Mode 2 & 3: Proximity / Aviation Center & Radius -->
+                        <div id="builderRadialSection" class="builder-list hidden">
+                          <div class="field">
+                            <label for="inCenterLocation">
+                              <span id="lblCenterLocation">Center Location / City</span>
+                              <button type="button" class="btn btn-ghost btn-xs" id="btnUseCurrentLocation" title="Detect current GPS or IP location">📍 Locate</button>
+                            </label>
+                            <input type="text" id="inCenterLocation" class="input input-sm" value="Dallas, TX" placeholder="e.g. Dallas, TX or KTYR" />
+                          </div>
+                          <div class="form-grid-2">
+                            <div class="field">
+                              <label for="inRadiusMiles">Radius (mi)</label>
+                              <input type="number" id="inRadiusMiles" class="input input-sm mono" step="any" min="1" max="300" value="50" />
+                            </div>
+                            <div class="field" id="radialSimplexWrap">
+                              <label>Options</label>
+                              <label class="check-card">
+                                <input type="checkbox" id="chkRadialSimplex" checked />
+                                <span>Simplex</span>
+                              </label>
+                            </div>
+                          </div>
                         </div>
-                        <div class="field" id="radialSimplexWrap">
-                          <label>Options</label>
-                          <label class="check-card">
-                            <input type="checkbox" id="chkRadialSimplex" checked />
-                            <span>Simplex</span>
-                          </label>
-                        </div>
                       </div>
-                    </div>
+                    </details>
 
                     <!-- Repeater Access Filter -->
-                    <div id="builderAccessSection" class="field">
-                      <label>Repeater Access Filter</label>
-                      <div class="access-grid">
-                        <label class="check-card"><input type="checkbox" data-access-opt="OPEN" checked /> OPEN</label>
-                        <label class="check-card"><input type="checkbox" data-access-opt="CLOSED" /> CLOSED</label>
-                        <label class="check-card"><input type="checkbox" data-access-opt="PRIVATE" /> PRIVATE</label>
+                    <details class="collapsible-pane" id="builderAccessSection" data-pane-key="corridor-access" open>
+                      <summary class="collapsible-pane-summary">
+                        <span>Repeater Access Filter</span>
+                        <span class="pane-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="collapsible-pane-body">
+                        <div class="access-grid">
+                          <label class="check-card"><input type="checkbox" data-access-opt="OPEN" checked /> OPEN</label>
+                          <label class="check-card"><input type="checkbox" data-access-opt="CLOSED" /> CLOSED</label>
+                          <label class="check-card"><input type="checkbox" data-access-opt="PRIVATE" /> PRIVATE</label>
+                        </div>
                       </div>
-                    </div>
+                    </details>
 
                     <!-- Drag & Drop Codeplug Sequence Blocks -->
-                    <div class="field">
-                      <label>Sequence &amp; Template Blocks (Drag ☰)</label>
-                      <div id="sequenceList" class="builder-list"></div>
-                      <div class="drawer-search-bar" style="padding:4px 0 0 0; border-bottom:none;">
-                        <select id="addTemplateSelect" class="select select-sm" aria-label="Select template block to insert"></select>
-                        <button type="button" class="btn btn-xs" id="btnInsertTemplateBlock">+ Insert</button>
+                    <details class="collapsible-pane" id="paneSequenceBlocks" data-pane-key="corridor-sequence" open>
+                      <summary class="collapsible-pane-summary">
+                        <span>Sequence &amp; Template Blocks (Drag ☰)</span>
+                        <span class="pane-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="collapsible-pane-body">
+                        <div id="sequenceList" class="builder-list"></div>
+                        <div class="drawer-search-bar" style="padding:4px 0 0 0; border-bottom:none;">
+                          <select id="addTemplateSelect" class="select select-sm" aria-label="Select template block to insert"></select>
+                          <button type="button" class="btn btn-xs" id="btnInsertTemplateBlock">+ Insert</button>
+                        </div>
                       </div>
-                    </div>
+                    </details>
 
-                    <div class="field">
-                      <label for="inPlanName">Plan Name (Optional)</label>
-                      <input type="text" id="inPlanName" class="input input-sm" placeholder="Auto-generated from route/location" />
-                    </div>
+                    <!-- Plan Name & Description Metadata -->
+                    <details class="collapsible-pane" id="panePlanMetadata" data-pane-key="corridor-meta" open>
+                      <summary class="collapsible-pane-summary">
+                        <span>Plan Name &amp; Notes</span>
+                        <span class="pane-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="collapsible-pane-body">
+                        <div class="field">
+                          <label for="inPlanName">Plan Name (Optional)</label>
+                          <input type="text" id="inPlanName" class="input input-sm" placeholder="Auto-generated from route/location" />
+                        </div>
 
-                    <div class="field">
-                      <label for="inPlanDesc">Description / Notes</label>
-                      <input type="text" id="inPlanDesc" class="input input-sm" placeholder="Saved in recipe metadata &amp; pocket card" />
-                    </div>
+                        <div class="field">
+                          <label for="inPlanDesc">Description / Notes</label>
+                          <input type="text" id="inPlanDesc" class="input input-sm" placeholder="Saved in recipe metadata &amp; pocket card" />
+                        </div>
+                      </div>
+                    </details>
 
                     <button type="submit" class="btn btn-success btn-block" id="btnAssemblePlan">
                       ⚡ Assemble Plan &amp; Map <span class="kbd kbd-solid">Ctrl+↵</span>
@@ -305,6 +333,7 @@
                       <input type="text" id="exportFilenameInput" class="input input-sm mono export-file-input" aria-label="Export CSV filename" />
                       <button type="button" class="btn btn-success btn-sm" id="btnPlanExportCsv" title="Download CSV &amp; save to ./exports/">⬇ Export CSV</button>
                     </div>
+                    <button type="button" class="btn btn-ghost btn-xs pane-toggle-btn" data-toggle-pane="planSpecsLine" aria-expanded="true" title="Collapse or expand plan specifications">▾ Specs</button>
                   </div>
                 </div>
                 <div class="plan-specs" id="planSpecsLine"></div>
@@ -315,44 +344,56 @@
 
               <!-- Live Target Radio, Naming Format & Band Controls -->
               <section class="target-bar" id="targetBar">
-                <div class="target-bar-top">
-                  <div class="field">
-                    <label for="targetRadioSelect">Target Radio Hardware</label>
-                    <select id="targetRadioSelect" class="select select-sm"></select>
-                  </div>
-                  <div class="field">
-                    <label for="targetNamingSelect">
-                      <span>Channel Naming Format</span>
-                      <span class="mono" id="targetLcdHint">LCD 8c</span>
-                    </label>
-                    <select id="targetNamingSelect" class="select select-sm"></select>
-                  </div>
-                  <div class="field">
-                    <label>Sample LCD</label>
-                    <span class="lcd-badge" id="targetNamingSample">Tyler 7.20</span>
-                  </div>
+                <div class="pane-header-strip">
+                  <span class="section-label">Target Radio Hardware, Naming &amp; Bands</span>
+                  <button type="button" class="btn btn-ghost btn-xs pane-toggle-btn" data-toggle-pane="targetBarBody" aria-expanded="true" title="Collapse or expand target radio &amp; bands pane">▾ Collapse</button>
                 </div>
-                <div class="target-bands-row" id="targetBandsRow"></div>
+                <div class="target-bar-body" id="targetBarBody">
+                  <div class="target-bar-top">
+                    <div class="field">
+                      <label for="targetRadioSelect">Target Radio Hardware</label>
+                      <select id="targetRadioSelect" class="select select-sm"></select>
+                    </div>
+                    <div class="field">
+                      <label for="targetNamingSelect">
+                        <span>Channel Naming Format</span>
+                        <span class="mono" id="targetLcdHint">LCD 8c</span>
+                      </label>
+                      <select id="targetNamingSelect" class="select select-sm"></select>
+                    </div>
+                    <div class="field">
+                      <label>Sample LCD</label>
+                      <span class="lcd-badge" id="targetNamingSample">Tyler 7.20</span>
+                    </div>
+                  </div>
+                  <div class="target-bands-row" id="targetBandsRow"></div>
+                </div>
               </section>
 
               <!-- Telemetry KPI Chips, Filters, Multi-Select Delete & Undo Toolbar -->
-              <section class="log-toolbar">
-                <div class="stats-strip" id="bandKpiStrip"></div>
-                <div class="filter-controls">
-                  <button type="button" class="filter-btn active" data-ch-filter="ALL">All</button>
-                  <button type="button" class="filter-btn" data-ch-filter="REPEATERS">Repeaters</button>
-                  <button type="button" class="filter-btn" data-ch-filter="CALLING">Calling</button>
-                  <button type="button" class="filter-btn" data-ch-filter="WX">WX</button>
-                  <button type="button" class="filter-btn" data-ch-filter="AVIATION">Air</button>
-                  <button type="button" class="filter-btn" data-ch-filter="SIMPLEX">Simplex</button>
-                  <button type="button" class="filter-btn" data-ch-filter="DMR">DMR</button>
-                  <button type="button" class="btn btn-danger btn-xs" id="btnDeleteSelected" disabled title="Delete checked rows (Shift+Click selects a range)">
-                    🗑 Delete (<span id="selectedCount">0</span>)
-                  </button>
-                  <button type="button" class="btn btn-amber btn-xs" id="btnUndoDelete" disabled title="Undo last channel delete or edit (Ctrl+Z)">
-                    ↩ Undo <span id="undoCountBadge"></span>
-                  </button>
-                  <input type="search" id="searchChannels" class="input search-input" placeholder="Filter channels... (Alt+F)" />
+              <section class="log-toolbar" id="logToolbar">
+                <div class="pane-header-strip">
+                  <span class="section-label">Band Telemetry &amp; Channel Filters</span>
+                  <button type="button" class="btn btn-ghost btn-xs pane-toggle-btn" data-toggle-pane="logToolbarBody" aria-expanded="true" title="Collapse or expand band KPIs &amp; channel filters pane">▾ Collapse</button>
+                </div>
+                <div class="log-toolbar-body" id="logToolbarBody">
+                  <div class="stats-strip" id="bandKpiStrip"></div>
+                  <div class="filter-controls">
+                    <button type="button" class="filter-btn active" data-ch-filter="ALL">All</button>
+                    <button type="button" class="filter-btn" data-ch-filter="REPEATERS">Repeaters</button>
+                    <button type="button" class="filter-btn" data-ch-filter="CALLING">Calling</button>
+                    <button type="button" class="filter-btn" data-ch-filter="WX">WX</button>
+                    <button type="button" class="filter-btn" data-ch-filter="AVIATION">Air</button>
+                    <button type="button" class="filter-btn" data-ch-filter="SIMPLEX">Simplex</button>
+                    <button type="button" class="filter-btn" data-ch-filter="DMR">DMR</button>
+                    <button type="button" class="btn btn-danger btn-xs" id="btnDeleteSelected" disabled title="Delete checked rows (Shift+Click selects a range)">
+                      🗑 Delete (<span id="selectedCount">0</span>)
+                    </button>
+                    <button type="button" class="btn btn-amber btn-xs" id="btnUndoDelete" disabled title="Undo last channel delete or edit (Ctrl+Z)">
+                      ↩ Undo <span id="undoCountBadge"></span>
+                    </button>
+                    <input type="search" id="searchChannels" class="input search-input" placeholder="Filter channels... (Alt+F)" />
+                  </div>
                 </div>
               </section>
 
@@ -418,6 +459,7 @@
                     <button type="button" class="dock-mini-btn" data-panel-dock="map:top" title="Top">⬒</button>
                     <button type="button" class="dock-mini-btn" data-panel-dock="map:bottom" title="Bottom">⬓</button>
                   </div>
+                  <button type="button" class="btn btn-ghost btn-xs pane-collapse-dock-btn" data-collapse-panel="panelMap" aria-expanded="true" title="Collapse or expand Coverage Map body">▾</button>
                   <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="map" title="Hide Map Panel (Alt+M)">✕</button>
                 </div>
               </div>
@@ -440,16 +482,32 @@
                     <button type="button" class="dock-mini-btn" data-panel-dock="summary:top" title="Top">⬒</button>
                     <button type="button" class="dock-mini-btn" data-panel-dock="summary:bottom" title="Bottom">⬓</button>
                   </div>
+                  <button type="button" class="btn btn-ghost btn-xs pane-collapse-dock-btn" data-collapse-panel="panelSummary" aria-expanded="true" title="Collapse or expand Plan Summary body">▾</button>
                   <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="summary" title="Hide Summary Panel (Alt+U)">✕</button>
                 </div>
               </div>
               <div class="dock-panel-body">
-                <div id="summaryRowsList" class="builder-list">
-                  <div class="mgr-card-sub">Assemble a route, proximity, or aviation plan to view stops, rings, and band distribution.</div>
-                </div>
-                <div class="section-label">Channel Breakdown by Band</div>
-                <div id="summaryBandBreakdown" class="summary-band-grid"></div>
-                <div id="summaryStatesLine" class="mgr-card-sub mono"></div>
+                <details class="collapsible-pane" id="paneSummaryRows" data-pane-key="summary-rows" open>
+                  <summary class="collapsible-pane-summary">
+                    <span>Stops, Rings &amp; Distance</span>
+                    <span class="pane-chevron" aria-hidden="true">▾</span>
+                  </summary>
+                  <div class="collapsible-pane-body">
+                    <div id="summaryRowsList" class="builder-list">
+                      <div class="mgr-card-sub">Assemble a route, proximity, or aviation plan to view stops, rings, and band distribution.</div>
+                    </div>
+                  </div>
+                </details>
+                <details class="collapsible-pane" id="paneSummaryBands" data-pane-key="summary-bands" open>
+                  <summary class="collapsible-pane-summary">
+                    <span>Channel Breakdown by Band</span>
+                    <span class="pane-chevron" aria-hidden="true">▾</span>
+                  </summary>
+                  <div class="collapsible-pane-body">
+                    <div id="summaryBandBreakdown" class="summary-band-grid"></div>
+                    <div id="summaryStatesLine" class="mgr-card-sub mono"></div>
+                  </div>
+                </details>
               </div>
             </aside>
 
@@ -464,6 +522,7 @@
                     <button type="button" class="dock-mini-btn" data-panel-dock="templates:top" title="Top">⬒</button>
                     <button type="button" class="dock-mini-btn" data-panel-dock="templates:bottom" title="Bottom">⬓</button>
                   </div>
+                  <button type="button" class="btn btn-ghost btn-xs pane-collapse-dock-btn" data-collapse-panel="panelTemplates" aria-expanded="true" title="Collapse or expand Preset Templates body">▾</button>
                   <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="templates" title="Hide Templates Panel (Alt+T)">✕</button>
                 </div>
               </div>
@@ -490,6 +549,7 @@
                     <button type="button" class="dock-mini-btn" data-panel-dock="radios:top" title="Top">⬒</button>
                     <button type="button" class="dock-mini-btn" data-panel-dock="radios:bottom" title="Bottom">⬓</button>
                   </div>
+                  <button type="button" class="btn btn-ghost btn-xs pane-collapse-dock-btn" data-collapse-panel="panelRadios" aria-expanded="true" title="Collapse or expand Radios &amp; Specs body">▾</button>
                   <button type="button" class="btn btn-ghost btn-xs" data-panel-hide="radios" title="Hide Radios Panel (Alt+R)">✕</button>
                 </div>
               </div>

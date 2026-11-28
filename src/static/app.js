@@ -2077,6 +2077,82 @@
       btn.addEventListener("click", () => togglePanel(btn.dataset.panelHide, false));
     });
 
+    // Collapsible Dock Panel Bodies & Center Stage Sub-Panes
+    const savedCollapsed = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("rp_collapsed_panes") || "{}") || {};
+      } catch {
+        return {};
+      }
+    })();
+
+    const persistCollapsedState = () => {
+      try {
+        localStorage.setItem("rp_collapsed_panes", JSON.stringify(savedCollapsed));
+      } catch {
+        // ignore storage errors
+      }
+    };
+
+    document.querySelectorAll("[data-collapse-panel]").forEach((btn) => {
+      const panelId = btn.dataset.collapsePanel;
+      const panelEl = $(panelId);
+      if (!panelEl) return;
+      const applyDockCollapse = (collapsed) => {
+        panelEl.classList.toggle("pane-collapsed", collapsed);
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        btn.textContent = collapsed ? "▸" : "▾";
+        invalidateMapSoon();
+      };
+      if (savedCollapsed[`dock:${panelId}`] === true) {
+        applyDockCollapse(true);
+      }
+      btn.addEventListener("click", () => {
+        const nextCollapsed = !panelEl.classList.contains("pane-collapsed");
+        savedCollapsed[`dock:${panelId}`] = nextCollapsed;
+        persistCollapsedState();
+        applyDockCollapse(nextCollapsed);
+      });
+    });
+
+    document.querySelectorAll("[data-toggle-pane]").forEach((btn) => {
+      const paneId = btn.dataset.togglePane;
+      const paneEl = $(paneId);
+      if (!paneEl) return;
+      const isSpecs = paneId === "planSpecsLine";
+      const applyPaneCollapse = (collapsed) => {
+        paneEl.classList.toggle("hidden", collapsed);
+        btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        btn.textContent = isSpecs
+          ? collapsed
+            ? "▸ Specs"
+            : "▾ Specs"
+          : collapsed
+            ? "▸ Expand"
+            : "▾ Collapse";
+      };
+      if (savedCollapsed[`pane:${paneId}`] === true) {
+        applyPaneCollapse(true);
+      }
+      btn.addEventListener("click", () => {
+        const nextCollapsed = !paneEl.classList.contains("hidden");
+        savedCollapsed[`pane:${paneId}`] = nextCollapsed;
+        persistCollapsedState();
+        applyPaneCollapse(nextCollapsed);
+      });
+    });
+
+    document.querySelectorAll("details.collapsible-pane[data-pane-key]").forEach((detailsEl) => {
+      const key = `details:${detailsEl.dataset.paneKey}`;
+      if (savedCollapsed[key] === true) {
+        detailsEl.removeAttribute("open");
+      }
+      detailsEl.addEventListener("toggle", () => {
+        savedCollapsed[key] = !detailsEl.open;
+        persistCollapsedState();
+      });
+    });
+
     // Panels & Layout Modal
     document.querySelectorAll("[data-layout-preset]").forEach((btn) => {
       btn.addEventListener("click", () => applyLayoutPreset(btn.dataset.layoutPreset));

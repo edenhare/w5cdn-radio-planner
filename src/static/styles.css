@@ -1223,6 +1223,15 @@ button, input, select, textarea {
   min-height: 150px;
 }
 
+.dock-panel.pane-collapsed {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+}
+
+.dock-panel.pane-collapsed > .dock-panel-body {
+  display: none !important;
+}
+
 .dock-resizer {
   flex: 0 0 6px;
   border-radius: 4px;
@@ -1292,6 +1301,99 @@ button, input, select, textarea {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
+}
+
+/* Collapsible Sub-Panes (Plan Builder, Summary & Center Stage Strips) */
+.collapsible-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
+.collapsible-pane-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  background: var(--bg-chrome);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75em;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+}
+
+.collapsible-pane-summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-pane-summary:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.collapsible-pane[open] > .collapsible-pane-summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-chevron {
+  display: inline-block;
+  font-size: 1.05em;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.collapsible-pane:not([open]) .pane-chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsible-pane-body {
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pane-header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.target-bar-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.log-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.log-toolbar-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -1702,18 +1804,6 @@ button, input, select, textarea {
 }
 
 /* Stats & Filter Toolbar */
-.log-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 14px;
-  background: var(--bg-app);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
 .stats-strip {
   display: flex;
   align-items: center;

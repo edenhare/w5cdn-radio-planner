@@ -77,6 +77,11 @@ describe("Phase 2: ApiRouter Full Parity, Hand-Edit YAML & Backup/Restore", () =
     expect(route.data.active).toBe(true);
     const cp = route.data.codeplug as { total_channels: number; channels: Array<{ number: number; name: string }> };
     expect(cp.total_channels).toBeGreaterThan(5);
+    const routeMapChannels = (route.data.map_data as { channels: Array<{ band: string; lat: number; lon: number }> })
+      .channels;
+    expect(routeMapChannels.some((mc) => mc.band === "2m")).toBe(true);
+    expect(routeMapChannels.some((mc) => mc.band === "70cm")).toBe(true);
+    expect(routeMapChannels.some((mc) => mc.band === "WX" && mc.lat !== null && mc.lon !== null)).toBe(true);
 
     // Retarget radio live
     const retarget = await apiJson("POST", "/api/codeplug/update", {

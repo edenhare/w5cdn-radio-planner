@@ -21,6 +21,7 @@ interface RawRepeaterRecord {
 let stateGeoCache: StateGeoData | null = null;
 let offlineRepeatersCache: RawRepeaterRecord[] | null = null;
 let gmrsRepeatersCache: RawRepeaterRecord[] | null = null;
+let wxStationsCache: RawRepeaterRecord[] | null = null;
 
 function loadStateGeo(): StateGeoData {
   if (stateGeoCache) return stateGeoCache;
@@ -49,6 +50,53 @@ export function getGmrsRepeaters(): RawRepeaterRecord[] {
     gmrsRepeatersCache = [];
   }
   return gmrsRepeatersCache;
+}
+
+export function getOfflineWxStations(): RadioChannel[] {
+  if (!wxStationsCache) {
+    try {
+      const filePath = path.join(resolveResourcesDir(), "offline_wx_stations.json");
+      wxStationsCache = JSON.parse(fs.readFileSync(filePath, "utf-8")) as RawRepeaterRecord[];
+    } catch {
+      wxStationsCache = [];
+    }
+  }
+  return wxStationsCache.map((rec, idx) => {
+    const rxFreq = Number(rec.rxFreq ?? rec.Frequency ?? 162.55);
+    const city = String(rec.city ?? "").trim() || null;
+    const state = String(rec.state ?? "").trim() || null;
+    const callsign = String(rec.callsign ?? "").trim() || null;
+    const lat = rec.lat !== undefined ? Number(rec.lat) : null;
+    const lon = rec.lon !== undefined ? Number(rec.lon) : null;
+    const name = String(rec.name ?? (city ? `${city} WX` : `WX ${rxFreq.toFixed(3)}`)).trim();
+    const comment =
+      String(rec.comment ?? "").trim() ||
+      [callsign ? `NOAA NWR ${callsign}` : "NOAA Weather Radio", city && state ? `${city}, ${state}` : city]
+        .filter(Boolean)
+        .join(" - ");
+    return createRadioChannel({
+      number: idx + 1,
+      name,
+      callsign,
+      rxFreq,
+      txFreq: rxFreq,
+      offset: 0,
+      offsetDir: "off",
+      mode: "FM",
+      power: "Low",
+      toneMode: "None",
+      ctcss: "None",
+      rxCtcss: "None",
+      dcs: "None",
+      rxDcs: "None",
+      city,
+      state,
+      lat: lat !== null && Number.isFinite(lat) ? lat : null,
+      lon: lon !== null && Number.isFinite(lon) ? lon : null,
+      specialType: "WX",
+      comment,
+    });
+  });
 }
 
 export function resolveStateCode(stateInput: string): string | null {
