@@ -288,8 +288,21 @@ describe("Phase 1: NameCondenser, Engines, Providers & Exporters", () => {
       allowedModes: ["FM", "AM"],
       namingFormat: "CITY_FREQ",
     });
-    expect(assembled.channels.length).toBeGreaterThan(getNationalCallingChannels().length);
+    expect(assembled.channels.length).toBeGreaterThan(5);
+    expect(assembled.channels.some((c) => c.name.includes("GMRS"))).toBe(false);
     expect(getNoaaWxChannels().length).toBe(7);
+
+    // GMRS call channels are included when GMRS band is active on a GMRS-capable radio
+    const gmrsAssembled = SequenceOrganizer.assemble({
+      codeplugName: "Test Plan GMRS",
+      sequenceKeys: ["TEMPLATE:calling_channels"],
+      primaryChannels: [],
+      targetSpec: SAMPLE_SPEC,
+      allowedBands: ["2m", "70cm", "GMRS"],
+      allowedModes: ["FM"],
+      namingFormat: "CITY_FREQ",
+    });
+    expect(gmrsAssembled.channels.some((c) => c.rxFreq === 462.675)).toBe(true);
 
     // Hardware sanitizer drops unsupported Airband for 2m/70cm-only radio
     const vhfOnly: TargetRadioSpec = { ...SAMPLE_SPEC, supportedBands: ["2m", "70cm"], maxChannels: 3 };

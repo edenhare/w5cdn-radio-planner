@@ -286,8 +286,17 @@ function defaultBandsForRadio(spec: TargetRadioSpec, mode: string, sequenceOrder
     const hasTemplates = sequenceOrder.some((k) => k.startsWith("TEMPLATE:"));
     return hasTemplates ? Array.from(new Set([...spec.supportedBands, "Airband"])) : ["Airband"];
   }
-  const nonAir = spec.supportedBands.filter((b) => b.toLowerCase() !== "airband");
-  return nonAir.length > 0 ? nonAir : [...spec.supportedBands];
+  const isGmrsOnly =
+    spec.supportedBands.some((b) => b.toLowerCase() === "gmrs") &&
+    !spec.supportedBands.some((b) => b.toLowerCase() === "2m");
+  const hasGmrsTemplate = sequenceOrder.includes("TEMPLATE:gmrs_channels");
+  const defaultAmateur = spec.supportedBands.filter((b) => {
+    const low = b.toLowerCase();
+    if (low === "airband") return false;
+    if (low === "gmrs" && !isGmrsOnly && !hasGmrsTemplate) return false;
+    return true;
+  });
+  return defaultAmateur.length > 0 ? defaultAmateur : [...spec.supportedBands];
 }
 
 function renumberChannels(channels: RadioChannel[], startSlot: number): RadioChannel[] {
