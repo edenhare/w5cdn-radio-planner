@@ -694,13 +694,6 @@
     // Header
     $("planTitle").textContent = codeplug.name;
     $("planModePill").textContent = recipe.mode;
-    const endSlot = codeplug.total_channels > 0 ? spec.startChannel + codeplug.total_channels - 1 : spec.startChannel;
-    $("planSpecsLine").innerHTML = `
-      <span>Radio: <strong>${escHtml(spec.brand)} ${escHtml(spec.model)}</strong></span>
-      <span>Slots: <strong class="mono">${spec.startChannel}..${endSlot}</strong> (${codeplug.total_channels}/${spec.maxChannels})</span>
-      <span>LCD: <strong class="mono">${spec.maxNameLength} chars</strong></span>
-      <span>Naming: <strong class="mono">${escHtml(recipe.radio_target.naming_format)}</strong></span>
-    `;
 
     // Export controls
     $("exportProgrammerSelect").value = recipe.radio_target.programmer_format || spec.programmerType || "CHIRP";
@@ -734,7 +727,6 @@
     // Naming Format Dropdown & Sample Preview
     const previews = state.activePlan.naming_previews || [];
     const curNaming = recipe.radio_target.naming_format || "CITY_FREQ";
-    $("targetLcdHint").textContent = `Max ${spec.maxNameLength}c LCD`;
     $("lcdColHeader").textContent = `LCD Name (${spec.maxNameLength}c)`;
     $("targetNamingSelect").innerHTML = previews
       .map(
@@ -2270,7 +2262,7 @@
     $("targetBandsRow").addEventListener("change", () => updateCodeplugTarget(false));
 
     // Active Plan Actions
-    $("btnPlanWeather").addEventListener("click", openNwsWeatherModal);
+    $("btnPlanWeather")?.addEventListener("click", openNwsWeatherModal);
     $("btnPlanExpandDmr").addEventListener("click", expandDmrTalkgroups);
     $("btnPlanReport").addEventListener("click", openPlanReportModal);
     $("btnPlanExportCsv").addEventListener("click", exportActiveCsv);

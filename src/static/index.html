@@ -301,7 +301,6 @@
                     <span class="pill pill-blue" id="planModePill">ROUTE_CORRIDOR</span>
                   </div>
                   <div class="plan-actions">
-                    <button type="button" class="btn btn-sm" id="btnPlanWeather" title="Fetch active National Weather Service alerts for this plan's states">⛅ Area Weather</button>
                     <button type="button" class="btn btn-violet btn-sm" id="btnPlanExpandDmr" title="Expand DMR channels across standard talkgroups">Expand DMR</button>
                     <button type="button" class="btn btn-sm" id="btnPlanSaveRecipe" title="Save radio-agnostic YAML recipe">Save Recipe</button>
                     <button type="button" class="btn btn-amber btn-sm" id="btnPlanReport" title="View &amp; print codeplug pocket reference card">Pocket Card / Report</button>
@@ -314,10 +313,8 @@
                       <input type="text" id="exportFilenameInput" class="input input-sm mono export-file-input" aria-label="Export CSV filename" />
                       <button type="button" class="btn btn-success btn-sm" id="btnPlanExportCsv" title="Download CSV &amp; save to ./exports/">⬇ Export CSV</button>
                     </div>
-                    <button type="button" class="btn btn-ghost btn-xs pane-toggle-btn" data-toggle-pane="planSpecsLine" aria-expanded="true" title="Collapse or expand plan specifications">▾ Specs</button>
                   </div>
                 </div>
-                <div class="plan-specs" id="planSpecsLine"></div>
               </section>
 
               <!-- Warnings / Notices Strip -->
@@ -336,10 +333,7 @@
                       <select id="targetRadioSelect" class="select select-sm"></select>
                     </div>
                     <div class="field">
-                      <label for="targetNamingSelect">
-                        <span>Channel Naming Format</span>
-                        <span class="mono" id="targetLcdHint">LCD 8c</span>
-                      </label>
+                      <label for="targetNamingSelect">Channel Naming Format</label>
                       <select id="targetNamingSelect" class="select select-sm"></select>
                     </div>
                     <div class="field">
