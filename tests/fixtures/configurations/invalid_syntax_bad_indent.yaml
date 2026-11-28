@@ -1,7 +1,0 @@
-version: "1.0"
-mode: "ROUTE_CORRIDOR"
-name: "Broken Indentation Plan"
-corridor:
-  waypoints:
-    - "Tyler, TX"
-   - "Shreveport, LA" # Bad indentation

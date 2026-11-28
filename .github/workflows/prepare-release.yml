@@ -1,0 +1,175 @@
+name: Prepare Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semantic version bump type (ignored if custom_version is provided)"
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: "Optional explicit X.Y.Z version (overrides bump, e.g. 0.3.0)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release:
+    name: Prepare Release PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Set up Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Bump version across project files
+        id: bump
+        env:
+          BUMP_KIND: ${{ inputs.bump }}
+          CUSTOM_VERSION: ${{ inputs.custom_version }}
+        run: |
+          CURRENT="$(node scripts/bump-version.mjs --print-current)"
+          if [ -n "${CUSTOM_VERSION}" ]; then
+            NEW_VERSION="$(node scripts/bump-version.mjs --version "${CUSTOM_VERSION}")"
+          else
+            NEW_VERSION="$(node scripts/bump-version.mjs --bump "${BUMP_KIND}")"
+          fi
+          TAG="v${NEW_VERSION}"
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Error: Git tag ${TAG} already exists." >&2
+            exit 1
+          fi
+          node scripts/bump-version.mjs --check
+          echo "current=${CURRENT}" >> "$GITHUB_OUTPUT"
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "branch=release/${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate preview changelog
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          node scripts/generate-changelog.mjs \
+            --version "${NEW_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --output release-preview.md
+          cat release-preview.md
+
+      - name: Create release branch and push commit
+        env:
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
+          git add package.json package-lock.json src/static/app.js src/static/index.html
+          git commit -m "chore(release): prepare ${NEW_TAG}"
+          git push --force-with-lease origin "${BRANCH}"
+
+      - name: Open or update Release PR
+        uses: actions/github-script@v9
+        env:
+          CURRENT_VER: ${{ steps.bump.outputs.current }}
+          NEW_VER: ${{ steps.bump.outputs.version }}
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        with:
+          github-token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const branch = process.env.BRANCH;
+            const newTag = process.env.NEW_TAG;
+            const currentVer = process.env.CURRENT_VER;
+            const newVer = process.env.NEW_VER;
+            const hasReleaseToken = process.env.HAS_RELEASE_TOKEN === 'true';
+            const preview = fs.readFileSync('release-preview.md', 'utf8').trim();
+
+            try {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: 'release',
+                color: '0e8a16',
+                description: 'Merging this PR automatically tags and publishes a GitHub Release',
+              });
+            } catch {
+              // Label already exists
+            }
+
+            const ciNote = hasReleaseToken
+              ? ''
+              : '\n> [!NOTE]\n> Because this PR was opened with the default `GITHUB_TOKEN`, GitHub does not auto-trigger PR checks. Close and reopen this PR (or add a `RELEASE_TOKEN` fine-grained PAT secret) to run required CI checks.\n';
+
+            const body = [
+              `## Release ${newTag}`,
+              '',
+              `Bumps version from \`${currentVer}\` → \`${newVer}\`.`,
+              '',
+              '**What happens when you merge this PR:**',
+              `1. The **Publish Release** workflow automatically tags \`main\` with \`${newTag}\`.`,
+              `2. Standalone Electron installers (Windows NSIS \`.exe\` + Linux \`.AppImage\`), \`CHANGELOG.md\`, and \`SHA256SUMS.txt\` build and smoke-test automatically.`,
+              `3. GitHub Release \`${newTag}\` is published with all release assets.`,
+              ciNote,
+              '### Changelog Preview',
+              '',
+              preview,
+            ].join('\n');
+
+            const existing = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: `${owner}:${branch}`,
+              base: 'main',
+            });
+
+            let prNumber;
+            if (existing.data.length > 0) {
+              const pr = existing.data[0];
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pr.number,
+                title: `chore(release): ${newTag}`,
+                body,
+              });
+              prNumber = pr.number;
+            } else {
+              const created = await github.rest.pulls.create({
+                owner,
+                repo,
+                title: `chore(release): ${newTag}`,
+                head: branch,
+                base: 'main',
+                body,
+              });
+              prNumber = created.data.number;
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: prNumber,
+              labels: ['release'],
+            });
