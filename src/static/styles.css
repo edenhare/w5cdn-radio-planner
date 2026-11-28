@@ -682,6 +682,29 @@ button, input, select, textarea {
   box-shadow: 0 0 6px var(--accent-emerald);
 }
 
+.lookup-source-pill.up-to-date::before {
+  background: var(--accent-emerald);
+  box-shadow: 0 0 6px var(--accent-emerald);
+}
+
+.lookup-source-pill.update-available {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+  box-shadow: 0 0 10px var(--accent-amber-bg);
+}
+
+.lookup-source-pill.update-available::before {
+  background: var(--accent-amber);
+  box-shadow: 0 0 6px var(--accent-amber);
+}
+
+.update-card-highlight {
+  border-color: var(--accent-emerald) !important;
+  box-shadow: 0 0 0 2px var(--accent-emerald-bg);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
 /* Digital Radio Target Readout Strip (VFO equivalent) */
 .vfo-cluster {
   display: flex;

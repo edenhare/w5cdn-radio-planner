@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,14 @@ import { NwsAlertsService } from "../../src/electron/main/providers/nws";
 import { RadioIdProvider } from "../../src/electron/main/providers/radioId";
 import { RepeaterBookProvider } from "../../src/electron/main/providers/repeaterbook";
 import { ApiRouter } from "../../src/electron/main/router";
+import {
+  isNewerVersion,
+  parseSemver,
+  parseSha256Sums,
+  selectReleaseAsset,
+  validateDownloadUrl,
+  verifySha256,
+} from "../../src/electron/main/updater";
 import { WebWorkspace } from "../../src/electron/main/workspace";
 
 describe("Phase 3: Online Providers (Mocked Fetch), Session Persistence & Router Edge Cases", () => {
@@ -274,6 +283,108 @@ describe("Phase 3: Online Providers (Mocked Fetch), Session Persistence & Router
       expect((await call("GET", "/api/update/check")).status).toBe(200);
       expect((await call("POST", "/api/client/unload")).status).toBe(200);
       expect((await call("GET", "/api/does-not-exist")).status).toBe(404);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies dual-mode self-updater asset selection, SHA-256 verification, pre-update backup, and /api/update/apply", async () => {
+    expect(parseSemver("v0.2.1")).toEqual([0, 2, 1]);
+    expect(isNewerVersion("v0.2.1", "0.2.0")).toBe(true);
+    expect(isNewerVersion("v0.2.0", "0.2.0")).toBe(false);
+    expect(() => validateDownloadUrl("https://evil.example.com/setup.exe")).toThrow();
+    expect(validateDownloadUrl("https://github.com/edenhare/w5cdn-radio-planner/releases/download/v0.2.1/SHA256SUMS.txt")).toContain(
+      "https://github.com/",
+    );
+
+    const sampleAssets = [
+      {
+        name: "W5CDN.RadioPlanner.Setup.0.2.1.exe",
+        browser_download_url:
+          "https://github.com/edenhare/w5cdn-radio-planner/releases/download/v0.2.1/W5CDN.RadioPlanner.Setup.0.2.1.exe",
+      },
+      {
+        name: "W5CDN.RadioPlanner-0.2.1.AppImage",
+        browser_download_url:
+          "https://github.com/edenhare/w5cdn-radio-planner/releases/download/v0.2.1/W5CDN.RadioPlanner-0.2.1.AppImage",
+      },
+      {
+        name: "SHA256SUMS.txt",
+        browser_download_url:
+          "https://github.com/edenhare/w5cdn-radio-planner/releases/download/v0.2.1/SHA256SUMS.txt",
+      },
+    ];
+
+    const winSel = selectReleaseAsset(sampleAssets, "win32");
+    expect(winSel.asset?.name).toBe("W5CDN.RadioPlanner.Setup.0.2.1.exe");
+    expect(winSel.checksum?.name).toBe("SHA256SUMS.txt");
+
+    const linSel = selectReleaseAsset(sampleAssets, "linux");
+    expect(linSel.asset?.name).toBe("W5CDN.RadioPlanner-0.2.1.AppImage");
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rp-updater-"));
+    try {
+      const dummyPayload = Buffer.from("FAKE_INSTALLER_BINARY_PAYLOAD_0.2.1", "utf-8");
+      const dummyHash = crypto.createHash("sha256").update(dummyPayload).digest("hex");
+      const sumsText = [
+        `${dummyHash}  W5CDN.RadioPlanner.Setup.0.2.1.exe`,
+        `${dummyHash}  W5CDN.RadioPlanner-0.2.1.AppImage`,
+      ].join("\n");
+      const parsedSums = parseSha256Sums(sumsText);
+      expect(parsedSums["W5CDN.RadioPlanner.Setup.0.2.1.exe"]).toBe(dummyHash);
+
+      const ws = new WebWorkspace({ baseDir: tmpDir, loadPersistedSession: false, offlineOnly: false });
+      const router = new ApiRouter(ws, "0.2.0");
+      router.updateFetchFn = async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/releases/latest")) {
+          return new Response(
+            JSON.stringify({
+              tag_name: "v0.2.1",
+              name: "W5CDN RadioPlanner v0.2.1",
+              html_url: "https://github.com/edenhare/w5cdn-radio-planner/releases/tag/v0.2.1",
+              body: "### Changes\n- Self-updater & UI fixes",
+              assets: sampleAssets,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.endsWith("SHA256SUMS.txt")) {
+          return new Response(sumsText, { status: 200 });
+        }
+        return new Response(dummyPayload, { status: 200 });
+      };
+
+      const prevMode = process.env.RADIOPLANNER_INSTALL_MODE;
+      process.env.RADIOPLANNER_INSTALL_MODE = "standalone";
+      try {
+        const chkRes = await router.handle({
+          method: "GET",
+          pathname: "/api/update/check",
+          query: new URLSearchParams(),
+        });
+        expect(chkRes.status).toBe(200);
+        const chkData = JSON.parse(String(chkRes.body)) as Record<string, unknown>;
+        expect(chkData.update_available).toBe(true);
+        expect(chkData.can_self_update).toBe(true);
+        expect(chkData.latest_version).toBe("0.2.1");
+
+        const applyRes = await router.handle({
+          method: "POST",
+          pathname: "/api/update/apply",
+          query: new URLSearchParams(),
+        });
+        expect(applyRes.status).toBe(200);
+        const applyData = JSON.parse(String(applyRes.body)) as Record<string, unknown>;
+        expect(applyData.ok).toBe(true);
+        expect(applyData.backup_created).toBe(true);
+        expect(fs.existsSync(path.join(tmpDir, "radioplanner.pre_update.bak"))).toBe(true);
+        const stagedInstaller = String(applyData.installer_path);
+        expect(verifySha256(stagedInstaller, dummyHash)).toBe(true);
+      } finally {
+        if (prevMode === undefined) delete process.env.RADIOPLANNER_INSTALL_MODE;
+        else process.env.RADIOPLANNER_INSTALL_MODE = prevMode;
+      }
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

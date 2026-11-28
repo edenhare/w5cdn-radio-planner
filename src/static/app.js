@@ -1730,8 +1730,7 @@
     $("prefQrzStatus").textContent = state.prefs.qrzConfigured ? "Configured" : "Not Set";
     $("prefClearQrzPass").checked = false;
     $("qrzTestBanner").classList.add("hidden");
-    $("updateVersionPill").textContent = `v${state.appVersion}`;
-    $("updateModePill").textContent = state.installMode || "source";
+    renderUpdateState(state.updateInfo);
     if ($("configDirPath")) {
       $("configDirPath").textContent = state.prefs.config_dir || state.configDir || "(default config folder)";
     }
@@ -1937,9 +1936,31 @@
 
   function renderUpdateState(info) {
     state.updateInfo = info;
+    const curVer = info?.current_version || state.appVersion || "0.2.1";
+    const mode = info?.install_mode || state.installMode || "source";
+    const modeLabel =
+      {
+        standalone: "STANDALONE",
+        electron: "STANDALONE",
+        git: "GIT CHECKOUT",
+        source: "SOURCE ARCHIVE",
+      }[mode] || String(mode).toUpperCase();
+
+    if ($("updateVersionPill")) $("updateVersionPill").textContent = `v${curVer}`;
+    if ($("updateModePill")) $("updateModePill").textContent = modeLabel;
+
+    const topVerEl = $("rpVersionPill");
+    if (topVerEl) {
+      const hasUpdate = Boolean(info && info.update_available);
+      topVerEl.textContent = `v${curVer}`;
+      topVerEl.classList.toggle("update-available", hasUpdate);
+      topVerEl.classList.toggle("up-to-date", Boolean(info && !info.update_available));
+      topVerEl.title = hasUpdate
+        ? `W5CDN RadioPlanner v${curVer} — Update v${info.latest_version} available! Click to open Application Updates`
+        : `Running W5CDN RadioPlanner v${curVer} (${modeLabel.toLowerCase()}) — click to check for updates`;
+    }
+
     if (!info) return;
-    $("updateVersionPill").textContent = `v${info.current_version || state.appVersion}`;
-    $("updateModePill").textContent = info.install_mode || state.installMode;
     $("updateStatusText").textContent = info.message || "Update status checked.";
 
     const link = $("updateReleaseLink");
@@ -1951,25 +1972,67 @@
     }
 
     const notes = $("updateReleaseNotes");
-    if (info.release_notes) {
+    if (info.update_available && info.release_notes) {
       notes.textContent = info.release_notes;
       notes.classList.remove("hidden");
     } else {
+      notes.textContent = "";
       notes.classList.add("hidden");
     }
 
     const canInstall = Boolean(info.update_available && info.can_self_update);
-    $("btnApplyUpdate").classList.toggle("hidden", !canInstall);
+    const applyBtn = $("btnApplyUpdate");
+    if (applyBtn) {
+      applyBtn.classList.toggle("hidden", !canInstall);
+      if (canInstall) {
+        const hasInstallerAsset = Boolean(info.asset_url && info.checksum_url);
+        applyBtn.textContent =
+          mode === "standalone" || mode === "electron" || hasInstallerAsset
+            ? `Download & Install v${info.latest_version}`
+            : `Update to v${info.latest_version}`;
+      }
+    }
+
     const banner = $("btnUpdateBanner");
-    if (info.update_available) {
-      banner.textContent = `↑ v${info.latest_version} Available`;
-      banner.classList.remove("hidden");
+    if (banner) {
+      if (info.update_available) {
+        banner.textContent = `↑ v${info.latest_version} Available`;
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+  }
+
+  function openUpdatesInPreferences() {
+    openPreferencesModal("system");
+    if (state.updateInfo) {
+      renderUpdateState(state.updateInfo);
     } else {
-      banner.classList.add("hidden");
+      checkAppUpdates(false);
+    }
+    const card = $("updateSectionCard");
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.remove("update-card-highlight");
+      void card.offsetWidth;
+      card.classList.add("update-card-highlight");
+      setTimeout(() => card.classList.remove("update-card-highlight"), 2200);
+    }
+    const applyBtn = $("btnApplyUpdate");
+    if (applyBtn && !applyBtn.classList.contains("hidden") && !applyBtn.disabled) {
+      applyBtn.focus({ preventScroll: true });
+    } else {
+      $("btnCheckUpdate")?.focus({ preventScroll: true });
     }
   }
 
   async function checkAppUpdates(quiet = false) {
+    const btn = $("btnCheckUpdate");
+    if (btn && !quiet) {
+      btn.disabled = true;
+      btn.textContent = "Checking...";
+    }
     if (!quiet) $("updateStatusText").textContent = "Checking GitHub Releases...";
     try {
       const info = await api("/api/update/check");
@@ -1980,24 +2043,53 @@
         $("updateStatusText").textContent = `Update check failed: ${err.message}`;
         toast(`Update check failed: ${err.message}`, "error");
       }
+    } finally {
+      if (btn && !quiet) {
+        btn.disabled = false;
+        btn.textContent = "Check for Updates";
+      }
     }
   }
 
   async function applyAppUpdate() {
-    if (!window.confirm("Install the latest W5CDN RadioPlanner update now? A pre-update configuration backup will be saved first.")) {
+    const info = state.updateInfo;
+    const mode = info?.install_mode || state.installMode || "source";
+    const hasInstallerAsset = Boolean(info?.asset_url && info?.checksum_url);
+    const useInstaller = mode === "standalone" || mode === "electron" || hasInstallerAsset;
+    const targetVer = info?.latest_version ? `v${info.latest_version}` : "the latest version";
+    const promptText = useInstaller
+      ? `Download, SHA-256 verify, and install ${targetVer}?\n\nA backup (radioplanner.pre_update.bak) will be created automatically, and W5CDN RadioPlanner will close to launch the installer.`
+      : `Fast-forward this Git checkout to ${targetVer}?\n\nA backup (radioplanner.pre_update.bak) will be created automatically before pulling.`;
+    if (!window.confirm(promptText)) {
       return;
     }
-    $("btnApplyUpdate").disabled = true;
-    $("updateStatusText").textContent = "Applying update & verifying integrity...";
+    const applyBtn = $("btnApplyUpdate");
+    const checkBtn = $("btnCheckUpdate");
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = useInstaller ? "Downloading & Verifying..." : "Updating...";
+    }
+    if (checkBtn) checkBtn.disabled = true;
+    $("updateStatusText").textContent = "Applying update & verifying SHA-256 integrity...";
     try {
       const res = await api("/api/update/apply", { method: "POST" });
       $("updateStatusText").textContent = res.message || "Update applied. Restarting...";
+      $("btnUpdateBanner")?.classList.add("hidden");
+      $("rpVersionPill")?.classList.remove("update-available");
+      $("rpVersionPill")?.classList.add("up-to-date");
       toast(res.message || "Update applied", "success");
+      if (applyBtn) {
+        applyBtn.textContent = res.mode === "standalone" ? "Restarting..." : "Updated — Restart App";
+      }
     } catch (err) {
       $("updateStatusText").textContent = `Update failed: ${err.message}`;
       toast(`Update failed: ${err.message}`, "error");
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        renderUpdateState(state.updateInfo);
+      }
     } finally {
-      $("btnApplyUpdate").disabled = false;
+      if (checkBtn) checkBtn.disabled = false;
     }
   }
 
@@ -2097,9 +2189,16 @@
   // -------------------------------------------------------------------------
   function bindEvents() {
     // Topbar
+    $("rpVersionPill")?.addEventListener("click", openUpdatesInPreferences);
+    $("rpVersionPill")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openUpdatesInPreferences();
+      }
+    });
     $("operatorCallBadge").addEventListener("click", () => openPreferencesModal("operator"));
     $("apiStatusPill").addEventListener("click", () => openPreferencesModal("api"));
-    $("btnUpdateBanner").addEventListener("click", () => openPreferencesModal("system"));
+    $("btnUpdateBanner").addEventListener("click", openUpdatesInPreferences);
     $("vfoCluster").addEventListener("click", () => $("targetRadioSelect").focus());
     $("btnTopAssemble").addEventListener("click", assemblePlan);
     $("btnOpenPanels").addEventListener("click", () => $("panelsModalBackdrop").classList.remove("hidden"));

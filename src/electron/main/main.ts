@@ -321,6 +321,9 @@ app.whenReady().then(async () => {
     offlineOnly: isSmokeTest,
   });
   router = new ApiRouter(workspace);
+  router.onUpdateRestartRequested = () => {
+    app.quit();
+  };
   const staticDir = resolveStaticDir();
 
   registerProtocolHandler(router, staticDir);

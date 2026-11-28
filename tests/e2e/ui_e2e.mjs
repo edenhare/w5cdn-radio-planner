@@ -118,6 +118,16 @@ async function run() {
     await page.click('#prefsForm button[type="submit"]');
     await page.waitForSelector("#prefsModalBackdrop", { state: "hidden" });
 
+    // Verify clicking #rpVersionPill opens Preferences directly to the Backup & Updates tab
+    await page.click("#rpVersionPill");
+    await page.waitForSelector("#prefsModalBackdrop:not(.hidden)");
+    const systemTabVisible = await page.evaluate(
+      () => !document.getElementById("prefTabSystem").classList.contains("hidden"),
+    );
+    assert.ok(systemTabVisible, "Clicking #rpVersionPill should open Preferences directly to Backup & Updates");
+    await page.click("#btnCancelPrefs");
+    await page.waitForSelector("#prefsModalBackdrop", { state: "hidden" });
+
     const activeTheme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
     assert.equal(activeTheme, "amber-crt", "Theme did not persist to amber-crt");
 
