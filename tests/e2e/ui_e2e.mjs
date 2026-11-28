@@ -64,10 +64,76 @@ async function run() {
     const activeTheme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
     assert.equal(activeTheme, "amber-crt", "Theme did not persist to amber-crt");
 
+    // 6. Validate Sample LCD and panel objects stay inside panels across font sizes (11px..22px UI, 12px..26px LCD)
+    for (const [uiSize, lcdSize] of [
+      [11, 12],
+      [14, 15],
+      [18, 22],
+      [22, 26],
+    ]) {
+      const layoutCheck = await page.evaluate(
+        ([uSize, lSize]) => {
+          const root = document.documentElement;
+          root.style.setProperty("--font-size", `${uSize}px`);
+          root.style.setProperty("--callsign-size", `${lSize}px`);
+
+          const targetBar = document.getElementById("targetBar").getBoundingClientRect();
+          const sampleLcd = document.getElementById("targetNamingSample").getBoundingClientRect();
+          const mainPanel = document.querySelector("main.main").getBoundingClientRect();
+          const builderPanel = document.getElementById("panelBuilder").getBoundingClientRect();
+          const builderModeSeg = document
+            .querySelector('#panelBuilder [aria-label="Operating Mode"]')
+            .getBoundingClientRect();
+          const accessGrid = document.querySelector("#builderAccessSection .access-grid").getBoundingClientRect();
+          const summaryPanel = document.getElementById("panelSummary").getBoundingClientRect();
+          const summaryBands = document.getElementById("summaryBandBreakdown").getBoundingClientRect();
+
+          return {
+            uSize,
+            lSize,
+            sampleFitsTargetBar:
+              sampleLcd.right <= targetBar.right + 1 && sampleLcd.left >= targetBar.left - 1,
+            targetBarFitsMain:
+              targetBar.right <= mainPanel.right + 1 && targetBar.left >= mainPanel.left - 1,
+            modeFitsBuilder:
+              builderModeSeg.right <= builderPanel.right + 1 &&
+              builderModeSeg.left >= builderPanel.left - 1,
+            accessFitsBuilder:
+              accessGrid.right <= builderPanel.right + 1 && accessGrid.left >= builderPanel.left - 1,
+            bandsFitSummary:
+              summaryBands.right <= summaryPanel.right + 1 &&
+              summaryBands.left >= summaryPanel.left - 1,
+          };
+        },
+        [uiSize, lcdSize],
+      );
+
+      assert.ok(
+        layoutCheck.sampleFitsTargetBar,
+        `Sample LCD overflowed targetBar at font=${uiSize}px lcd=${lcdSize}px: ${JSON.stringify(layoutCheck)}`,
+      );
+      assert.ok(
+        layoutCheck.targetBarFitsMain,
+        `targetBar overflowed main panel at font=${uiSize}px lcd=${lcdSize}px: ${JSON.stringify(layoutCheck)}`,
+      );
+      assert.ok(
+        layoutCheck.modeFitsBuilder,
+        `Operating mode buttons overflowed Plan Builder at font=${uiSize}px: ${JSON.stringify(layoutCheck)}`,
+      );
+      assert.ok(
+        layoutCheck.accessFitsBuilder,
+        `Access filter checkboxes overflowed Plan Builder at font=${uiSize}px: ${JSON.stringify(layoutCheck)}`,
+      );
+      assert.ok(
+        layoutCheck.bandsFitSummary,
+        `Band breakdown cards overflowed Plan Summary at font=${uiSize}px: ${JSON.stringify(layoutCheck)}`,
+      );
+    }
+
     assert.equal(pageErrors.length, 0, `Page errors detected: ${pageErrors.join("; ")}`);
     assert.equal(consoleErrors.length, 0, `Console errors detected: ${consoleErrors.join("; ")}`);
 
-    // 6. Verify strict YAML validation rejects malformed radio YAML over HTTP API
+    // 7. Verify strict YAML validation rejects malformed radio YAML over HTTP API
     const badHttp = await fetch(`${srv.url}/api/radios/import`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

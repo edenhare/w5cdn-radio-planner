@@ -165,7 +165,7 @@
                 </div>
 
                 <form id="plannerForm" autocomplete="off">
-                  <div class="dock-panel-body dock-panel-body-flush">
+                  <div class="builder-form-stack">
                     <div class="field">
                       <label>Operating Mode</label>
                       <div class="segmented" role="group" aria-label="Operating Mode">
@@ -297,12 +297,12 @@
                     <button type="button" class="btn btn-sm" id="btnPlanSaveRecipe" title="Save radio-agnostic YAML recipe">Save Recipe</button>
                     <button type="button" class="btn btn-amber btn-sm" id="btnPlanReport" title="View &amp; print codeplug pocket reference card">Pocket Card / Report</button>
                     <div class="export-inline-group">
-                      <select id="exportProgrammerSelect" class="select select-sm" style="width:130px;" aria-label="Export CSV Format">
+                      <select id="exportProgrammerSelect" class="select select-sm export-prog-select" aria-label="Export CSV Format">
                         <option value="CHIRP">CHIRP CSV</option>
                         <option value="RT_SYSTEMS">RT Systems CSV</option>
                         <option value="GENERIC_CSV">Generic CSV</option>
                       </select>
-                      <input type="text" id="exportFilenameInput" class="input input-sm mono" style="width:190px;" aria-label="Export CSV filename" />
+                      <input type="text" id="exportFilenameInput" class="input input-sm mono export-file-input" aria-label="Export CSV filename" />
                       <button type="button" class="btn btn-success btn-sm" id="btnPlanExportCsv" title="Download CSV &amp; save to ./exports/">⬇ Export CSV</button>
                     </div>
                   </div>

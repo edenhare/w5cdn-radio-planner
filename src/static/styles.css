@@ -915,10 +915,10 @@ button, input, select, textarea {
 }
 
 /* =========================================================================
-   Cockpit Body: [Icon Rail 62px] [5-Zone Dockable Stage]
+   Cockpit Body: [Icon Rail] [5-Zone Dockable Stage]
    ========================================================================= */
 .workspace {
-  --rail-w: 62px;
+  --rail-w: clamp(62px, 4.4em, 88px);
   position: relative;
   display: grid;
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
@@ -951,7 +951,7 @@ button, input, select, textarea {
 
 .rail-btn {
   position: relative;
-  width: 52px;
+  width: calc(var(--rail-w) - 10px);
   min-height: 44px;
   padding: 5px 2px 4px;
   border-radius: var(--radius);
@@ -968,12 +968,15 @@ button, input, select, textarea {
 }
 
 .rail-label {
-  font-size: clamp(9px, 0.65em, 12px);
+  font-size: clamp(9px, 0.63em, 12px);
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  line-height: 1;
+  line-height: 1.05;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rail-btn:hover {
@@ -1203,12 +1206,12 @@ button, input, select, textarea {
 
 .dock-zone.dock-vertical {
   flex-direction: column;
-  flex: 0 0 var(--dock-right-w, clamp(280px, 27vw, 430px));
+  flex: 0 0 var(--dock-right-w, clamp(280px, 24em, 480px));
   min-width: 220px;
 }
 
 .dock-zone.dock-left {
-  flex: 0 0 var(--dock-left-w, clamp(290px, 25vw, 390px));
+  flex: 0 0 var(--dock-left-w, clamp(290px, 22em, 440px));
   min-width: 230px;
 }
 
@@ -1283,6 +1286,13 @@ button, input, select, textarea {
 .dock-panel-body-flush {
   padding: 0;
   gap: 0;
+}
+
+.builder-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 
 .dock-mini-group {
@@ -1468,10 +1478,21 @@ button, input, select, textarea {
 }
 
 .target-bar-top {
-  display: grid;
-  grid-template-columns: minmax(210px, 1.3fr) minmax(200px, 1.1fr) auto;
-  gap: 8px;
-  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: flex-end;
+}
+
+.target-bar-top > .field {
+  flex: 1 1 180px;
+  min-width: 150px;
+}
+
+.target-bar-top > .field:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .target-bands-row {
@@ -1521,6 +1542,20 @@ button, input, select, textarea {
   align-items: center;
   gap: 5px;
   flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.export-prog-select {
+  width: auto;
+  min-width: 8.5em;
+  flex: 1 1 8.5em;
+}
+
+.export-file-input {
+  width: auto;
+  min-width: 11em;
+  flex: 1 1 12em;
 }
 
 /* Form Controls */
@@ -1624,9 +1659,14 @@ button, input, select, textarea {
 }
 
 .access-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.access-grid .check-card {
+  flex: 1 1 82px;
+  min-width: 0;
 }
 
 .check-card {
@@ -1640,6 +1680,7 @@ button, input, select, textarea {
   font-size: 0.84em;
   font-weight: 600;
   cursor: pointer;
+  min-width: 0;
 }
 
 .check-card input {
@@ -1752,7 +1793,7 @@ button, input, select, textarea {
 
 table.channels-table {
   width: 100%;
-  min-width: 980px;
+  min-width: max(980px, 70em);
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1797,19 +1838,24 @@ table.channels-table tbody td {
   white-space: nowrap;
 }
 
-.col-chk { width: 34px; text-align: center; }
-.col-slot { width: 52px; text-align: right; color: var(--accent-blue); font-weight: 800; }
-.col-badges { width: 106px; }
-.col-lcd { width: 152px; }
-.col-call { width: 92px; }
-.col-freq { width: 92px; text-align: right; }
-.col-dup { width: 84px; text-align: center; }
-.col-tone { width: 102px; }
+.col-chk { width: 2.5em; text-align: center; }
+.col-slot { width: 3.8em; text-align: right; color: var(--accent-blue); font-weight: 800; }
+.col-badges { width: 7.8em; }
+.col-lcd { width: clamp(152px, calc(var(--callsign-size) * 10.5), 275px); }
+.col-call { width: 6.8em; }
+.col-freq { width: 6.8em; text-align: right; }
+.col-dup { width: 6.2em; text-align: center; }
+.col-tone { width: 7.4em; }
 .col-loc { width: auto; }
-.col-act { width: 112px; text-align: right; }
+.col-act { width: 11.2em; text-align: right; }
 
 .lcd-badge {
   display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: var(--callsign-size);
@@ -1873,7 +1919,7 @@ table.channels-table tbody td {
 
 .summary-band-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9.5em, 1fr));
   gap: 6px;
 }
 
@@ -1881,6 +1927,8 @@ table.channels-table tbody td {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
   padding: 5px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -2088,6 +2136,8 @@ table.tpl-sheet-table td {
 /* Segmented Controls, Tabs, Panels Manager & Theme Swatches */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -2096,8 +2146,9 @@ table.tpl-sheet-table td {
 }
 
 .seg-btn {
-  flex: 1;
-  padding: 5px 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -2106,6 +2157,8 @@ table.tpl-sheet-table td {
   font-size: 0.86em;
   cursor: pointer;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .seg-btn:hover { color: var(--text-primary); }
@@ -2516,16 +2569,9 @@ table.tpl-sheet-table td {
 }
 
 /* Responsive Cockpit Scaling */
-@media (max-width: 1200px) {
-  .target-bar-top {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 @media (max-width: 1100px) {
   .brand-title { display: none; }
-  .workspace { --rail-w: 54px; }
-  .rail-btn { width: 46px; }
+  .workspace { --rail-w: clamp(54px, 3.9em, 74px); }
   .dock-zone.dock-vertical, .dock-zone.dock-left { flex: 0 0 clamp(220px, 28vw, 310px); }
   .clock-date { display: none; }
 }
@@ -2537,7 +2583,6 @@ table.tpl-sheet-table td {
   .stage-middle { flex-direction: column; }
   .dock-zone.dock-vertical, .dock-zone.dock-left { flex: 0 0 240px; flex-direction: row; }
   .panels-grid-row,
-  .target-bar-top,
   .form-grid-3,
   .form-grid-2,
   .shortcuts-grid {
