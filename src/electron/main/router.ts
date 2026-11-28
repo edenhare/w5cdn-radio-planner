@@ -48,6 +48,14 @@ import {
   identifyStatesForProximity,
   identifyStatesForRoute,
 } from "./providers/repeaterbook";
+import {
+  UpdateError,
+  applyGitUpdate,
+  applyStandaloneUpdate,
+  checkForUpdate,
+  detectInstallMode,
+  safeUpdateErrorMessage,
+} from "./updater";
 import { CodeplugState, WebWorkspace, channelDeleteKey } from "./workspace";
 
 export interface RouterRequest {
@@ -479,19 +487,11 @@ function buildPocketReportText(
   return `${lines.join("\n")}\n`;
 }
 
-function compareSemver(a: string, b: string): number {
-  const pa = a.replace(/^v/i, "").split(".").map((x) => parseInt(x, 10) || 0);
-  const pb = b.replace(/^v/i, "").split(".").map((x) => parseInt(x, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
 export class ApiRouter {
   readonly workspace: WebWorkspace;
   readonly appVersion: string;
+  updateFetchFn?: typeof fetch;
+  onUpdateRestartRequested?: () => void;
 
   constructor(workspace: WebWorkspace, appVersion = readAppVersion()) {
     this.workspace = workspace;
@@ -648,7 +648,7 @@ export class ApiRouter {
         return jsonResponse({
           app_title: APP_TITLE,
           version: this.appVersion,
-          install_mode: "electron",
+          install_mode: detectInstallMode(),
           utc_now: utcNowIso(),
           preferences: this.serializePreferences(),
           radios: this.serializeRadios(),
@@ -1101,19 +1101,13 @@ export class ApiRouter {
         });
       }
 
-      // ─── Update Check (GitHub Releases) ───────────────────────────────────
+      // ─── Update Check & Apply (GitHub Releases) ───────────────────────────
       if (method === "GET" && p === "/api/update/check") {
         return jsonResponse(await this.handleUpdateCheck());
       }
 
       if (method === "POST" && p === "/api/update/apply") {
-        return jsonResponse(
-          {
-            ok: false,
-            detail: "Download the latest W5CDN RadioPlanner installer from GitHub Releases to upgrade.",
-          },
-          400,
-        );
+        return jsonResponse(await this.handleUpdateApply());
       }
 
       return jsonResponse({ detail: "API endpoint not found." }, 404);
@@ -2168,53 +2162,90 @@ export class ApiRouter {
   }
 
   private async handleUpdateCheck(): Promise<Record<string, unknown>> {
-    if (this.workspace.offlineOnly) {
+    const res = await checkForUpdate({
+      currentVersion: this.appVersion,
+      offlineOnly: this.workspace.offlineOnly,
+      fetchFn: this.updateFetchFn,
+    });
+    return { ...res };
+  }
+
+  private async handleUpdateApply(): Promise<Record<string, unknown>> {
+    const info = await checkForUpdate({
+      currentVersion: this.appVersion,
+      offlineOnly: this.workspace.offlineOnly,
+      fetchFn: this.updateFetchFn,
+    });
+
+    if (!info.update_available) {
       return {
-        current_version: this.appVersion,
-        latest_version: this.appVersion,
-        update_available: false,
-        install_mode: "electron",
-        message: "Offline mode — update check skipped.",
+        ok: true,
+        mode: info.install_mode,
+        restart_required: false,
+        message: info.message || `W5CDN RadioPlanner v${this.appVersion} is already up to date.`,
       };
     }
+
     try {
-      const res = await fetch("https://api.github.com/repos/edenhare/w5cdn-radio-planner/releases/latest", {
-        headers: {
-          "User-Agent": `W5CDN-RadioPlanner/${this.appVersion}`,
-          Accept: "application/vnd.github+json",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!res.ok) {
-        return {
-          current_version: this.appVersion,
-          latest_version: this.appVersion,
-          update_available: false,
-          install_mode: "electron",
-          message: `Release check returned HTTP ${res.status}.`,
-        };
+      if (info.asset_url && info.checksum_url && (info.install_mode === "standalone" || info.install_mode === "source")) {
+        return await applyStandaloneUpdate({
+          workspace: this.workspace,
+          currentVersion: this.appVersion,
+          assetName: info.asset_name,
+          assetUrl: info.asset_url,
+          checksumUrl: info.checksum_url,
+          fetchFn: this.updateFetchFn,
+          spawnHelper: !this.workspace.offlineOnly && process.env.VITEST === undefined,
+          onRestartRequested: this.onUpdateRestartRequested,
+        });
       }
-      const data = (await res.json()) as { tag_name?: string; html_url?: string };
-      const latest = String(data.tag_name || this.appVersion).replace(/^v/i, "");
-      const updateAvailable = compareSemver(latest, this.appVersion) > 0;
-      return {
-        current_version: this.appVersion,
-        latest_version: latest,
-        update_available: updateAvailable,
-        release_url: sanitizeHttpUrl(data.html_url) ?? null,
-        install_mode: "electron",
-        message: updateAvailable
-          ? `Version v${latest} is available on GitHub Releases.`
-          : `You are running the latest version (v${this.appVersion}).`,
-      };
-    } catch {
-      return {
-        current_version: this.appVersion,
-        latest_version: this.appVersion,
-        update_available: false,
-        install_mode: "electron",
-        message: "Could not reach GitHub Releases (offline).",
-      };
+
+      if (info.install_mode === "git") {
+        try {
+          return await applyGitUpdate({
+            workspace: this.workspace,
+            currentVersion: this.appVersion,
+          });
+        } catch (gitErr) {
+          // Fall back to downloading the verified standalone release installer if git pull cannot be used
+          if (info.asset_url && info.checksum_url) {
+            return await applyStandaloneUpdate({
+              workspace: this.workspace,
+              currentVersion: this.appVersion,
+              assetName: info.asset_name,
+              assetUrl: info.asset_url,
+              checksumUrl: info.checksum_url,
+              fetchFn: this.updateFetchFn,
+              spawnHelper: !this.workspace.offlineOnly && process.env.VITEST === undefined,
+              onRestartRequested: this.onUpdateRestartRequested,
+            });
+          }
+          throw gitErr;
+        }
+      }
+
+      if (info.asset_url && info.checksum_url) {
+        return await applyStandaloneUpdate({
+          workspace: this.workspace,
+          currentVersion: this.appVersion,
+          assetName: info.asset_name,
+          assetUrl: info.asset_url,
+          checksumUrl: info.checksum_url,
+          fetchFn: this.updateFetchFn,
+          spawnHelper: !this.workspace.offlineOnly && process.env.VITEST === undefined,
+          onRestartRequested: this.onUpdateRestartRequested,
+        });
+      }
+    } catch (err) {
+      if (err instanceof UpdateError) {
+        throw new ApiError(400, safeUpdateErrorMessage(err));
+      }
+      throw err;
     }
+
+    throw new ApiError(
+      400,
+      "No matching standalone installer or SHA256SUMS.txt found on the latest GitHub Release.",
+    );
   }
 }
