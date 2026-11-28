@@ -805,6 +805,16 @@ export class ApiRouter {
         return jsonResponse(await tester.testQrzLogin());
       }
 
+      if (method === "POST" && p === "/api/preferences/test-repeaterbook") {
+        const body = parseJsonBody(req.bodyText);
+        const tokens = this.workspace.prefsMgr.tokens;
+        const key =
+          typeof body.repeaterBookApiKey === "string" && body.repeaterBookApiKey.trim()
+            ? cleanSingleLine(body.repeaterBookApiKey, 256)
+            : tokens.repeaterBookApiKey || "";
+        return jsonResponse(await this.workspace.repeaterProvider.testApiKey(key));
+      }
+
       // ─── NWS Alerts ───────────────────────────────────────────────────────
       if (method === "GET" && p === "/api/nws/plan-alerts") {
         const rawStates = (req.query.get("states") || "").trim();

@@ -79,10 +79,15 @@ async function run() {
     assert.ok(await page.locator("#btnImportRadioYaml").isVisible(), "Import YAML button missing");
     assert.ok((await page.locator('#radiosList [data-radio-action="export"]').count()) >= 8, "Radio YAML export buttons missing");
 
-    // 5. Switch theme via Preferences modal & verify hand-edit config section
+    // 5. Switch theme via Preferences modal, test RepeaterBook API Key button & verify hand-edit config section
     await page.click("#btnOpenPrefs");
     await page.waitForSelector("#prefsModalBackdrop:not(.hidden)");
     await page.click('[data-theme-pick="amber-crt"]');
+    await page.click('[data-pref-tab="api"]');
+    await page.waitForSelector("#btnTestRbKey");
+    await page.fill("#prefRbKey", "test-repeaterbook-token");
+    await page.click("#btnTestRbKey");
+    await page.waitForSelector("#rbTestBanner.ok");
     await page.click('[data-pref-tab="system"]');
     await page.waitForSelector("#btnReloadConfigs");
     await page.click('#prefsForm button[type="submit"]');

@@ -172,6 +172,20 @@ describe("Phase 3: Online Providers (Mocked Fetch), Session Persistence & Router
       const cachedFiles = rb.listCachedStateFiles();
       expect(cachedFiles.length).toBe(1);
       expect(cachedFiles[0].state).toBe("TX");
+
+      // Test RepeaterBook API key verification (empty key, valid key, 401 rejected key)
+      expect((await rb.testApiKey("")).ok).toBe(false);
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ results: [{ Frequency: "146.9400", Callsign: "W3DEL" }] }), { status: 200 }),
+      );
+      const validKeyTest = await rb.testApiKey("valid-rb-token");
+      expect(validKeyTest.ok).toBe(true);
+      expect(validKeyTest.count).toBe(1);
+
+      fetchMock.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
+      const badKeyTest = await rb.testApiKey("invalid-rb-token");
+      expect(badKeyTest.ok).toBe(false);
+      expect(badKeyTest.message).toContain("401");
     } finally {
       fs.rmSync(tmpCache, { recursive: true, force: true });
     }

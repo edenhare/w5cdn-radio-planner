@@ -1671,6 +1671,7 @@
     $("prefRbKey").value = "";
     $("prefRbKeyStatus").textContent = state.prefs.repeaterBookApiKeySet ? "Configured" : "Not Set";
     $("prefClearRbKey").checked = false;
+    $("rbTestBanner")?.classList.add("hidden");
     $("prefRadioIdUser").value = state.prefs.radioIdUsername || "";
     $("prefRadioIdKey").value = "";
     $("prefRadioIdKeyStatus").textContent = state.prefs.radioIdApiKeySet ? "Configured" : "Not Set";
@@ -1791,6 +1792,27 @@
   function openNwsWeatherModal() {
     $("nwsAlertsBackdrop").classList.remove("hidden");
     fetchNwsPlanAlerts();
+  }
+
+  async function testRepeaterBookKey() {
+    const banner = $("rbTestBanner");
+    if (!banner) return;
+    banner.className = "qrz-test-banner";
+    banner.textContent = "Testing RepeaterBook REST API key...";
+    banner.classList.remove("hidden");
+    try {
+      const res = await api("/api/preferences/test-repeaterbook", {
+        method: "POST",
+        body: JSON.stringify({
+          repeaterBookApiKey: $("prefRbKey").value.trim() || null,
+        }),
+      });
+      banner.className = `qrz-test-banner ${res.ok ? "ok" : "err"}`;
+      banner.textContent = res.message || (res.ok ? "RepeaterBook API key verified" : "RepeaterBook API key test failed");
+    } catch (err) {
+      banner.className = "qrz-test-banner err";
+      banner.textContent = `RepeaterBook test failed: ${err.message}`;
+    }
   }
 
   async function testQrzCredentials() {
@@ -2793,6 +2815,7 @@
         toast(res.error || `Callsign not found`, "error");
       }
     });
+    $("btnTestRbKey")?.addEventListener("click", testRepeaterBookKey);
     $("btnTestQrz").addEventListener("click", testQrzCredentials);
     $("btnDownloadBackup").addEventListener("click", downloadConfigBackup);
     $("btnOpenConfigFolder")?.addEventListener("click", async () => {

@@ -927,9 +927,13 @@
                 <input type="password" id="prefRbKey" class="input mono" autocomplete="new-password" placeholder="Enter new key to save or update" />
                 <button type="button" class="btn btn-sm secret-toggle-btn" data-toggle-secret="prefRbKey" aria-pressed="false">Show</button>
               </div>
-              <label class="panel-toggle-switch" style="font-size:0.82em; margin-top:4px;">
-                <input type="checkbox" id="prefClearRbKey" /> Clear saved RepeaterBook API Key
-              </label>
+              <div class="plan-header-row" style="margin-top:4px;">
+                <label class="panel-toggle-switch" style="font-size:0.82em;">
+                  <input type="checkbox" id="prefClearRbKey" /> Clear saved RepeaterBook API Key
+                </label>
+                <button type="button" class="btn btn-xs" id="btnTestRbKey">Test RepeaterBook Key</button>
+              </div>
+              <div id="rbTestBanner" class="qrz-test-banner hidden"></div>
             </div>
 
             <div class="form-grid-2">
