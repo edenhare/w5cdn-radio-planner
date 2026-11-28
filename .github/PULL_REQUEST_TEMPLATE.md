@@ -13,10 +13,11 @@
 
 ## Verification
 
-- [ ] `uv run poe lint` passes with zero errors
-- [ ] `uv run poe test` passes (and new/updated unit tests are included)
-- [ ] If UI changed: verified offline behavior (no external CDNs), theme tokens, and Playwright E2E/WCAG (`uv run --group dev --group ui poe ui-test`)
-- [ ] If radio/exporter changed: verified exported CSV structure
+- [ ] `npm run version:check` and `npm run typecheck` pass with zero errors
+- [ ] `npm run test:cov` passes (and new/updated unit tests are included)
+- [ ] `npm run smoke` passes the live Electron desktop smoke check
+- [ ] If UI changed: verified offline behavior (no external CDNs), theme tokens, and Playwright E2E (`npm run test:e2e`)
+- [ ] If radio/exporter changed: verified exported CSV/YAML structure
 
 ## Contributor License Agreement (CLA)
 
