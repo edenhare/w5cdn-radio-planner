@@ -821,6 +821,13 @@
       : "";
   }
 
+  function channelTypeTag(ch) {
+    if (ch.specialType === "CALLING" || /\bCALL\b/i.test(String(ch.name || ""))) return "CALL";
+    if (ch.specialType === "WX" || ch.band === "WX") return "WX";
+    if (ch.specialType === "AVIATION" || ch.band === "Airband") return "AIR";
+    return ch.band || "Other";
+  }
+
   function renderBandKpiStrip() {
     const strip = $("bandKpiStrip");
     if (!state.activePlan) {
@@ -839,6 +846,53 @@
       }
     }
     strip.innerHTML = html;
+    renderChannelTypeFilterButtons();
+  }
+
+  function renderChannelTypeFilterButtons() {
+    const container = $("channelTypeFilters");
+    if (!container) return;
+    const channels = state.activePlan?.codeplug?.channels || [];
+    const tagsPresent = new Set();
+    let hasSimplex = false;
+    let hasDmr = false;
+    const modesPresent = new Set();
+
+    for (const ch of channels) {
+      tagsPresent.add(channelTypeTag(ch));
+      if (ch.is_simplex) hasSimplex = true;
+      const m = String(ch.mode || "FM").toUpperCase();
+      modesPresent.add(m);
+      if (m === "DMR") hasDmr = true;
+    }
+
+    const filterDefs = [{ key: "ALL", label: "All", show: true }];
+    for (const [tag, label] of [
+      ["CALL", "Call"],
+      ["WX", "WX"],
+      ["AIR", "Air"],
+    ]) {
+      if (tagsPresent.has(tag) || state.channelFilter === tag) {
+        filterDefs.push({ key: tag, label, show: true });
+      }
+    }
+    if (hasSimplex || state.channelFilter === "SIMPLEX") {
+      filterDefs.push({ key: "SIMPLEX", label: "Simplex", show: true });
+    }
+    if (hasDmr || state.channelFilter === "DMR") {
+      filterDefs.push({ key: "DMR", label: "DMR", show: true });
+    }
+
+    if (!filterDefs.some((d) => d.key === state.channelFilter)) {
+      state.channelFilter = "ALL";
+    }
+
+    container.innerHTML = filterDefs
+      .map(
+        (d) =>
+          `<button type="button" class="filter-btn ${state.channelFilter === d.key ? "active" : ""}" data-ch-filter="${escHtml(d.key)}">${escHtml(d.label)}</button>`,
+      )
+      .join("");
   }
 
   function getFilteredChannels() {
@@ -846,14 +900,14 @@
     const q = state.searchQuery.trim().toLowerCase();
     return (state.activePlan.codeplug.channels || []).filter((ch) => {
       if (state.bandFilter !== "ALL" && ch.band !== state.bandFilter) return false;
-      if (state.channelFilter === "REPEATERS" && ch.specialType !== "REPEATERS") return false;
-      if (state.channelFilter === "CALLING" && ch.specialType !== "CALLING") return false;
-      if (state.channelFilter === "WX" && ch.specialType !== "WX") return false;
-      if (state.channelFilter === "AVIATION" && ch.specialType !== "AVIATION") return false;
+      const typeTag = channelTypeTag(ch);
+      if (state.channelFilter === "CALL" && typeTag !== "CALL") return false;
+      if (state.channelFilter === "WX" && typeTag !== "WX") return false;
+      if (state.channelFilter === "AIR" && typeTag !== "AIR") return false;
       if (state.channelFilter === "SIMPLEX" && !ch.is_simplex) return false;
       if (state.channelFilter === "DMR" && String(ch.mode || "").toUpperCase() !== "DMR") return false;
       if (q) {
-        const hay = `${ch.number} ${ch.name} ${ch.callsign || ""} ${ch.rxFreq} ${ch.city || ""} ${ch.state || ""} ${ch.comment || ""} ${ch.band} ${ch.mode}`.toLowerCase();
+        const hay = `${ch.number} ${ch.name} ${ch.callsign || ""} ${ch.rxFreq} ${ch.city || ""} ${ch.state || ""} ${ch.comment || ""} ${ch.band} ${typeTag} ${ch.mode}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -890,10 +944,11 @@
       .map((ch) => {
         const isSelected = state.selectedSlot === ch.number;
         const isChecked = state.checkedSlots.has(ch.number);
+        const typeTag = channelTypeTag(ch);
         let typePill = `<span class="pill pill-emerald">${escHtml(ch.band)}</span>`;
-        if (ch.specialType === "CALLING") typePill = `<span class="pill pill-amber">CALL</span>`;
-        else if (ch.specialType === "WX") typePill = `<span class="pill pill-cyan">WX</span>`;
-        else if (ch.specialType === "AVIATION") typePill = `<span class="pill pill-violet">AIR</span>`;
+        if (typeTag === "CALL") typePill = `<span class="pill pill-amber">CALL</span>`;
+        else if (typeTag === "WX") typePill = `<span class="pill pill-cyan">WX</span>`;
+        else if (typeTag === "AIR") typePill = `<span class="pill pill-violet">AIR</span>`;
 
         const dupText = ch.is_simplex ? "Simplex" : `${ch.offsetDir} ${Number(ch.offset).toFixed(3)}`;
         let toneText = "-";
@@ -2318,11 +2373,12 @@
       renderBandKpiStrip();
       renderChannelsTable();
     });
-    document.querySelectorAll("[data-ch-filter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.channelFilter = btn.dataset.chFilter;
-        renderChannelsTable();
-      });
+    $("channelTypeFilters")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-ch-filter]");
+      if (!btn) return;
+      state.channelFilter = btn.dataset.chFilter;
+      renderChannelTypeFilterButtons();
+      renderChannelsTable();
     });
     $("searchChannels").addEventListener("input", () => {
       state.searchQuery = $("searchChannels").value;

@@ -354,13 +354,14 @@
                 <div class="log-toolbar-body" id="logToolbarBody">
                   <div class="stats-strip" id="bandKpiStrip"></div>
                   <div class="filter-controls">
-                    <button type="button" class="filter-btn active" data-ch-filter="ALL">All</button>
-                    <button type="button" class="filter-btn" data-ch-filter="REPEATERS">Repeaters</button>
-                    <button type="button" class="filter-btn" data-ch-filter="CALLING">Calling</button>
-                    <button type="button" class="filter-btn" data-ch-filter="WX">WX</button>
-                    <button type="button" class="filter-btn" data-ch-filter="AVIATION">Air</button>
-                    <button type="button" class="filter-btn" data-ch-filter="SIMPLEX">Simplex</button>
-                    <button type="button" class="filter-btn" data-ch-filter="DMR">DMR</button>
+                    <div id="channelTypeFilters" class="filter-pills-group">
+                      <button type="button" class="filter-btn active" data-ch-filter="ALL">All</button>
+                      <button type="button" class="filter-btn" data-ch-filter="CALL">Call</button>
+                      <button type="button" class="filter-btn" data-ch-filter="WX">WX</button>
+                      <button type="button" class="filter-btn" data-ch-filter="AIR">Air</button>
+                      <button type="button" class="filter-btn" data-ch-filter="SIMPLEX">Simplex</button>
+                      <button type="button" class="filter-btn" data-ch-filter="DMR">DMR</button>
+                    </div>
                     <button type="button" class="btn btn-danger btn-xs" id="btnDeleteSelected" disabled title="Delete checked rows (Shift+Click selects a range)">
                       🗑 Delete (<span id="selectedCount">0</span>)
                     </button>

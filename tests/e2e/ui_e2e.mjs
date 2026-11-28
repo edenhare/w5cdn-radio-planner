@@ -62,6 +62,31 @@ async function run() {
     await page.click('[data-toggle-pane="targetBarBody"]');
     assert.ok(!(await page.locator("#targetBarBody").evaluate((el) => el.classList.contains("hidden"))), "targetBarBody should expand");
 
+    // Verify dynamic channel filters (no "Repeaters" button, "Call" matches CALL tags, Wouxun KG-UV980P has no GMRS)
+    const filterLabels = await page.locator("#channelTypeFilters [data-ch-filter]").allTextContents();
+    assert.ok(!filterLabels.includes("Repeaters"), `Repeaters filter should not exist: ${filterLabels.join(",")}`);
+    assert.ok(filterLabels.includes("Call"), `Expected Call filter button, got: ${filterLabels.join(",")}`);
+    await page.click('#channelTypeFilters [data-ch-filter="CALL"]');
+    const callPillTexts = await page.locator("#channelsTbody td.col-badges .pill:first-child").allTextContents();
+    assert.ok(callPillTexts.length > 0 && callPillTexts.every((t) => t === "CALL"), `Expected all filtered rows to have CALL tag, got ${callPillTexts.join(",")}`);
+    await page.click('#channelTypeFilters [data-ch-filter="ALL"]');
+
+    await page.selectOption("#targetRadioSelect", "wouxun_kg_uv980p");
+    await page.waitForTimeout(300);
+    const uv980pBands = await page.locator("#targetBandsRow [data-target-band]").evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-target-band")),
+    );
+    assert.ok(!uv980pBands.includes("GMRS"), `KG-UV980P should not list GMRS band: ${uv980pBands.join(",")}`);
+
+    // Verify Save Recipe modal edits plan name and description
+    await page.click("#btnPlanSaveRecipe");
+    await page.waitForSelector("#saveRecipeBackdrop:not(.hidden)");
+    await page.fill("#saveRecName", "Custom_Corridor_Name");
+    await page.fill("#saveRecDesc", "Custom corridor description from Save Recipe dialog");
+    await page.click('#saveRecipeForm button[type="submit"]');
+    await page.waitForSelector("#saveRecipeBackdrop", { state: "hidden" });
+    assert.equal(await page.locator("#planTitle").textContent(), "Custom_Corridor_Name");
+
     // 2. Switch target radio live
     await page.selectOption("#targetRadioSelect", "btech_dmr6x2");
     await page.waitForTimeout(400);
