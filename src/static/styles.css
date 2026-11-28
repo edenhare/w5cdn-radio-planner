@@ -1844,6 +1844,13 @@ button, input, select, textarea {
   flex-wrap: wrap;
 }
 
+.filter-pills-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
 .filter-btn {
   padding: 3px 9px;
   border-radius: 999px;

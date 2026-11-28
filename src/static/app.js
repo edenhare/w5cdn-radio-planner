@@ -163,6 +163,8 @@
     waypoints: ["Tyler, TX", "Shreveport, LA", "Jackson, MS"],
     sequenceOrder: ["TEMPLATE:calling_channels", "ROUTE_PLAN", "TEMPLATE:noaa_wx_channels"],
     loadedRecipeFile: null,
+    loadedRecipeName: "",
+    loadedRecipeDescription: "",
     channelFilter: "ALL",
     bandFilter: "ALL",
     searchQuery: "",
@@ -621,8 +623,8 @@
 
     const payload = {
       mode: state.builderMode,
-      plan_name: $("inPlanName").value.trim(),
-      plan_description: $("inPlanDesc").value.trim(),
+      plan_name: state.loadedRecipeName || "",
+      plan_description: state.loadedRecipeDescription || "",
       waypoints: state.waypoints.map((w) => w.trim()).filter(Boolean),
       corridor_width: Number($("inCorridorWidth").value) || 25,
       center_location: $("inCenterLocation").value.trim() || "Dallas, TX",
@@ -692,13 +694,6 @@
     // Header
     $("planTitle").textContent = codeplug.name;
     $("planModePill").textContent = recipe.mode;
-    const endSlot = codeplug.total_channels > 0 ? spec.startChannel + codeplug.total_channels - 1 : spec.startChannel;
-    $("planSpecsLine").innerHTML = `
-      <span>Radio: <strong>${escHtml(spec.brand)} ${escHtml(spec.model)}</strong></span>
-      <span>Slots: <strong class="mono">${spec.startChannel}..${endSlot}</strong> (${codeplug.total_channels}/${spec.maxChannels})</span>
-      <span>LCD: <strong class="mono">${spec.maxNameLength} chars</strong></span>
-      <span>Naming: <strong class="mono">${escHtml(recipe.radio_target.naming_format)}</strong></span>
-    `;
 
     // Export controls
     $("exportProgrammerSelect").value = recipe.radio_target.programmer_format || spec.programmerType || "CHIRP";
@@ -732,7 +727,6 @@
     // Naming Format Dropdown & Sample Preview
     const previews = state.activePlan.naming_previews || [];
     const curNaming = recipe.radio_target.naming_format || "CITY_FREQ";
-    $("targetLcdHint").textContent = `Max ${spec.maxNameLength}c LCD`;
     $("lcdColHeader").textContent = `LCD Name (${spec.maxNameLength}c)`;
     $("targetNamingSelect").innerHTML = previews
       .map(
@@ -827,6 +821,13 @@
       : "";
   }
 
+  function channelTypeTag(ch) {
+    if (ch.specialType === "CALLING" || /\bCALL\b/i.test(String(ch.name || ""))) return "CALL";
+    if (ch.specialType === "WX" || ch.band === "WX") return "WX";
+    if (ch.specialType === "AVIATION" || ch.band === "Airband") return "AIR";
+    return ch.band || "Other";
+  }
+
   function renderBandKpiStrip() {
     const strip = $("bandKpiStrip");
     if (!state.activePlan) {
@@ -845,6 +846,53 @@
       }
     }
     strip.innerHTML = html;
+    renderChannelTypeFilterButtons();
+  }
+
+  function renderChannelTypeFilterButtons() {
+    const container = $("channelTypeFilters");
+    if (!container) return;
+    const channels = state.activePlan?.codeplug?.channels || [];
+    const tagsPresent = new Set();
+    let hasSimplex = false;
+    let hasDmr = false;
+    const modesPresent = new Set();
+
+    for (const ch of channels) {
+      tagsPresent.add(channelTypeTag(ch));
+      if (ch.is_simplex) hasSimplex = true;
+      const m = String(ch.mode || "FM").toUpperCase();
+      modesPresent.add(m);
+      if (m === "DMR") hasDmr = true;
+    }
+
+    const filterDefs = [{ key: "ALL", label: "All", show: true }];
+    for (const [tag, label] of [
+      ["CALL", "Call"],
+      ["WX", "WX"],
+      ["AIR", "Air"],
+    ]) {
+      if (tagsPresent.has(tag) || state.channelFilter === tag) {
+        filterDefs.push({ key: tag, label, show: true });
+      }
+    }
+    if (hasSimplex || state.channelFilter === "SIMPLEX") {
+      filterDefs.push({ key: "SIMPLEX", label: "Simplex", show: true });
+    }
+    if (hasDmr || state.channelFilter === "DMR") {
+      filterDefs.push({ key: "DMR", label: "DMR", show: true });
+    }
+
+    if (!filterDefs.some((d) => d.key === state.channelFilter)) {
+      state.channelFilter = "ALL";
+    }
+
+    container.innerHTML = filterDefs
+      .map(
+        (d) =>
+          `<button type="button" class="filter-btn ${state.channelFilter === d.key ? "active" : ""}" data-ch-filter="${escHtml(d.key)}">${escHtml(d.label)}</button>`,
+      )
+      .join("");
   }
 
   function getFilteredChannels() {
@@ -852,14 +900,14 @@
     const q = state.searchQuery.trim().toLowerCase();
     return (state.activePlan.codeplug.channels || []).filter((ch) => {
       if (state.bandFilter !== "ALL" && ch.band !== state.bandFilter) return false;
-      if (state.channelFilter === "REPEATERS" && ch.specialType !== "REPEATERS") return false;
-      if (state.channelFilter === "CALLING" && ch.specialType !== "CALLING") return false;
-      if (state.channelFilter === "WX" && ch.specialType !== "WX") return false;
-      if (state.channelFilter === "AVIATION" && ch.specialType !== "AVIATION") return false;
+      const typeTag = channelTypeTag(ch);
+      if (state.channelFilter === "CALL" && typeTag !== "CALL") return false;
+      if (state.channelFilter === "WX" && typeTag !== "WX") return false;
+      if (state.channelFilter === "AIR" && typeTag !== "AIR") return false;
       if (state.channelFilter === "SIMPLEX" && !ch.is_simplex) return false;
       if (state.channelFilter === "DMR" && String(ch.mode || "").toUpperCase() !== "DMR") return false;
       if (q) {
-        const hay = `${ch.number} ${ch.name} ${ch.callsign || ""} ${ch.rxFreq} ${ch.city || ""} ${ch.state || ""} ${ch.comment || ""} ${ch.band} ${ch.mode}`.toLowerCase();
+        const hay = `${ch.number} ${ch.name} ${ch.callsign || ""} ${ch.rxFreq} ${ch.city || ""} ${ch.state || ""} ${ch.comment || ""} ${ch.band} ${typeTag} ${ch.mode}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -896,10 +944,11 @@
       .map((ch) => {
         const isSelected = state.selectedSlot === ch.number;
         const isChecked = state.checkedSlots.has(ch.number);
+        const typeTag = channelTypeTag(ch);
         let typePill = `<span class="pill pill-emerald">${escHtml(ch.band)}</span>`;
-        if (ch.specialType === "CALLING") typePill = `<span class="pill pill-amber">CALL</span>`;
-        else if (ch.specialType === "WX") typePill = `<span class="pill pill-cyan">WX</span>`;
-        else if (ch.specialType === "AVIATION") typePill = `<span class="pill pill-violet">AIR</span>`;
+        if (typeTag === "CALL") typePill = `<span class="pill pill-amber">CALL</span>`;
+        else if (typeTag === "WX") typePill = `<span class="pill pill-cyan">WX</span>`;
+        else if (typeTag === "AIR") typePill = `<span class="pill pill-violet">AIR</span>`;
 
         const dupText = ch.is_simplex ? "Simplex" : `${ch.offsetDir} ${Number(ch.offset).toFixed(3)}`;
         let toneText = "-";
@@ -1446,8 +1495,8 @@
     document.querySelectorAll("[data-access-opt]").forEach((cb) => {
       cb.checked = acc.has(cb.dataset.accessOpt);
     });
-    $("inPlanName").value = rec.name || "";
-    $("inPlanDesc").value = rec.description || "";
+    state.loadedRecipeName = rec.name || "";
+    state.loadedRecipeDescription = rec.description || "";
     state.sequenceOrder = rec.sequence_order?.length ? [...rec.sequence_order] : defaultSequenceForMode(mode);
 
     setBuilderMode(mode, true);
@@ -2063,9 +2112,9 @@
     });
     $("btnNewPlan").addEventListener("click", () => {
       state.loadedRecipeFile = null;
+      state.loadedRecipeName = "";
+      state.loadedRecipeDescription = "";
       $("loadedRecipeBanner").classList.add("hidden");
-      $("inPlanName").value = "";
-      $("inPlanDesc").value = "";
       if (!state.prefs.panel_layout?.builder?.visible) togglePanel("builder", true);
       toast("Plan Builder reset for new plan");
     });
@@ -2200,13 +2249,13 @@
     });
     $("btnResetBuilderDefaults").addEventListener("click", () => {
       state.loadedRecipeFile = null;
+      state.loadedRecipeName = "";
+      state.loadedRecipeDescription = "";
       $("loadedRecipeBanner").classList.add("hidden");
       state.waypoints = ["Tyler, TX", "Shreveport, LA", "Jackson, MS"];
       $("inCorridorWidth").value = "25";
       $("inCenterLocation").value = "Dallas, TX";
       $("inRadiusMiles").value = "50";
-      $("inPlanName").value = "";
-      $("inPlanDesc").value = "";
       state.sequenceOrder = defaultSequenceForMode(state.builderMode);
       renderWaypointsList();
       renderSequenceList();
@@ -2268,7 +2317,7 @@
     $("targetBandsRow").addEventListener("change", () => updateCodeplugTarget(false));
 
     // Active Plan Actions
-    $("btnPlanWeather").addEventListener("click", openNwsWeatherModal);
+    $("btnPlanWeather")?.addEventListener("click", openNwsWeatherModal);
     $("btnPlanExpandDmr").addEventListener("click", expandDmrTalkgroups);
     $("btnPlanReport").addEventListener("click", openPlanReportModal);
     $("btnPlanExportCsv").addEventListener("click", exportActiveCsv);
@@ -2281,20 +2330,33 @@
       $("saveRecDesc").value = state.activePlan.recipe.description || "";
       $("saveRecipeBackdrop").classList.remove("hidden");
       $("saveRecName").focus();
+      $("saveRecName").select();
     };
     $("btnPlanSaveRecipe").addEventListener("click", openSaveRecipeModal);
     $("btnDrawerSaveRecipe").addEventListener("click", openSaveRecipeModal);
     $("saveRecipeForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        const newName = $("saveRecName").value.trim();
+        const newDesc = $("saveRecDesc").value.trim();
         const res = await api("/api/recipes/save", {
           method: "POST",
           body: JSON.stringify({
-            name: $("saveRecName").value.trim(),
-            description: $("saveRecDesc").value.trim(),
+            name: newName,
+            description: newDesc,
           }),
         });
         state.recipes = res.recipes || state.recipes;
+        state.loadedRecipeName = newName;
+        state.loadedRecipeDescription = newDesc;
+        if (res.active_plan && res.active_plan.active) {
+          renderActivePlan(res.active_plan);
+        } else if (state.activePlan && newName) {
+          state.activePlan.recipe.name = newName;
+          state.activePlan.recipe.description = newDesc;
+          state.activePlan.codeplug.name = newName;
+          $("planTitle").textContent = newName;
+        }
         renderRecipesList();
         $("saveRecipeBackdrop").classList.add("hidden");
         toast(res.message || "Recipe saved", "success");
@@ -2311,11 +2373,12 @@
       renderBandKpiStrip();
       renderChannelsTable();
     });
-    document.querySelectorAll("[data-ch-filter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.channelFilter = btn.dataset.chFilter;
-        renderChannelsTable();
-      });
+    $("channelTypeFilters")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-ch-filter]");
+      if (!btn) return;
+      state.channelFilter = btn.dataset.chFilter;
+      renderChannelTypeFilterButtons();
+      renderChannelsTable();
     });
     $("searchChannels").addEventListener("input", () => {
       state.searchQuery = $("searchChannels").value;

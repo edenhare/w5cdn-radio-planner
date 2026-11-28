@@ -286,8 +286,17 @@ function defaultBandsForRadio(spec: TargetRadioSpec, mode: string, sequenceOrder
     const hasTemplates = sequenceOrder.some((k) => k.startsWith("TEMPLATE:"));
     return hasTemplates ? Array.from(new Set([...spec.supportedBands, "Airband"])) : ["Airband"];
   }
-  const nonAir = spec.supportedBands.filter((b) => b.toLowerCase() !== "airband");
-  return nonAir.length > 0 ? nonAir : [...spec.supportedBands];
+  const isGmrsOnly =
+    spec.supportedBands.some((b) => b.toLowerCase() === "gmrs") &&
+    !spec.supportedBands.some((b) => b.toLowerCase() === "2m");
+  const hasGmrsTemplate = sequenceOrder.includes("TEMPLATE:gmrs_channels");
+  const defaultAmateur = spec.supportedBands.filter((b) => {
+    const low = b.toLowerCase();
+    if (low === "airband") return false;
+    if (low === "gmrs" && !isGmrsOnly && !hasGmrsTemplate) return false;
+    return true;
+  });
+  return defaultAmateur.length > 0 ? defaultAmateur : [...spec.supportedBands];
 }
 
 function renumberChannels(channels: RadioChannel[], startSlot: number): RadioChannel[] {
@@ -903,11 +912,18 @@ export class ApiRouter {
         if (!sess.recipe || !sess.codeplug || !sess.radio_spec) {
           throw new ApiError(400, "No active recipe to save.");
         }
+        const nextName = cleanSingleLine(body.name ?? sess.recipe.name, 100) || sess.recipe.name;
+        const nextDesc = cleanSingleLine(body.description ?? sess.recipe.description, 300);
         sess.recipe = {
           ...sess.recipe,
-          name: cleanSingleLine(body.name ?? sess.recipe.name, 100) || sess.recipe.name,
-          description: cleanSingleLine(body.description ?? sess.recipe.description, 300),
+          name: nextName,
+          description: nextDesc,
         };
+        sess.codeplug = {
+          ...sess.codeplug,
+          name: nextName,
+        };
+        this.workspace.saveSession();
         const saved = this.workspace.recipeMgr.saveRecipe(sess.recipe);
         return jsonResponse({
           saved: true,
@@ -915,6 +931,7 @@ export class ApiRouter {
           path: saved.fullPath,
           message: `Saved radio-agnostic recipe '${sess.recipe.name}' to ${saved.filename}`,
           recipes: this.serializeRecipes(),
+          active_plan: this.serializeActivePlan(),
         });
       }
 
