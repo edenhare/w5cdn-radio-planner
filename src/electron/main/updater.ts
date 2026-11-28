@@ -481,18 +481,43 @@ export async function applyStandaloneUpdate(opts: {
 
   if (opts.spawnHelper !== false) {
     const plat = (opts.platformName || process.platform).toLowerCase();
+    const childEnv = {
+      ...process.env,
+      RP_TARGET_PID: String(process.pid),
+      RP_INSTALLER_PATH: archivePath,
+    };
     if (plat === "win32") {
-      const child = spawn("cmd.exe", ["/c", helperScript], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
+      const child = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-WindowStyle",
+          "Hidden",
+          "-Command",
+          "Wait-Process -Id ([int]$env:RP_TARGET_PID) -ErrorAction SilentlyContinue; Unblock-File -LiteralPath $env:RP_INSTALLER_PATH -ErrorAction SilentlyContinue; Start-Process -FilePath $env:RP_INSTALLER_PATH",
+        ],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+          env: childEnv,
+        },
+      );
       child.unref();
     } else {
-      const child = spawn("/bin/bash", [helperScript], {
-        detached: true,
-        stdio: "ignore",
-      });
+      const child = spawn(
+        "/bin/sh",
+        [
+          "-c",
+          'while kill -0 "$RP_TARGET_PID" 2>/dev/null; do sleep 0.5; done; chmod +x "$RP_INSTALLER_PATH" 2>/dev/null || true; if [ -n "$APPIMAGE" ]; then cp -f "$RP_INSTALLER_PATH" "$APPIMAGE" && chmod +x "$APPIMAGE" && nohup "$APPIMAGE" >/dev/null 2>&1 & else nohup "$RP_INSTALLER_PATH" >/dev/null 2>&1 & fi',
+        ],
+        {
+          detached: true,
+          stdio: "ignore",
+          env: childEnv,
+        },
+      );
       child.unref();
     }
     if (opts.onRestartRequested) {
